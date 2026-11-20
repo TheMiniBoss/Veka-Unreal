@@ -33,10 +33,10 @@ void FVekaTypographyModifier::ModifyEnvironment(FVekaEnvironment& Environment) c
 	switch (Field)
 	{
 	case EVekaTypographyField::Style:
-		// A style is a whole font: it resets size, weight and any explicit Slate font set further out.
+		// A style replaces the font (size, explicit Slate font) but, like SwiftUI, weight and italic are
+		// separate values applied on top of it, whatever the order of the modifiers.
 		T.Style = V.Style;
 		T.Size = 0.f;
-		T.bOverrideWeight = false;
 		T.bCustomFont = false;
 		break;
 	case EVekaTypographyField::Family: T.Family = V.Family; T.bCustomFont = false; break;
