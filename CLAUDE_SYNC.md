@@ -80,7 +80,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 |---|---|
 | Phase | **1 — Core** : code écrit par Cloud, **pas encore compilé** |
 | Branche active | `cpp/phase-1-core` (à fusionner dans `C++` après D-002 vert) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` complet pour la Phase 1 ; 12 tests automation |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` complet pour la Phase 1 ; 13 tests automation |
 | Prochaine étape Cloud | corriger selon le retour de D-002, puis Phase 2 (Colora + Anima complets, symboles, typo, contrôles) |
 | Bloquant | D-002 (compilation + tests sur le PC) |
 
@@ -94,7 +94,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
   3. Fermer tous les éditeurs UE, puis compiler `VekaHostEditor Win64 Development`.
   4. Corriger les erreurs **d'API Unreal** seulement (cf. Règles §3), une par une, en notant chaque correction.
      Liste des points dont Cloud n'est pas sûr : voir l'entrée `CLOUD → Phase 1` ci-dessous.
-  5. Lancer `Automation RunTests VekaUI` (commande de référence) et noter le résultat des 12 tests.
+  5. Lancer `Automation RunTests VekaUI` (commande de référence) et noter le résultat des 13 tests.
   6. Ouvrir l'éditeur `VekaHost`, menu **Window > Tools > VekaUI Playground** : vérifier l'affichage
      (formes, texte qui passe à la ligne, grille, scroll à la molette), cliquer « +1 », la piste du ressort,
      l'anneau (trim animé). Une capture d'écran dans `Docs/Sync/Screens/phase1-playground.png` si possible.
