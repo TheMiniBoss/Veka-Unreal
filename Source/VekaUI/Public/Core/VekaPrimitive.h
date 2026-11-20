@@ -18,6 +18,9 @@ class FVekaEnvironment;
 struct VEKAUI_API FVekaPrimitiveState
 {
 	virtual ~FVekaPrimitiveState() = default;
+
+	/** True while the primitive animates on its own (text effects, content transitions): the widget repaints every frame. */
+	virtual bool NeedsAnimationFrame(double Now) const { return false; }
 };
 
 /** What a layout sees of one child: it can ask for a size and place it. */

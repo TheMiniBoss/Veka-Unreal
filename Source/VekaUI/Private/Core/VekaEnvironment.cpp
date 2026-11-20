@@ -2,6 +2,7 @@
 
 #include "Core/VekaEnvironment.h"
 #include "Styling/CoreStyle.h"
+#include "Typography/VekaTypography.h"
 
 bool FVekaEnvironment::operator==(const FVekaEnvironment& Other) const
 {
@@ -33,11 +34,7 @@ namespace VekaEnv
 
 	FSlateFontInfo GetFont(const FVekaEnvironment& Environment)
 	{
-		if (const FSlateFontInfo* Font = Environment.Find<FSlateFontInfo>(VekaEnv::Font()))
-		{
-			return *Font;
-		}
-		return FCoreStyle::GetDefaultFontStyle("Regular", 14);
+		return Veka::Typography::Resolve(Environment).Font;
 	}
 
 	EVekaColorScheme GetColorScheme(const FVekaEnvironment& Environment)
@@ -50,7 +47,6 @@ namespace VekaEnv
 		FVekaEnvironment Environment;
 		Environment.Set<EVekaColorScheme>(ColorScheme(), EVekaColorScheme::Dark);
 		Environment.Set<FLinearColor>(ForegroundColor(), FLinearColor::White);
-		Environment.Set<FSlateFontInfo>(Font(), FCoreStyle::GetDefaultFontStyle("Regular", 14));
 		return Environment;
 	}
 }

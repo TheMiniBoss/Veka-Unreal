@@ -108,6 +108,30 @@ void SVekaNodeWidget::ArrangeChildWidgets(const FVekaNode& InNode, const FGeomet
 	}
 }
 
+void SVekaNodeWidget::EnsureAnimationFrames() const
+{
+	TSharedPtr<FVekaNode> Pinned = Node.Pin();
+	const FVekaPrimitiveState* State = Pinned.IsValid() ? Pinned->GetPrimitiveState() : nullptr;
+	if (State && !AnimationFrameTimer.IsValid() && State->NeedsAnimationFrame(FPlatformTime::Seconds()))
+	{
+		SVekaNodeWidget* Mutable = const_cast<SVekaNodeWidget*>(this);
+		AnimationFrameTimer = Mutable->RegisterActiveTimer(0.f, FWidgetActiveTimerDelegate::CreateSP(Mutable, &SVekaNodeWidget::HandleAnimationFrame));
+	}
+}
+
+EActiveTimerReturnType SVekaNodeWidget::HandleAnimationFrame(double InCurrentTime, float InDeltaTime)
+{
+	TSharedPtr<FVekaNode> Pinned = Node.Pin();
+	const FVekaPrimitiveState* State = Pinned.IsValid() ? Pinned->GetPrimitiveState() : nullptr;
+	Invalidate(EInvalidateWidgetReason::Paint);
+	if (State && State->NeedsAnimationFrame(FPlatformTime::Seconds()))
+	{
+		return EActiveTimerReturnType::Continue;
+	}
+	AnimationFrameTimer.Reset();
+	return EActiveTimerReturnType::Stop;
+}
+
 FChildren* SVekaNodeWidget::GetChildren()
 {
 	return &Children;
@@ -125,6 +149,8 @@ int32 SVekaNodeWidget::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 	// Modifier rects and the content rect must match this geometry before any modifier paints
 	// (leaves have no OnArrangeChildren call, and modifiers can change between two layouts).
 	Pinned->Arrange(AllottedGeometry.GetLocalSize());
+
+	EnsureAnimationFrames();
 
 	const FPaintPass Pass{ Args, AllottedGeometry, MyCullingRect, OutDrawElements, ShouldBeEnabled(bParentEnabled) };
 	const float TransitionOpacity = Pinned->GetTransitionOpacity();

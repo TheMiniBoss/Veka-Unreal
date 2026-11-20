@@ -18,5 +18,13 @@ public class VekaUI : ModuleRules
 			"SlateCore",
 			"UMG",
 		});
+
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Projects",
+		});
+
+		// Default font family (LT Flode Neue), loaded by Slate from these files.
+		RuntimeDependencies.Add("$(PluginDir)/Resources/Fonts/LTFlodeNeue/*.otf", StagedFileType.UFS);
 	}
 }

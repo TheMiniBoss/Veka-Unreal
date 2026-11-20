@@ -96,23 +96,56 @@ FVector2D FVekaNode::MeasureContent(const FVekaProposal& Proposal)
 {
 	const TArray<FVekaLayoutChild> Proxies = MakeChildProxies();
 	FVekaLayoutContext Context{ *this, Environment, PrimitiveState.Get(), GetParentStackAxis() };
-	return GetPrimitive().SizeThatFits(Proposal, Context, Proxies);
+	const FVector2D Size = GetPrimitive().SizeThatFits(Proposal, Context, Proxies);
+
+	// Remember which proposal gave which size (most recent last) for FindContentProposal.
+	ContentMeasureCache.RemoveAll([&Proposal](const TPair<FVekaProposal, FVector2D>& Entry) { return Entry.Key == Proposal; });
+	if (ContentMeasureCache.Num() >= 8)
+	{
+		ContentMeasureCache.RemoveAt(0);
+	}
+	ContentMeasureCache.Emplace(Proposal, Size);
+	return Size;
+}
+
+TOptional<FVekaProposal> FVekaNode::FindContentProposal(const FVector2D& Size) const
+{
+	for (int32 Index = ContentMeasureCache.Num() - 1; Index >= 0; --Index)
+	{
+		if (ContentMeasureCache[Index].Value.Equals(Size, 0.5))
+		{
+			return ContentMeasureCache[Index].Key;
+		}
+	}
+	return TOptional<FVekaProposal>();
 }
 
 void FVekaNode::Arrange(const FVector2D& Size)
 {
 	ModifierRects.SetNum(Modifiers.Num());
 
+	// While this node's rect animates (layout transition), backgrounds and borders follow the animated size but
+	// the content keeps the final layout: children are never laid out at an intermediate size they were not
+	// measured for (that squeezed siblings and re-wrapped text), they animate their own rects.
+	const bool bRectAnimating = bPlaced && Runtime.GetImplicit().IsRectAnimating(*this);
+	const FVector2D LayoutSize = bRectAnimating ? LayoutTarget.Size : Size;
+
 	FVekaRect Rect(FVector2D::ZeroVector, Sanitize(Size));
+	FVekaRect LayoutRect(FVector2D::ZeroVector, Sanitize(LayoutSize));
 	for (int32 Level = Modifiers.Num() - 1; Level >= 0; --Level)
 	{
 		ModifierRects[Level] = Rect;
 		if (const FVekaModifier* Modifier = Modifiers[Level].GetPtr<FVekaModifier>())
 		{
-			Rect = Modifier->Place(Rect, [this, Level](const FVekaProposal& Inner) { return MeasureLevel(Level - 1, Inner); });
+			auto Inner = [this, Level](const FVekaProposal& Proposal) { return MeasureLevel(Level - 1, Proposal); };
+			Rect = Modifier->Place(Rect, Inner);
+			if (bRectAnimating)
+			{
+				LayoutRect = Modifier->Place(LayoutRect, Inner);
+			}
 		}
 	}
-	ContentRect = Rect;
+	ContentRect = bRectAnimating ? LayoutRect : Rect;
 
 	const TArray<FVekaLayoutChild> Proxies = MakeChildProxies();
 	FVekaLayoutContext Context{ *this, Environment, PrimitiveState.Get(), GetParentStackAxis() };
@@ -197,11 +230,17 @@ void FVekaNode::RefreshEnvironment()
 		return;
 	}
 	Environment = MoveTemp(NewEnvironment);
+	// What the content measures may depend on the environment (font, text scale...).
+	MeasureCache.Reset();
+	ContentMeasureCache.Reset();
+	if (Widget.IsValid())
+	{
+		Widget->Invalidate(EInvalidateWidgetReason::Layout);
+	}
 	auto Push = [this](const TSharedRef<FVekaNode>& Child)
 	{
 		Child->InheritedEnvironment = Environment;
 		Child->RefreshEnvironment();
-		Child->InvalidatePaint();
 	};
 	for (const TSharedRef<FVekaNode>& Child : Children)
 	{
@@ -306,6 +345,7 @@ void FVekaNode::InvalidateLayout()
 	for (FVekaNode* Node = this; Node; Node = Node->Parent)
 	{
 		Node->MeasureCache.Reset();
+		Node->ContentMeasureCache.Reset();
 		if (Node->Widget.IsValid())
 		{
 			Node->Widget->Invalidate(EInvalidateWidgetReason::Layout);

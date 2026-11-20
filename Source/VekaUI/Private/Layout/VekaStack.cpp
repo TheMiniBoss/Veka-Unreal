@@ -1,6 +1,7 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Layout/VekaStack.h"
+#include "Core/VekaNode.h"
 
 TOptional<EVekaAxis> FVekaStack::GetStackAxis() const
 {
@@ -147,8 +148,16 @@ void FVekaStack::PlaceChildren(const FVekaRect& Bounds, FVekaLayoutContext& Cont
 		return;
 	}
 
+	// Same distribution as when this stack was measured (re-running it with the final size would give other
+	// shares and squeeze some children). Falls back to the final size when that measurement is gone.
+	FVekaProposal DistributionProposal = Proposal;
+	if (const TOptional<FVekaProposal> Measured = Context.Node.FindContentProposal(Bounds.Size))
+	{
+		// Both axes as measured: children get exactly the proposals that produced this size.
+		DistributionProposal = Measured.GetValue();
+	}
 	TArray<FVector2D> Sizes;
-	ComputeLinearSizes(Proposal, Children, Sizes);
+	ComputeLinearSizes(DistributionProposal, Children, Sizes);
 
 	const double CrossContainer = Veka::CrossValue(Bounds.Size, Axis);
 	double Cursor = 0.0;

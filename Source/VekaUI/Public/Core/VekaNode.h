@@ -96,6 +96,12 @@ public:
 	/** Computes the modifier rects, the content rect and places the children for a final size. */
 	void Arrange(const FVector2D& Size);
 
+	/**
+	 * Proposal that made the content (inside the modifiers) measure Size, if it was measured recently. Containers
+	 * re-run their distribution with it when placing, so placement matches measurement exactly.
+	 */
+	TOptional<FVekaProposal> FindContentProposal(const FVector2D& Size) const;
+
 	/** Arrange + arrange every descendant with the rect it was given (no Slate needed). */
 	void ArrangeRecursive(const FVector2D& Size);
 
@@ -175,6 +181,7 @@ private:
 	bool bPlaced = false;
 
 	TArray<TPair<FVekaProposal, FVector2D>, TInlineAllocator<4>> MeasureCache;
+	TArray<TPair<FVekaProposal, FVector2D>, TInlineAllocator<4>> ContentMeasureCache;
 	FVekaRect ArrangedRect;
 	FVekaRect ContentRect;
 	TArray<FVekaRect> ModifierRects;

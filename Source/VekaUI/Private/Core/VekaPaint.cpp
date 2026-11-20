@@ -201,6 +201,11 @@ FVekaPaint FVekaPaint::FromMaterial(UMaterialInterface* InMaterial)
 
 // --- Queries -----------------------------------------------------------------------------------------------
 
+bool FVekaPaint::operator==(const FVekaPaint& Other) const
+{
+	return StaticStruct()->CompareScriptStruct(this, &Other, PPF_None);
+}
+
 bool FVekaPaint::IsGradient() const
 {
 	switch (Type)

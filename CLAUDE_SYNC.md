@@ -81,11 +81,11 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima** ✅ fusionnés dans `C++` ; prochain jalon **2c Typographie** |
-| Branche active | `C++` (2c : `cpp/phase-2c-typo`, pas encore créée) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima ; 30/30 tests automation ✅ |
-| Prochaine étape | 2c Typographie (LTFlode Neue) |
-| Bloquant | aucun (point à vérifier à la main : clics répétés sur « +1 », voir `LOCAL → D-002`) |
+| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie** ✅ fusionnés dans `C++` ; prochain jalon **2d Symboles** |
+| Branche active | `C++` (2d : `cpp/phase-2d-symbols`, pas encore créée) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie ; 39/39 tests automation ✅ |
+| Prochaine étape | 2d Symboles (19 glyphes Alpha 13 redessinés en SVG, nombre de symboles de base à fixer) |
+| Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
 
@@ -119,6 +119,61 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD + LOCAL → jalon 2c Typographie
+
+- **Branche** : `cpp/phase-2c-typo` (partie de `C++` @ `411c7d7`), fusionnée dans `C++`.
+- **Police par défaut LT Flode Neue** : les 24 faces (12 graisses + italiques) ont été **extraites des `.uasset`
+  `UFontFace` de la branche `Blueprint`** (lecture seule, `git show`) vers `Resources/Fonts/LTFlodeNeue/*.otf`, sans
+  copier les assets (leurs chemins de package auraient cassé). Police composite Slate construite au démarrage, police
+  du moteur en repli pour les caractères absents. Embarquée au packaging (`RuntimeDependencies`, UFS).
+  ⚠️ **Licence** : « Copyright (c) 2025 by LyonsType. All rights reserved. » — police commerciale, à vérifier avant
+  toute diffusion publique du plugin.
+- **Codé** :
+  - `Typography/VekaFont.h` : `EVekaFontWeight` (12 graisses), `UVekaFontFamily` (asset : faces par graisse,
+    upright + italique, graisse la plus proche si absente), `Veka::Typography::MakeFont`.
+  - `Typography/VekaTypography.h` : 11 **styles sémantiques** (LargeTitle → Caption2), surchargeables par thème
+    (`UVekaTheme::TextStyles`, `UVekaTheme::FontFamily`) ; **tracking optique** selon la taille ; échelle de texte
+    globale (accessibilité). La typographie est une valeur d'**environnement** posée champ par champ par les modifiers :
+    `.Font(style)`, `.FontWeight`, `.Italic`, `.FontSize`, `.FontFamily`, `.Tracking`, `.LineSpacing`, `.TextCase`,
+    `.MonospacedDigit`, `.LineLimit`, `.Truncation(Head | Middle | Tail)`, `.MultilineAlignment`,
+    `.MinimumScaleFactor`, `.ContentTransition`, `.TextEffect`, `.TextScale`. `.Font(FSlateFontInfo)` (Phase 1)
+    fonctionne toujours. Tout s'anime avec Anima (taille, échelle, tracking…).
+  - `FVekaText` réécrit : troncature tête / milieu / fin (la tête montre la fin du texte), réduction avant troncature,
+    chiffres à chasse fixe, **texte en dégradé** (couleur par glyphe, `.Foreground(paint)`), `contentTransition`
+    `Opacity` (fondu) et **`NumericText`** (chiffres qui roulent vers le haut ou le bas selon le sens du nombre),
+    **effets par glyphe** Appear / Typewriter / Wave (`Veka::TextEffects`, repaint continu seulement pendant l'effet).
+    Les propriétés de mise en page de `FVekaText` (LineLimit, Alignment, Truncation, LineSpacing) passent dans
+    l'environnement.
+  - `Fonts::Regular / Bold / LargeTitle / Title / Headline / Body / Caption` utilisent maintenant LT Flode Neue : tout
+    le Playground est en LT Flode.
+- **Spike texte vectoriel** (`VekaImport` + FreeType, `Docs/Spikes/2c-vector-text.md`) : `LoadGlyphOutline` lit les
+  contours en `FVekaPath`. **95 %** des contours (352/372) ont la même structure que la Regular, 97 % des paires de
+  graisses voisines sont compatibles → l'interpolation continue de graisse est faisable (fondu entre faces voisines
+  pour les quelques glyphes incompatibles).
+- **Bugs de layout trouvés et corrigés en route** (ils touchaient aussi 2b) :
+  1. Un `Text` mesuré avec une largeur de 0 ne se coupait pas → tous les textes paraissaient rigides et les piles
+     comprimaient les plus longs (« +137 » coupé dans son bouton). Test `VekaUI.Layout.TextInStacks`.
+  2. Au placement, une pile redistribuait l'espace à partir de sa taille finale au lieu de la proposition utilisée à
+     la mesure → parts différentes. Elle réutilise maintenant la proposition mesurée (`FVekaNode::FindContentProposal`).
+  3. Une valeur animée qui change l'environnement (échelle du texte) n'effaçait pas les caches de mesure des enfants.
+     Test `VekaUI.Typography.AnimatedTextScale` (contre-épreuve : échoue sans le correctif).
+  4. Pendant une transition de layout, un conteneur re-plaçait ses enfants à la taille animée → colonnes voisines
+     comprimées, texte re-coupé (c'était aussi le libellé « Show » coupé en 2b). Le fond suit la taille animée, le
+     contenu garde la mise en page finale. Test `VekaUI.Anima.LayoutKeepsFinalContent`.
+- **Tests** : 39/39 ✅ — nouveaux : `VekaUI.Typography.{Fonts, Resolve, Truncation, Effects, GlyphRendering,
+  AnimatedTextScale}`, `VekaUI.Layout.TextInStacks`, `VekaUI.Anima.LayoutKeepsFinalContent`, `VekaUI.Spike.VectorText`.
+- **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL`, 0 warning, les 24 polices sont dans le paquet.
+- **Vérif visuelle** (`Docs/Sync/Screens/phase2c-typography.png`) : échelle des styles, 12 graisses + italiques,
+  tracking / majuscules, texte en dégradé, troncatures, réduction, compteur roulant (1 280 → 1 417), Appear,
+  Typewriter, Wave, échelle de texte A- / A+ sans casser la rangée.
+- **Limites connues** :
+  - Le séparateur de milliers français (U+202F) n'existe ni dans LT Flode ni dans Roboto : remplacé à l'affichage par
+    une espace insécable.
+  - Le chemin vectoriel (rendu des glyphes en `FVekaPath`, interpolation de graisse) n'est pas encore branché au
+    rendu : prévu avec les symboles (2d).
+  - `OpenType features` (ligatures discrétionnaires, `tnum`) non accessibles via Slate : `MonospacedDigit` est fait à la
+    main, glyphe par glyphe.
 
 ### 2026-11-20 — CLOUD + LOCAL → jalon 2b Anima
 

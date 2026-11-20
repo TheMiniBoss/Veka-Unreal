@@ -31,6 +31,8 @@
 #include "Layout/VekaStack.h"
 #include "Layout/VekaGrid.h"
 #include "Layout/VekaScrollView.h"
+#include "Typography/VekaFont.h"
+#include "Typography/VekaTypography.h"
 #include "Primitives/VekaText.h"
 #include "Primitives/VekaImage.h"
 #include "Primitives/VekaShapeView.h"
