@@ -17,6 +17,8 @@ public class VekaUI : ModuleRules
 			"Slate",
 			"SlateCore",
 			"UMG",
+			// MediaView (2e).
+			"MediaAssets",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

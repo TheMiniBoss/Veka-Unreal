@@ -6,6 +6,7 @@
 #include "Widgets/SPanel.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Layout/Children.h"
+#include "Core/VekaModifier.h"
 
 class FVekaNode;
 
@@ -39,6 +40,11 @@ public:
 	virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
+	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual bool SupportsKeyboardFocus() const override;
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual FReply OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent) override;
+	virtual void OnFocusLost(const FFocusEvent& InFocusEvent) override;
 
 private:
 	struct FPaintPass
@@ -55,6 +61,10 @@ private:
 	int32 PaintLevel(const FPaintPass& Pass, FVekaNode& Node, int32 Level, int32 LayerId, const FWidgetStyle& Style) const;
 	int32 PaintContent(const FPaintPass& Pass, FVekaNode& Node, int32 LayerId, const FWidgetStyle& Style) const;
 	void SetPressed(bool bInPressed);
+	void SetFocusVisible(bool bVisible);
+	bool IsInputEnabled(const FVekaNode& InNode) const;
+	void SendDrag(FVekaNode& InNode, const FGeometry& MyGeometry, const FVector2D& Local, EVekaDragPhase Phase);
+	void SendTap(FVekaNode& InNode, const FGeometry& MyGeometry);
 
 	/** Keeps repainting while the primitive animates on its own (text effects, content transitions). */
 	void EnsureAnimationFrames() const;
@@ -65,4 +75,9 @@ private:
 	mutable TWeakPtr<FActiveTimerHandle> AnimationFrameTimer;
 	bool bPressed = false;
 	bool bHovered = false;
+	bool bFocusVisible = false;
+	bool bDragMoved = false;
+	FVector2D DragStart = FVector2D::ZeroVector;
+	/** Native widget of the primitive (text input...), last in Children. */
+	TSharedPtr<SWidget> NativeWidget;
 };

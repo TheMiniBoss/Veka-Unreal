@@ -12,6 +12,7 @@
 #include "Modifiers/VekaAnimaModifiers.h"
 #include "Primitives/VekaShapeView.h"
 #include "Symbols/VekaSymbolView.h"
+#include "Controls/VekaControls.h"
 #include "Vector/VekaStroke.h"
 #include "VekaUILog.h"
 
@@ -543,4 +544,125 @@ FVekaElement FVekaElement::SymbolBadge(int32 Count) &&
 		Symbol->Badge = Count;
 	}
 	return MoveTemp(*this);
+}
+
+// --- Interaction (2e) ------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::OnSecondaryTap(TFunction<void(const FVector2D&)> Action) &&
+{
+	FVekaOnSecondaryTapModifier Modifier;
+	Modifier.Action = MoveTemp(Action);
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::OnDrag(TFunction<void(const FVekaDragValue&)> Action) &&
+{
+	FVekaOnDragModifier Modifier;
+	Modifier.Action = MoveTemp(Action);
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::Focusable(TFunction<bool(const FKeyEvent&)> OnKey, TFunction<void(bool)> OnFocus) &&
+{
+	FVekaFocusableModifier Modifier;
+	Modifier.OnKey = MoveTemp(OnKey);
+	Modifier.OnFocus = MoveTemp(OnFocus);
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::Disabled(bool bDisabled) &&
+{
+	FVekaDisabledModifier Modifier;
+	Modifier.bDisabled = bDisabled;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+// --- Controls --------------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::ControlStyleField(EVekaControlStyleField Field, const FVekaControlStyle& Value) &&
+{
+	FVekaControlStyleModifier Modifier;
+	Modifier.Field = Field;
+	Modifier.Value = Value;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::ButtonStyle(EVekaButtonStyleKind Kind) &&
+{
+	return MoveTemp(*this).ButtonStyleStruct(Veka::Controls::MakeButtonStyle(Kind));
+}
+
+FVekaElement FVekaElement::ButtonStyleStruct(const FInstancedStruct& Style) &&
+{
+	FVekaControlStyle V;
+	V.ButtonStyle = Style;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::ButtonStyle, V);
+}
+
+FVekaElement FVekaElement::ToggleStyle(EVekaToggleStyleKind Kind) &&
+{
+	return MoveTemp(*this).ToggleStyleStruct(Veka::Controls::MakeToggleStyle(Kind));
+}
+
+FVekaElement FVekaElement::ToggleStyleStruct(const FInstancedStruct& Style) &&
+{
+	FVekaControlStyle V;
+	V.ToggleStyle = Style;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::ToggleStyle, V);
+}
+
+FVekaElement FVekaElement::ControlSize(EVekaControlSize Size) &&
+{
+	FVekaControlStyle V;
+	V.ControlSize = Size;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::ControlSize, V);
+}
+
+FVekaElement FVekaElement::PickerStyle(EVekaPickerStyle Style, EVekaAxis RadioAxis) &&
+{
+	FVekaControlStyle V;
+	V.PickerStyle = Style;
+	V.RadioAxis = RadioAxis;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::PickerStyle, V);
+}
+
+FVekaElement FVekaElement::TextFieldStyle(EVekaTextFieldStyle Style) &&
+{
+	FVekaControlStyle V;
+	V.TextFieldStyle = Style;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::TextFieldStyle, V);
+}
+
+FVekaElement FVekaElement::GaugeStyle(EVekaGaugeStyle Style) &&
+{
+	FVekaControlStyle V;
+	V.GaugeStyle = Style;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::GaugeStyle, V);
+}
+
+FVekaElement FVekaElement::ProgressViewStyle(EVekaProgressStyle Style) &&
+{
+	FVekaControlStyle V;
+	V.ProgressStyle = Style;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::ProgressStyle, V);
+}
+
+FVekaElement FVekaElement::LabelStyle(EVekaLabelStyle Style) &&
+{
+	FVekaControlStyle V;
+	V.LabelStyle = Style;
+	return MoveTemp(*this).ControlStyleField(EVekaControlStyleField::LabelStyle, V);
+}
+
+FVekaElement FVekaElement::ContextMenu(const TArray<FVekaMenuItem>& Items) &&
+{
+	return MoveTemp(*this).OnSecondaryTap([Items](const FVector2D&)
+	{
+		Veka::Popup::Present(Veka::MenuContent(Items), EVekaPopupPlacement::AtCursor);
+	});
 }

@@ -25,6 +25,17 @@ enum class EVekaSymbolStyleField : uint8;
 enum class EVekaSymbolRenderingMode : uint8;
 enum class EVekaSymbolScale : uint8;
 enum class EVekaSymbolReplace : uint8;
+struct FVekaControlStyle;
+struct FVekaMenuItem;
+enum class EVekaControlStyleField : uint8;
+enum class EVekaButtonStyleKind : uint8;
+enum class EVekaToggleStyleKind : uint8;
+enum class EVekaControlSize : uint8;
+enum class EVekaPickerStyle : uint8;
+enum class EVekaTextFieldStyle : uint8;
+enum class EVekaGaugeStyle : uint8;
+enum class EVekaProgressStyle : uint8;
+enum class EVekaLabelStyle : uint8;
 
 enum class EVekaElementKind : uint8
 {
@@ -296,6 +307,47 @@ public:
 	FVekaElement SymbolBadge(int32 Count) const& { return FVekaElement(*this).SymbolBadge(Count); }
 	FVekaElement SymbolBadge(int32 Count) &&;
 
+	// --- Controls --------------------------------------------------------------------------------
+
+	FVekaElement ControlStyleField(EVekaControlStyleField Field, const FVekaControlStyle& Value) const& { return FVekaElement(*this).ControlStyleField(Field, Value); }
+	FVekaElement ControlStyleField(EVekaControlStyleField Field, const FVekaControlStyle& Value) &&;
+	/** Plain, borderless, bordered (default) or bordered prominent buttons in the subtree. */
+	FVekaElement ButtonStyle(EVekaButtonStyleKind Kind) const& { return FVekaElement(*this).ButtonStyle(Kind); }
+	FVekaElement ButtonStyle(EVekaButtonStyleKind Kind) &&;
+	/** Custom button style: a USTRUCT derived from FVekaButtonStyle. */
+	template <typename TStyle>
+	FVekaElement ButtonStyle(const TStyle& Style) const& { return FVekaElement(*this).ButtonStyleStruct(FInstancedStruct::Make(Style)); }
+	template <typename TStyle>
+	FVekaElement ButtonStyle(const TStyle& Style) && { return MoveTemp(*this).ButtonStyleStruct(FInstancedStruct::Make(Style)); }
+	FVekaElement ButtonStyleStruct(const FInstancedStruct& Style) const& { return FVekaElement(*this).ButtonStyleStruct(Style); }
+	FVekaElement ButtonStyleStruct(const FInstancedStruct& Style) &&;
+	/** Switch (default), checkbox or button toggles in the subtree. */
+	FVekaElement ToggleStyle(EVekaToggleStyleKind Kind) const& { return FVekaElement(*this).ToggleStyle(Kind); }
+	FVekaElement ToggleStyle(EVekaToggleStyleKind Kind) &&;
+	template <typename TStyle>
+	FVekaElement ToggleStyle(const TStyle& Style) const& { return FVekaElement(*this).ToggleStyleStruct(FInstancedStruct::Make(Style)); }
+	template <typename TStyle>
+	FVekaElement ToggleStyle(const TStyle& Style) && { return MoveTemp(*this).ToggleStyleStruct(FInstancedStruct::Make(Style)); }
+	FVekaElement ToggleStyleStruct(const FInstancedStruct& Style) const& { return FVekaElement(*this).ToggleStyleStruct(Style); }
+	FVekaElement ToggleStyleStruct(const FInstancedStruct& Style) &&;
+	FVekaElement ControlSize(EVekaControlSize Size) const& { return FVekaElement(*this).ControlSize(Size); }
+	FVekaElement ControlSize(EVekaControlSize Size) &&;
+	/** Menu (default), segmented, palette or radio pickers; RadioAxis lays radio options out in a column or a row. */
+	FVekaElement PickerStyle(EVekaPickerStyle Style, EVekaAxis RadioAxis = EVekaAxis::Vertical) const& { return FVekaElement(*this).PickerStyle(Style, RadioAxis); }
+	FVekaElement PickerStyle(EVekaPickerStyle Style, EVekaAxis RadioAxis = EVekaAxis::Vertical) &&;
+	FVekaElement TextFieldStyle(EVekaTextFieldStyle Style) const& { return FVekaElement(*this).TextFieldStyle(Style); }
+	FVekaElement TextFieldStyle(EVekaTextFieldStyle Style) &&;
+	FVekaElement GaugeStyle(EVekaGaugeStyle Style) const& { return FVekaElement(*this).GaugeStyle(Style); }
+	FVekaElement GaugeStyle(EVekaGaugeStyle Style) &&;
+	FVekaElement ProgressViewStyle(EVekaProgressStyle Style) const& { return FVekaElement(*this).ProgressViewStyle(Style); }
+	FVekaElement ProgressViewStyle(EVekaProgressStyle Style) &&;
+	/** Labels show their title and icon, the title only or the icon only. */
+	FVekaElement LabelStyle(EVekaLabelStyle Style) const& { return FVekaElement(*this).LabelStyle(Style); }
+	FVekaElement LabelStyle(EVekaLabelStyle Style) &&;
+	/** Right click opens a menu with these items. */
+	FVekaElement ContextMenu(const TArray<FVekaMenuItem>& Items) const& { return FVekaElement(*this).ContextMenu(Items); }
+	FVekaElement ContextMenu(const TArray<FVekaMenuItem>& Items) &&;
+
 	// --- Interaction -----------------------------------------------------------------------------
 
 	FVekaElement OnTap(TFunction<void()> Action) const& { return FVekaElement(*this).OnTap(MoveTemp(Action)); }
@@ -304,6 +356,19 @@ public:
 	FVekaElement OnHover(TFunction<void(bool)> Action) &&;
 	FVekaElement OnPress(TFunction<void(bool)> Action) const& { return FVekaElement(*this).OnPress(MoveTemp(Action)); }
 	FVekaElement OnPress(TFunction<void(bool)> Action) &&;
+
+	/** Right click (screen position). Used by ContextMenu. */
+	FVekaElement OnSecondaryTap(TFunction<void(const FVector2D&)> Action) const& { return FVekaElement(*this).OnSecondaryTap(MoveTemp(Action)); }
+	FVekaElement OnSecondaryTap(TFunction<void(const FVector2D&)> Action) &&;
+	/** Drag with the left button: Began at the press, Changed while moving, Ended at the release. */
+	FVekaElement OnDrag(TFunction<void(const FVekaDragValue&)> Action) const& { return FVekaElement(*this).OnDrag(MoveTemp(Action)); }
+	FVekaElement OnDrag(TFunction<void(const FVekaDragValue&)> Action) &&;
+	/** Takes keyboard focus (Tab, click); OnKey returns true when it handled the key; OnFocus(true) when focused from the keyboard. */
+	FVekaElement Focusable(TFunction<bool(const FKeyEvent&)> OnKey = nullptr, TFunction<void(bool)> OnFocus = nullptr) const& { return FVekaElement(*this).Focusable(MoveTemp(OnKey), MoveTemp(OnFocus)); }
+	FVekaElement Focusable(TFunction<bool(const FKeyEvent&)> OnKey = nullptr, TFunction<void(bool)> OnFocus = nullptr) &&;
+	/** Disables the controls of the subtree. */
+	FVekaElement Disabled(bool bDisabled = true) const& { return FVekaElement(*this).Disabled(bDisabled); }
+	FVekaElement Disabled(bool bDisabled = true) &&;
 
 private:
 	void MakeUnique();

@@ -8,6 +8,7 @@
 #include "Anima/VekaImplicit.h"
 #include "Anima/VekaTimeline.h"
 #include "Symbols/VekaSymbolView.h"
+#include "Controls/VekaControls.h"
 
 namespace VekaPlaygroundPrivate
 {
@@ -662,6 +663,191 @@ namespace VekaPlaygroundPrivate
 		);
 	}
 
+	// --- Controls ----------------------------------------------------------------------------------------------------
+
+	FVekaElement Column(const TCHAR* Title, FVekaElement Content)
+	{
+		using namespace Veka;
+		return VStack(10, EVekaHAlign::Leading)(
+			Text(Title).Font(EVekaTextStyle::Caption1).FontWeight(EVekaFontWeight::SemiBold).Foreground(Muted),
+			MoveTemp(Content)
+		);
+	}
+
+	class FControlsView : public FVekaView
+	{
+		VEKA_VIEW(FControlsView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<int32> Clicks = Ctx.State<int32>(TEXT("Clicks"), 0);
+			const TVekaState<bool> WiFi = Ctx.State<bool>(TEXT("WiFi"), true);
+			const TVekaState<bool> Bluetooth = Ctx.State<bool>(TEXT("Bluetooth"), false);
+			const TVekaState<bool> Bold = Ctx.State<bool>(TEXT("Bold"), true);
+			const TVekaState<bool> Disabled = Ctx.State<bool>(TEXT("Disabled"), false);
+			const TVekaState<float> Volume = Ctx.State<float>(TEXT("Volume"), 0.6f);
+			const TVekaState<float> Rating = Ctx.State<float>(TEXT("Rating"), 0.5f);
+			const TVekaState<float> Count = Ctx.State<float>(TEXT("Count"), 3.f);
+			const TVekaState<int32> View = Ctx.State<int32>(TEXT("View"), 1);
+			const TVekaState<int32> Size = Ctx.State<int32>(TEXT("Size"), 0);
+			const TVekaState<int32> Align = Ctx.State<int32>(TEXT("Align"), 0);
+			const TVekaState<int32> Swatch = Ctx.State<int32>(TEXT("Swatch"), 2);
+			const TVekaState<int32> Sort = Ctx.State<int32>(TEXT("Sort"), 0);
+			const TVekaState<FKey> Jump = Ctx.State<FKey>(TEXT("Jump"), EKeys::SpaceBar);
+			const TVekaState<FString> Name = Ctx.State<FString>(TEXT("Name"), FString());
+			const TVekaState<FString> Password = Ctx.State<FString>(TEXT("Password"), FString());
+			const TVekaState<double> Price = Ctx.State<double>(TEXT("Price"), 1499.9);
+			const TVekaState<double> Share = Ctx.State<double>(TEXT("Share"), 0.35);
+			const TVekaState<FLinearColor> Color = Ctx.State<FLinearColor>(TEXT("Color"), FLinearColor(FColor(255, 94, 87)));
+			const TVekaState<FString> LastAction = Ctx.State<FString>(TEXT("LastAction"), FString(TEXT("none")));
+
+			auto Log = [LastAction](const TCHAR* Action) { return [LastAction, Value = FString(Action)]() { LastAction.Set(Value); }; };
+
+			const FVekaElement Buttons = Column(TEXT("BUTTONS"), VStack(10, EVekaHAlign::Leading)(
+				HStack(10)(
+					Veka::Button(INVTEXT("Plain"), [Clicks]() { Clicks.Set(Clicks.Get() + 1); }).ButtonStyle(EVekaButtonStyleKind::Plain),
+					Veka::Button(INVTEXT("Borderless"), [Clicks]() { Clicks.Set(Clicks.Get() + 1); }).ButtonStyle(EVekaButtonStyleKind::Borderless),
+					Veka::Button(INVTEXT("Bordered"), [Clicks]() { Clicks.Set(Clicks.Get() + 1); }),
+					Veka::Button(INVTEXT("Prominent"), TEXT("paperplane"), [Clicks]() { Clicks.Set(Clicks.Get() + 1); }).ButtonStyle(EVekaButtonStyleKind::BorderedProminent)
+				),
+				HStack(10)(
+					Veka::Button(INVTEXT("Delete"), TEXT("trash"), [Clicks]() { Clicks.Set(0); }, EVekaButtonRole::Destructive),
+					Veka::Button(INVTEXT("Delete"), [Clicks]() { Clicks.Set(0); }, EVekaButtonRole::Destructive).ButtonStyle(EVekaButtonStyleKind::BorderedProminent),
+					Veka::Button(INVTEXT("Disabled"), []() {}).Disabled(),
+					Text(FText::Format(INVTEXT("{0} clicks"), FText::AsNumber(Clicks.Get()))).Foreground(Muted).MonospacedDigit()
+				),
+				HStack(8, EVekaVAlign::Center)(
+					Veka::Button(INVTEXT("Mini"), []() {}).ControlSize(EVekaControlSize::Mini),
+					Veka::Button(INVTEXT("Small"), []() {}).ControlSize(EVekaControlSize::Small),
+					Veka::Button(INVTEXT("Regular"), []() {}),
+					Veka::Button(INVTEXT("Large"), []() {}).ControlSize(EVekaControlSize::Large)
+				).ButtonStyle(EVekaButtonStyleKind::BorderedProminent),
+				HStack(10)(Text(TEXT("Jump key")), KeyBindButton(Jump))
+			));
+
+			const FVekaElement Toggles = Column(TEXT("TOGGLES"), VStack(10, EVekaHAlign::Leading)(
+				Toggle(Label(INVTEXT("Wi-Fi"), TEXT("wifi")), WiFi).Frame(240, -1),
+				Toggle(Label(INVTEXT("Bluetooth"), TEXT("bluetooth")), Bluetooth).Frame(240, -1),
+				Toggle(INVTEXT("Checkbox"), Bold).ToggleStyle(EVekaToggleStyleKind::Checkbox),
+				HStack(8)(
+					Toggle(Symbol(TEXT("textformat.size")).Frame(16, 16), Bold).ToggleStyle(EVekaToggleStyleKind::Button),
+					Toggle(INVTEXT("Disable all"), Disabled).ToggleStyle(EVekaToggleStyleKind::Button)
+				)
+			));
+
+			const FVekaElement Values = Column(TEXT("SLIDERS, STEPPER, GAUGES, PROGRESS"), VStack(10, EVekaHAlign::Leading)(
+				HStack(10)(Symbol(TEXT("speaker")), Slider(Volume).Frame(200, -1), Symbol(TEXT("speaker.wave.3"), Volume.Get()),
+					Text(FText::AsPercent(Volume.Get())).MonospacedDigit().Foreground(Muted).Frame(44, 18, FVekaAlignment::Trailing())),
+				HStack(10)(Text(TEXT("Steps of 0.25")).Foreground(Muted), Slider(Rating, 0.f, 1.f, 0.25f).Frame(160, -1)),
+				Stepper(INVTEXT("Players"), Count, 1.f, 8.f).Frame(300, -1),
+				HStack(22, EVekaVAlign::Top)(
+					Gauge(Volume.Get(), 0.f, 1.f, INVTEXT("Linear"), FText::GetEmpty(), INVTEXT("0"), INVTEXT("100")).Frame(120, -1),
+					Gauge(Volume.Get(), 0.f, 1.f, INVTEXT("Linear alt."), FText::GetEmpty(), INVTEXT("0"), INVTEXT("100")).GaugeStyle(EVekaGaugeStyle::LinearAlt).Frame(120, -1),
+					Gauge(Volume.Get(), 0.f, 1.f, INVTEXT("Circular")).GaugeStyle(EVekaGaugeStyle::Circular),
+					Gauge(Volume.Get(), 0.f, 1.f, INVTEXT("Circular alt."), FText::AsNumber(FMath::RoundToInt32(Volume.Get() * 100.f)), INVTEXT("0"), INVTEXT("100"))
+						.GaugeStyle(EVekaGaugeStyle::CircularAlt)
+				),
+				HStack(22)(
+					ProgressView(Volume.Get(), INVTEXT("Downloading")).Frame(140, -1),
+					ProgressView(-1.f, INVTEXT("Waiting")).Frame(140, -1),
+					ProgressView(Volume.Get()).ProgressViewStyle(EVekaProgressStyle::Circular),
+					ProgressView().ProgressViewStyle(EVekaProgressStyle::Circular),
+					ProgressView(-1.f, INVTEXT("Lazy")).ProgressViewStyle(EVekaProgressStyle::Lazy)
+				)
+			));
+
+			const TArray<FVekaPickerOption> Views = { FVekaPickerOption(INVTEXT("List"), TEXT("list.bullet")), FVekaPickerOption(INVTEXT("Grid"), TEXT("square.grid.2x2")),
+				FVekaPickerOption(INVTEXT("Gallery"), TEXT("photo")) };
+			const TArray<FVekaPickerOption> Sizes = { FVekaPickerOption(INVTEXT("Small")), FVekaPickerOption(INVTEXT("Medium")), FVekaPickerOption(INVTEXT("Large")) };
+			const TArray<FVekaPickerOption> Aligns = { FVekaPickerOption(FText::GetEmpty(), TEXT("text.alignleft")), FVekaPickerOption(FText::GetEmpty(), TEXT("text.aligncenter")),
+				FVekaPickerOption(FText::GetEmpty(), TEXT("text.alignright")) };
+			const TArray<FVekaPickerOption> Swatches = { FVekaPickerOption::Swatch(Hex(TEXT("#FF5E57FF"))), FVekaPickerOption::Swatch(Hex(TEXT("#FFA84CFF"))),
+				FVekaPickerOption::Swatch(Hex(TEXT("#5CD65CFF"))), FVekaPickerOption::Swatch(Hex(TEXT("#4C7DFFFF"))), FVekaPickerOption::Swatch(Hex(TEXT("#8E5CFFFF"))) };
+
+			const TArray<FVekaMenuItem> FileMenu = {
+				FVekaMenuItem::Button(INVTEXT("New"), Log(TEXT("New")), TEXT("doc"), INVTEXT("Ctrl+N")),
+				FVekaMenuItem::Button(INVTEXT("Open..."), Log(TEXT("Open")), TEXT("folder"), INVTEXT("Ctrl+O")),
+				FVekaMenuItem::SubMenu(INVTEXT("Share"), {
+					FVekaMenuItem::Button(INVTEXT("Mail"), Log(TEXT("Mail")), TEXT("envelope")),
+					FVekaMenuItem::Button(INVTEXT("Messages"), Log(TEXT("Messages")), TEXT("bubble")) }, TEXT("square.and.arrow.up")),
+				FVekaMenuItem::Divider(),
+				FVekaMenuItem::Picker(INVTEXT("Sort by"), Sort, { FVekaPickerOption(INVTEXT("Name")), FVekaPickerOption(INVTEXT("Date")), FVekaPickerOption(INVTEXT("Size")) }),
+				FVekaMenuItem::Divider(),
+				FVekaMenuItem::Button(INVTEXT("Archive"), Log(TEXT("Archive")), TEXT("archivebox")).Enabled(false),
+				FVekaMenuItem::Button(INVTEXT("Delete"), Log(TEXT("Delete")), TEXT("trash")).Destructive() };
+
+			const FVekaElement Choices = Column(TEXT("PICKERS, MENUS"), VStack(12, EVekaHAlign::Leading)(
+				Picker(INVTEXT("View"), View, Views).PickerStyle(EVekaPickerStyle::Segmented).Frame(400, -1),
+				HStack(30, EVekaVAlign::Top)(
+					Picker(INVTEXT("Size"), Size, Sizes).PickerStyle(EVekaPickerStyle::Radio),
+					VStack(10, EVekaHAlign::Leading)(
+						Picker(FText::GetEmpty(), Align, Aligns, true).PickerStyle(EVekaPickerStyle::Radio, EVekaAxis::Horizontal),
+						Picker(FText::GetEmpty(), Swatch, Swatches).PickerStyle(EVekaPickerStyle::Palette),
+						Picker(INVTEXT("Size"), Size, Sizes).Frame(200, -1)
+					)
+				),
+				HStack(12)(
+					Menu(INVTEXT("File"), FileMenu),
+					Text(INVTEXT("Right-click me")).Padding(FMargin(14, 8)).Background(FLinearColor(1, 1, 1, 0.06f), 8).ContextMenu(FileMenu),
+					Text(FText::Format(INVTEXT("Last: {0}"), FText::FromString(LastAction.Get()))).Foreground(Muted)
+				)
+			));
+
+			const FVekaElement Fields = Column(TEXT("TEXT FIELDS"), VStack(8, EVekaHAlign::Leading)(
+				HStack(8)(
+					TextField(INVTEXT("Plain"), Name).TextFieldStyle(EVekaTextFieldStyle::Plain).Frame(120, -1),
+					TextField(INVTEXT("Rectangle"), Name).TextFieldStyle(EVekaTextFieldStyle::Rectangle).Frame(120, -1),
+					TextField(INVTEXT("Rounded"), Name).Frame(120, -1),
+					TextField(INVTEXT("Capsule"), Name).TextFieldStyle(EVekaTextFieldStyle::Capsule).Frame(120, -1)
+				),
+				HStack(8)(
+					SecureField(INVTEXT("Password"), Password).Frame(150, -1),
+					NumberField(INVTEXT("Price"), Price, EVekaTextFieldType::Currency).Frame(120, -1),
+					NumberField(INVTEXT("Share"), Share, EVekaTextFieldType::Percent).Frame(90, -1),
+					Text(Name.Get().IsEmpty() ? INVTEXT("Type a name") : FText::Format(INVTEXT("Hello {0}"), FText::FromString(Name.Get()))).Foreground(Muted)
+				)
+			));
+
+			const FVekaElement Colors = Column(TEXT("COLOR"), HStack(24, EVekaVAlign::Top)(
+				VStack(10, EVekaHAlign::Leading)(
+					ColorPicker(INVTEXT("Accent"), Color).Frame(200, -1),
+					RoundedRectangle(12).Fill(Color.Get()).Frame(200, 60)
+				),
+				ColorPanel(Color, EVekaColorPickerMode::HSV),
+				ColorPanel(Color, EVekaColorPickerMode::OkLCH, false, EVekaColorChannelRange::Unit)
+			));
+
+			const FVekaElement Misc = Column(TEXT("LABELS, DIVIDER, EMPTY STATE, MEDIA"), HStack(24, EVekaVAlign::Top)(
+				VStack(8, EVekaHAlign::Leading)(
+					Label(INVTEXT("Title and icon"), TEXT("star")),
+					Label(INVTEXT("Title only"), TEXT("star")).LabelStyle(EVekaLabelStyle::Title),
+					HStack(8)(Label(INVTEXT("Icon"), TEXT("star")).LabelStyle(EVekaLabelStyle::Icon), Divider().Frame(1, 16), Text(TEXT("icon only")).Foreground(Muted)),
+					Divider().Frame(180, 1)
+				),
+				ContentUnavailable(TEXT("magnifyingglass"), INVTEXT("No results"), INVTEXT("Try another search."), Veka::Button(INVTEXT("Clear search"), []() {}))
+					.Background(FLinearColor(1, 1, 1, 0.04f), 12),
+				MediaView(nullptr, nullptr).Frame(220, 150)
+			));
+
+			// "Disable all" disables every control but its own toggle column.
+			const bool bOff = Disabled.Get();
+			return VStack(22, EVekaHAlign::Leading)(
+				HStack(40, EVekaVAlign::Top)(Buttons.Disabled(bOff), Toggles),
+				Values.Disabled(bOff),
+				HStack(40, EVekaVAlign::Top)(Choices.Disabled(bOff), Fields.Disabled(bOff)),
+				Colors.Disabled(bOff),
+				Misc
+			);
+		}
+	};
+
+	FVekaElement ControlsSection()
+	{
+		return Veka::View<FControlsView>();
+	}
+
 	FVekaElement AnimaSection()
 	{
 		using namespace Veka;
@@ -769,10 +955,12 @@ namespace Veka::Samples
 
 		return ScrollView(EVekaAxis::Vertical)(
 			VStack(16, EVekaHAlign::Leading)(
-				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography + Symbols)")).Font(Fonts::LargeTitle()),
+				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography + Symbols + Controls)")).Font(Fonts::LargeTitle()),
 				Text(INVTEXT("Declarative Slate-first views: one Stack for H/V/Z, modifiers, state, springs, vector shapes and strokes. "
 					"This paragraph wraps to the available width."))
 					.Foreground(Muted),
+
+				Section(INVTEXT("Controls: buttons, toggles, sliders, stepper, pickers, menus, text fields, color, gauges, progress (Tab / arrows / Enter work)"), ControlsSection()),
 
 				Section(INVTEXT("Symbols: library, weights, scales, variants, rendering modes, variable value, effects, replace"), SymbolsSection()),
 

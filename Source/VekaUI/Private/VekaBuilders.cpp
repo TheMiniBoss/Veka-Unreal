@@ -41,10 +41,7 @@ namespace Veka
 		return FVekaElement::Make(Primitive);
 	}
 
-	FVekaElement Label(const FText& Title, FName SymbolName)
-	{
-		return HStack(6.f)(Symbol(SymbolName), Text(Title));
-	}
+	// Label: Controls/VekaControls.cpp (follows the label style).
 
 	FVekaElement Shape(const FVekaShape& InShape)
 	{

@@ -110,11 +110,22 @@ FVector2D FVekaNode::MeasureContent(const FVekaProposal& Proposal)
 
 TOptional<FVekaProposal> FVekaNode::FindContentProposal(const FVector2D& Size) const
 {
-	for (int32 Index = ContentMeasureCache.Num() - 1; Index >= 0; --Index)
+	// Several proposals can give the same size (a one-word label measures the same at 0 and at infinity).
+	// Replaying a degenerate one (0) would squeeze the children: prefer a proposal that contains the size.
+	auto Contains = [&Size](const FVekaProposal& Proposal)
 	{
-		if (ContentMeasureCache[Index].Value.Equals(Size, 0.5))
+		return (!Proposal.Width.IsSet() || Proposal.Width.GetValue() >= Size.X - 0.5)
+			&& (!Proposal.Height.IsSet() || Proposal.Height.GetValue() >= Size.Y - 0.5);
+	};
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		for (int32 Index = ContentMeasureCache.Num() - 1; Index >= 0; --Index)
 		{
-			return ContentMeasureCache[Index].Key;
+			const TPair<FVekaProposal, FVector2D>& Entry = ContentMeasureCache[Index];
+			if (Entry.Value.Equals(Size, 0.5) && (Pass == 1 || Contains(Entry.Key)))
+			{
+				return Entry.Key;
+			}
 		}
 	}
 	return TOptional<FVekaProposal>();

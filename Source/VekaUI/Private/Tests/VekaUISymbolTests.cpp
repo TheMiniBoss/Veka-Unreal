@@ -221,7 +221,7 @@ bool FVekaSymbolMetricsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Small < medium < large"), Small < Body && Body < Large);
 
 	// Environment style.
-	const FVekaSymbolStyle& Style = VekaEnv::GetSymbolStyle(SymbolEnvOf(Symbol(TEXT("bell"))
+	const FVekaSymbolStyle Style = VekaEnv::GetSymbolStyle(SymbolEnvOf(Symbol(TEXT("bell"))
 		.SymbolRenderingMode(EVekaSymbolRenderingMode::Hierarchical)
 		.SymbolVariant(MakeVariant(true))
 		.SymbolWeight(0.8f)));

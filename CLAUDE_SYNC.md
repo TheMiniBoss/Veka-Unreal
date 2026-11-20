@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles** ✅ fusionnés dans `C++` ; prochain jalon **2e Contrôles + Styles** |
+| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles**, **2e Contrôles** ✅ fusionnés dans `C++` ; prochain jalon **2f Morph** |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles ; 45/45 tests automation ✅ |
-| Prochaine étape | 2e Contrôles + Styles (sur demande de TheMiniBoss) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles + Contrôles ; 50/50 tests automation ✅ |
+| Prochaine étape | 2f Morph (sur demande de TheMiniBoss) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,67 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD + LOCAL → jalon 2e Contrôles + Styles
+
+- **Branche** : `cpp/phase-2e-controls` (partie de `C++` @ `22d6056`), fusionnée dans `C++`.
+- **Parité Alpha 13** : les enums des widgets Blueprint ont été lus (lecture seule, `git show`) et repris tels quels :
+  boutons Plain / Borderless / Bordered / Bordered Prominent (+ KeyBind), toggles Switch / Button / Checkbox (comportements
+  Toggle / Radio Strict / Radio Flexible → `Picker` avec ou sans `bAllowsEmpty`), pickers Menu / Segmented / Palette /
+  Radio (vertical ou horizontal), jauges Linear / Linear Alt / Circular / Circular Alt, progression Linear / Circular /
+  Lazy, champs de texte Plain / Rectangle / Rounded / Capsule × Text / Number / Percent / Currency, sélecteur de couleur
+  RGB / HSV / okLCH / Hue / Luminosity / Saturation / Grayscale / CMYK (affichage 0-1 / 0-255 / %), Label Title and
+  Icon / Title / Icon, menus Button / Divider / Label / Picker / SubMenu, Divider, Media, Unavailable.
+- **Cœur (interaction)** :
+  - Gestes ajoutés : glisser (`.OnDrag`, phases Began / Changed / Ended ; un glisser n'est pas un tap), clic droit
+    (`.OnSecondaryTap`), **focus clavier** (`.Focusable(OnKey, OnFocus)` : Tab / Shift+Tab via la navigation Slate,
+    Entrée / Espace / bouton A activent le tap, anneau de focus seulement au clavier), `.Disabled()` (environnement,
+    aucune entrée, contrôles grisés ; un sous-arbre ne peut pas réactiver ce qu'un parent désactive).
+  - Un primitif peut héberger un **widget Slate natif** (`GetNativeWidget`) : le champ de texte est un `SEditableText`
+    dans un champ dessiné par Veka.
+  - **Popups** : `Veka::Popup::Present(contenu, Below | Right | AtCursor)` ouvre un `SVekaHost` dans un menu Slate ancré
+    au contrôle du geste en cours, avec son environnement ; `DismissAll()`.
+  - `TVekaBinding` (déjà dans `VekaState.h`) se construit maintenant depuis un `TVekaState` : `Toggle(Titre, EtatOn)`.
+- **Styles** (`Controls/VekaControlStyles.h`) : comme SwiftUI, un style de bouton ou de toggle est un USTRUCT avec
+  `MakeBody(configuration)` (isPressed, isHovered, isFocused, isEnabled, role, controlSize / isOn) ; styles maison
+  possibles (`.ButtonStyle(FMonStyle())`). Les autres styles sont des enums d'environnement : `.ControlSize`,
+  `.PickerStyle`, `.TextFieldStyle`, `.GaugeStyle`, `.ProgressViewStyle`, `.LabelStyle`.
+- **Contrôles** (`Controls/VekaControls.h`) : `Button` (rôles Normal / Destructive / Cancel), `KeyBindButton`, `Toggle`,
+  `Slider` (pas, flèches, Origine / Fin), `ColorSlider`, `Stepper`, `Picker`, `Menu`, `MenuContent`, `.ContextMenu`,
+  `TextField`, `SecureField`, `NumberField` (analyse « 1 234,5 », « 1,234.25 », « 25 % » ; mise en forme
+  `1 499,90 €`), `ColorPicker` (pastille → panneau en popup), `ColorPanel`, `Gauge`, `ProgressView` (indéterminé animé),
+  `Divider`, `MediaView` (lecteur + scrubber, module `MediaAssets`), `ContentUnavailable`, `Label` (suit `.LabelStyle`).
+  Primitifs : `FVekaTrack` (piste linéaire ou anneau, remplissage, curseur / repère, segment indéterminé),
+  `FVekaTextInput`, `FVekaDivider`, `FVekaMediaScrubber`.
+- **Bugs de layout trouvés à l'écran et corrigés** (ils touchaient tout le runtime) :
+  1. Au placement, une pile rejouait la proposition mesurée ; pour un libellé d'un mot, 0 et l'infini donnent la même
+     taille, et la proposition dégénérée (0) était choisie → libellé coupé sur deux lignes. `FindContentProposal`
+     préfère maintenant une proposition qui contient la taille.
+  2. Les tailles sont fractionnaires et Slate aligne la géométrie au pixel : un texte recevait sa largeur moins une
+     fraction de pixel et passait à la ligne. Tolérance d'un pixel pour la coupure et la troncature.
+  3. Dans une pile, un `Spacer` recevait sa part comme les autres vues : un libellé à côté d'un Spacer était coupé en
+     deux. Les Spacers passent en dernier et ne réservent que leur longueur minimale.
+  4. `.Frame` à la racine d'un hôte était ignoré (la racine reçoit tout l'hôte). Le placement passe par la proposition
+     intérieure du cadre.
+  Test de régression `VekaUI.Controls.LabelsOnOneLine` avec contre-épreuve (un cadre étroit coupe toujours).
+- **Tests** : 50/50 ✅ — nouveaux : `VekaUI.Controls.{Styles, ColorMath, Interaction, Render, LabelsOnOneLine}`.
+  `Interaction` pilote les vrais widgets : tap, Entrée, Tab non consommé, bouton désactivé (contre-épreuve),
+  toggle, glisser de slider (valeur et pas), flèches / Fin, tap contre glisser, stepper borné, picker segmenté, radio
+  flexible, liaison de touche, champs texte et nombres (dont saisie invalide), clic droit (le clic gauche n'en est pas
+  un), dividers selon la pile. Un test 2d (`Symbols.Metrics`) lisait une référence vers un environnement temporaire :
+  corrigé.
+- **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérif visuelle** (`Docs/Sync/Screens/phase2e-controls*.jpg`), à la souris et au clavier : styles et tailles de
+  boutons, compteur, Tab puis Entrée, switch / checkbox / bouton, glisser du slider (les jauges et le symbole suivent),
+  stepper, pickers, menu File avec sous-menu Share, raccourcis, picker « Sort by », Archive désactivé, Delete rouge,
+  menu contextuel au curseur, saisie dans les 4 styles de champ (liés), prix « 42,5 » → « 42,50 € », panneaux de
+  couleur HSV / okLCH, « Disable all ».
+- **Limites connues** :
+  - Le menu picker et les menus sont des popups Slate : ils ne s'ouvrent pas dans les tests headless (`Present`
+    renvoie false hors geste, testé).
+  - L'ordre de Tab est celui de la navigation Slate (géométrique), pas l'ordre du code.
+  - `MediaView` n'a été vérifié qu'avec son état vide (pas de média dans le projet hôte).
+  - Pas encore de sélection de date / heure ni de champ multiligne (non présents dans Alpha 13).
 
 ### 2026-11-20 — CLOUD + LOCAL → jalon 2d Symboles
 

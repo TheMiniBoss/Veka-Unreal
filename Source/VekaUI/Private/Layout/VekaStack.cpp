@@ -41,13 +41,15 @@ void FVekaStack::ComputeLinearSizes(const FVekaProposal& Proposal, TConstArrayVi
 
 	// SwiftUI distribution: children are served by layout priority (highest first). A priority group may
 	// use everything except the minimum size of the lower-priority children. Inside a group, the least
-	// flexible children go first and each is offered an equal share of what is left.
+	// flexible children go first and each is offered an equal share of what is left. Spacers come last and
+	// only keep back their minimum length: a label next to a Spacer is not cut in half.
 	struct FEntry
 	{
 		int32 Index;
 		double Priority;
 		double MinMain;
 		double Flexibility;
+		bool bSpacer;
 	};
 	TArray<FEntry> Entries;
 	Entries.Reserve(Num);
@@ -55,13 +57,18 @@ void FVekaStack::ComputeLinearSizes(const FVekaProposal& Proposal, TConstArrayVi
 	{
 		const double MinMain = Veka::AxisValue(Children[Index].SizeThatFits(MakeChildProposal(0.0)), Axis);
 		const double MaxMain = Veka::AxisValue(Children[Index].SizeThatFits(MakeChildProposal(Veka::Infinity)), Axis);
-		Entries.Add({ Index, Children[Index].GetLayoutPriority(), MinMain, MaxMain - MinMain });
+		const bool bSpacer = Children[Index].GetNode().GetPrimitiveAs<FVekaSpacer>() != nullptr;
+		Entries.Add({ Index, Children[Index].GetLayoutPriority(), MinMain, MaxMain - MinMain, bSpacer });
 	}
 	Entries.StableSort([](const FEntry& A, const FEntry& B)
 	{
 		if (A.Priority != B.Priority)
 		{
 			return A.Priority > B.Priority;
+		}
+		if (A.bSpacer != B.bSpacer)
+		{
+			return !A.bSpacer;
 		}
 		return A.Flexibility < B.Flexibility;
 	});
@@ -87,7 +94,24 @@ void FVekaStack::ComputeLinearSizes(const FVekaProposal& Proposal, TConstArrayVi
 		for (int32 Position = GroupStart; Position < GroupEnd; ++Position)
 		{
 			const FEntry& Entry = Entries[Position];
-			const double Share = FMath::Max(0.0, GroupAvailable / Left);
+			double Share = FMath::Max(0.0, GroupAvailable / Left);
+			if (!Entry.bSpacer)
+			{
+				int32 OthersLeft = 0;
+				double SpacerMinimum = 0.0;
+				for (int32 Next = Position; Next < GroupEnd; ++Next)
+				{
+					if (Entries[Next].bSpacer)
+					{
+						SpacerMinimum += Entries[Next].MinMain;
+					}
+					else
+					{
+						++OthersLeft;
+					}
+				}
+				Share = FMath::Max(0.0, (GroupAvailable - SpacerMinimum) / FMath::Max(OthersLeft, 1));
+			}
 			const FVector2D Size = Children[Entry.Index].SizeThatFits(MakeChildProposal(Share));
 			OutSizes[Entry.Index] = Size;
 			const double Used = Veka::AxisValue(Size, Axis);
