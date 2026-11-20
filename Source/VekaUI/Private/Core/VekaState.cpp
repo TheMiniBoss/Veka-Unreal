@@ -28,3 +28,21 @@ void FVekaStateBoxBase::AnimateScalar(double From, double To, const FVekaAnimati
 	Runtime.GetScheduler().Animate(Spec, From, To, MoveTemp(Apply), nullptr, this);
 	Runtime.RequestUpdate();
 }
+
+void FVekaStateBoxBase::AnimateProgress(const FVekaAnimationSpec& Spec, TFunction<void(double)> Apply) const
+{
+	TSharedPtr<FVekaNode> Node = Owner.Pin();
+	if (!Node.IsValid())
+	{
+		if (Apply)
+		{
+			Apply(1.0);
+		}
+		return;
+	}
+
+	FVekaRuntime& Runtime = Node->GetRuntime();
+	Runtime.GetScheduler().CancelChannel(this);
+	Runtime.GetScheduler().Animate(Spec, 0.0, 1.0, MoveTemp(Apply), nullptr, this);
+	Runtime.RequestUpdate();
+}

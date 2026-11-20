@@ -9,6 +9,8 @@
 #include "Core/VekaPrimitive.h"
 #include "Core/VekaModifier.h"
 #include "Colora/VekaColor.h"
+#include "Anima/VekaAnimationSpec.h"
+#include "Anima/VekaTransition.h"
 
 class FVekaView;
 class UVekaTheme;
@@ -180,6 +182,23 @@ public:
 	/** Normal or Add (additive, light-like) for the shapes and gradients of the subtree. */
 	FVekaElement BlendMode(EVekaBlendMode Mode) const& { return FVekaElement(*this).BlendMode(Mode); }
 	FVekaElement BlendMode(EVekaBlendMode Mode) &&;
+
+	// --- Anima -----------------------------------------------------------------------------------
+
+	/**
+	 * Animates every change of this view and its subtree with Spec when Value changes (SwiftUI's
+	 * `.animation(_:value:)`). Value can be anything hashable (GetTypeHash).
+	 */
+	template <typename TValue>
+	FVekaElement Animation(const FVekaAnimationSpec& Spec, const TValue& Value) const& { return FVekaElement(*this).AnimationKey(Spec, static_cast<int64>(GetTypeHash(Value))); }
+	template <typename TValue>
+	FVekaElement Animation(const FVekaAnimationSpec& Spec, const TValue& Value) && { return MoveTemp(*this).AnimationKey(Spec, static_cast<int64>(GetTypeHash(Value))); }
+	FVekaElement AnimationKey(const FVekaAnimationSpec& Spec, int64 ValueKey) const& { return FVekaElement(*this).AnimationKey(Spec, ValueKey); }
+	FVekaElement AnimationKey(const FVekaAnimationSpec& Spec, int64 ValueKey) &&;
+
+	/** How this view enters / leaves inside an animation transaction (default: opacity). */
+	FVekaElement Transition(const FVekaTransition& InTransition) const& { return FVekaElement(*this).Transition(InTransition); }
+	FVekaElement Transition(const FVekaTransition& InTransition) &&;
 
 	// --- Interaction -----------------------------------------------------------------------------
 

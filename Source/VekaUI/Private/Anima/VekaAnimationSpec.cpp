@@ -1,6 +1,8 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Anima/VekaAnimationSpec.h"
+#include "Anima/VekaEasing.h"
+#include "Curves/CurveFloat.h"
 
 namespace
 {
@@ -77,4 +79,30 @@ FVekaAnimationSpec FVekaAnimationSpec::WithSpeed(double InSpeed) const
 	FVekaAnimationSpec Spec = *this;
 	Spec.Speed = FMath::Max(InSpeed, 0.01);
 	return Spec;
+}
+
+FVekaAnimationSpec FVekaAnimationSpec::FromCurve(UCurveFloat* InCurve, double InDuration)
+{
+	FVekaAnimationSpec Spec;
+	Spec.Curve = EVekaAnimationCurve::Custom;
+	Spec.CustomCurve = InCurve;
+	Spec.Duration = InDuration;
+	return Spec;
+}
+
+double FVekaAnimationSpec::EvaluateProgress(double T) const
+{
+	if (Curve == EVekaAnimationCurve::Custom)
+	{
+		if (!CustomCurve)
+		{
+			return T;
+		}
+		float MinTime = 0.f;
+		float MaxTime = 1.f;
+		CustomCurve->GetTimeRange(MinTime, MaxTime);
+		const float Time = FMath::Lerp(MinTime, MaxTime, static_cast<float>(T));
+		return CustomCurve->GetFloatValue(Time);
+	}
+	return Veka::Easing::Evaluate(Curve, T, TimingCurve);
 }

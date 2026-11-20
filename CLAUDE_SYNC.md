@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalons **2.0** et **2a Colora** ✅ fusionnés dans `C++` ; prochain jalon **2b Anima** |
-| Branche active | `C++` (2b : `cpp/phase-2b-anima`, pas encore créée) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora ; 24/24 tests automation ✅ |
-| Prochaine étape | 2b Anima ; police = LTFlode Neue, glyphes redessinés en SVG |
+| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima** ✅ fusionnés dans `C++` ; prochain jalon **2c Typographie** |
+| Branche active | `C++` (2c : `cpp/phase-2c-typo`, pas encore créée) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima ; 30/30 tests automation ✅ |
+| Prochaine étape | 2c Typographie (LTFlode Neue) |
 | Bloquant | aucun (point à vérifier à la main : clics répétés sur « +1 », voir `LOCAL → D-002`) |
 
 ---
@@ -119,6 +119,49 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD + LOCAL → jalon 2b Anima
+
+- **Branche** : `cpp/phase-2b-anima` (partie de `C++` @ `bceb7ad`), fusionnée dans `C++`.
+- **Codé** :
+  - **Animations implicites** (`Anima/VekaImplicit.h`) : un nœud garde les valeurs de son dernier élément (*cibles*) et
+    celles qu'il dessine (*présentées*). Dans une transaction, chaque UPROPERTY `float` / `double` / `FLinearColor`
+    modifiée du primitif et des modifiers (trouvée par réflexion, structs imbriquées et tableaux de même taille
+    compris) s'anime de la valeur présentée vers la cible ; sinon elle saute. Donc : tailles de frame, rayons,
+    couleurs et dégradés (Oklab), offset / scale / rotation, opacité, trim, padding, taille de police… sans code par
+    propriété. Les valeurs « non définies » (-1 des frames) et infinies ne s'animent pas.
+  - **Transactions** : `.Animation(spec, valeur)` (anime le nœud et son sous-arbre quand la valeur change) et
+    `Veka::WithAnimation(spec, [&]{ ... })` (les vues re-évaluées à cause des états modifiés dans le bloc s'animent).
+    Retarget sans saut (les ressorts gardent leur vitesse).
+  - **Transitions** d'insertion / suppression (`Anima/VekaTransition.h`, enums Alpha 13) : Identity, Opacity, Scale,
+    Slide, Move(bord), Push(bord), Offset, Blur (approximé par l'opacité jusqu'à la Phase 4), Combined, Asymmetric.
+    `.Transition(...)`, Opacity par défaut. Un enfant supprimé reste dessiné à son dernier rect (sans input, sans
+    re-évaluation) jusqu'à la fin de sa transition ; s'il revient pendant ce temps, le même nœud (et son état) est
+    réutilisé.
+  - **Transitions de layout** : dans le frame qui suit une transaction, les rects qui changent s'animent
+    (`FVekaNode::PlaceAt`).
+  - **Timelines** (`Anima/VekaTimeline.h`) : pistes à keyframes (easing par segment), événements, boucle, vitesse,
+    Play / Pause / Stop / Seek / Reverse ; `Ctx.Timeline(nom, data)` dans un Body, valeurs lues avec `Value(piste)`.
+    Asset `UVekaTimeline`. Le ciblage direct `NodeId.PropertyPath` viendra avec le Veka Editor (Phase 3).
+  - **Spec** : courbe `Custom` (`UCurveFloat`, `FVekaAnimationSpec::FromCurve`). `TVekaState::Animate` accepte aussi
+    `FVector2D`, `FLinearColor` (Oklab), `FMargin` (trait `TVekaAnimatable<T>`).
+- **Fichiers clés** : `Private/Anima/VekaImplicit.cpp`, `Private/Core/VekaRuntime.cpp` (transactions, fantômes),
+  `Private/Core/VekaNode.cpp` (`PlaceAt`, `RefreshEnvironment`, transitions dans le render transform),
+  `Private/Slate/SVekaNodeWidget.cpp` (enfants sortants, opacité de transition).
+- **Tests** : 30/30 ✅ — 6 nouveaux `VekaUI.Anima.*` : Implicit, WithAnimation (dont retarget), Transitions
+  (suppression, insertion, retour pendant la sortie, sans transaction), LayoutTransition, Timeline (événements,
+  inverse, seek, boucle), CustomCurveAndTypes.
+- **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérif visuelle** (`Docs/Sync/Screens/phase2b-anima.png`) : carte implicite (taille, couleur, rayon, rotation,
+  police), liste (ajout en haut avec Push, suppression avec Scale + Opacity, les autres lignes glissent), galerie des
+  8 transitions (aller-retour), 6 courbes comparées, timeline (événements « Peak » puis « Done », arrêt à 2,4 s).
+- **Limites connues** :
+  - Pendant une transition de layout, un texte reçoit la taille animée : un bouton dont le libellé change peut couper
+    son mot sur deux lignes pendant l'animation (SwiftUI garde le texte à sa taille finale).
+  - Une valeur animée qui modifie l'environnement (ex. couleur de `.Foreground`) est propagée aux enfants sans
+    re-exécuter leurs Body.
+  - Animations de mesh gradient par point : passent par les tableaux de même taille (ok), pas de morph entre des
+    grilles de tailles différentes.
 
 ### 2026-11-20 — CLOUD + LOCAL → jalon 2a Colora
 

@@ -4,6 +4,9 @@
 #include "Core/VekaNode.h"
 #include "Core/VekaView.h"
 #include "VekaUILog.h"
+#include "Anima/VekaImplicit.h"
+#include "Anima/VekaTimeline.h"
+#include "Modifiers/VekaAnimaModifiers.h"
 
 namespace
 {
@@ -61,6 +64,18 @@ namespace
 		return true;
 	}
 
+	const FVekaAnimationModifier* FindAnimationModifier(const TArray<FInstancedStruct>& Modifiers)
+	{
+		for (const FInstancedStruct& Modifier : Modifiers)
+		{
+			if (const FVekaAnimationModifier* Typed = Modifier.GetPtr<FVekaAnimationModifier>())
+			{
+				return Typed;
+			}
+		}
+		return nullptr;
+	}
+
 	bool IsAttachedTo(const FVekaNode& Node, const FVekaNode* Root)
 	{
 		const FVekaNode* Current = &Node;
@@ -74,12 +89,50 @@ namespace
 
 FVekaRuntime::FVekaRuntime()
 	: RootEnvironment(VekaEnv::MakeDefault())
+	, Implicit(MakeUnique<FVekaImplicitAnimator>(*this))
 {
 }
 
 FVekaRuntime::~FVekaRuntime()
 {
+	// Scheduler callbacks reference the implicit animator: stop them first.
 	Scheduler.CancelAll();
+}
+
+const FVekaAnimationSpec* FVekaRuntime::GetLayoutTransaction() const
+{
+	// Layout happens in the paint that follows the flush (same or next frame).
+	return LayoutTransaction.IsSet() && GFrameCounter <= LayoutTransactionFrame + 1 ? &LayoutTransaction.GetValue() : nullptr;
+}
+
+void FVekaRuntime::BeginLayoutTransaction(const FVekaAnimationSpec& Spec)
+{
+	LayoutTransaction = Spec;
+	LayoutTransactionFrame = GFrameCounter;
+}
+
+void FVekaRuntime::RegisterTimeline(const TSharedRef<FVekaTimelinePlayer>& Player)
+{
+	const TWeakPtr<FVekaTimelinePlayer> Weak = Player;
+	if (!Timelines.Contains(Weak))
+	{
+		Timelines.Add(Weak);
+	}
+	RequestUpdate();
+}
+
+void FVekaRuntime::TickTimelines(double DeltaSeconds)
+{
+	for (int32 Index = Timelines.Num() - 1; Index >= 0; --Index)
+	{
+		TSharedPtr<FVekaTimelinePlayer> Player = Timelines[Index].Pin();
+		if (!Player.IsValid() || !Player->IsPlaying())
+		{
+			Timelines.RemoveAt(Index);
+			continue;
+		}
+		Player->Advance(DeltaSeconds);
+	}
 }
 
 void FVekaRuntime::SetRoot(const FVekaElement& InRoot)
@@ -112,27 +165,41 @@ TSharedPtr<FVekaNode> FVekaRuntime::Reconcile(FVekaNode* Parent, const TSharedPt
 
 	TSharedPtr<FVekaNode> Node = Existing;
 	bool bChanged = false;
+	TOptional<FVekaAnimationSpec> NodeTransaction = CurrentTransaction;
 
 	if (!Node.IsValid() || Node->Kind != Kind || Node->TypeName != TypeName)
 	{
 		Node = MakeShared<FVekaNode>(*this, Key, Kind, TypeName);
 		Node->Primitive = Kind == EVekaElementKind::Primitive ? Element.GetPrimitive() : FInstancedStruct::Make(FVekaPrimitive());
+		Node->TargetPrimitive = Node->Primitive;
 		Node->PrimitiveState = Node->GetPrimitive().CreateState();
 		Node->Modifiers = Element.GetModifiers();
+		Node->TargetModifiers = Node->Modifiers;
 		bChanged = true;
 	}
 	else
 	{
-		// Always take the latest values (callbacks are not compared); only UPROPERTY differences invalidate.
-		if (Kind == EVekaElementKind::Primitive)
+		// Compare with the last targets (presented values may be animating); callbacks are not compared.
+		const FInstancedStruct* NewPrimitive = Kind == EVekaElementKind::Primitive ? &Element.GetPrimitive() : nullptr;
+		if (NewPrimitive)
 		{
-			bChanged |= !(Node->Primitive == Element.GetPrimitive());
-			Node->Primitive = Element.GetPrimitive();
+			bChanged |= !(Node->TargetPrimitive == *NewPrimitive);
 		}
-		bChanged |= !ModifiersEqual(Node->Modifiers, Element.GetModifiers());
-		Node->Modifiers = Element.GetModifiers();
+		bChanged |= !ModifiersEqual(Node->TargetModifiers, Element.GetModifiers());
 		bChanged |= Node->InheritedEnvironment != InheritedEnvironment;
+
+		// `.Animation(spec, value)`: a new value opens a transaction for this node and its subtree.
+		const FVekaAnimationModifier* NewAnimation = FindAnimationModifier(Element.GetModifiers());
+		const FVekaAnimationModifier* OldAnimation = FindAnimationModifier(Node->TargetModifiers);
+		if (NewAnimation && OldAnimation && NewAnimation->ValueKey != OldAnimation->ValueKey)
+		{
+			NodeTransaction = NewAnimation->Spec;
+			BeginLayoutTransaction(NewAnimation->Spec);
+		}
+
+		Implicit->UpdateNode(*Node, NewPrimitive, Element.GetModifiers(), NodeTransaction.IsSet() ? &NodeTransaction.GetValue() : nullptr);
 	}
+	TGuardValue<TOptional<FVekaAnimationSpec>> TransactionGuard(CurrentTransaction, NodeTransaction);
 
 	Node->Key = Key;
 	Node->Parent = Parent;
@@ -147,17 +214,9 @@ TSharedPtr<FVekaNode> FVekaRuntime::Reconcile(FVekaNode* Parent, const TSharedPt
 void FVekaRuntime::EvaluateNode(FVekaNode& Node, bool bDescriptionChanged)
 {
 	// Environment, gestures and layout traits from this node's modifiers.
-	Node.Environment = Node.InheritedEnvironment;
+	Node.Environment = Node.ComputeEnvironment();
 	Node.Gestures.Reset();
 	FVekaLayoutTraits Traits;
-	// Outermost modifier first: an inner `.Foreground(...)` overrides an outer one, like SwiftUI.
-	for (int32 Index = Node.Modifiers.Num() - 1; Index >= 0; --Index)
-	{
-		if (const FVekaModifier* Typed = Node.Modifiers[Index].GetPtr<FVekaModifier>())
-		{
-			Typed->ModifyEnvironment(Node.Environment);
-		}
-	}
 	for (const FInstancedStruct& Modifier : Node.Modifiers)
 	{
 		if (const FVekaModifier* Typed = Modifier.GetPtr<FVekaModifier>())
@@ -186,6 +245,7 @@ void FVekaRuntime::EvaluateNode(FVekaNode& Node, bool bDescriptionChanged)
 	}
 
 	const bool bChildrenChanged = ReconcileChildren(Node, ChildElements);
+	Node.bBuilt = true;
 
 	if (bDescriptionChanged || bChildrenChanged)
 	{
@@ -207,24 +267,75 @@ bool FVekaRuntime::ReconcileChildren(FVekaNode& Node, const TArray<FVekaElement>
 		OldByKey.Add(Child->Key, Child);
 	}
 
+	const FVekaAnimationSpec* Transaction = CurrentTransaction.IsSet() ? &CurrentTransaction.GetValue() : nullptr;
+	const int32 GhostCountBefore = Node.RemovedChildren.Num();
+
 	TArray<TSharedRef<FVekaNode>> NewChildren;
 	NewChildren.Reserve(Keyed.Num());
 	for (const FKeyedElement& Entry : Keyed)
 	{
 		TSharedPtr<FVekaNode> Existing;
 		OldByKey.RemoveAndCopyValue(Entry.Key, Existing);
+
+		bool bRevived = false;
+		if (!Existing.IsValid())
+		{
+			// Coming back while its removal transition plays: reuse it (and its state).
+			const int32 GhostIndex = Node.RemovedChildren.IndexOfByPredicate([&Entry](const TSharedRef<FVekaNode>& Ghost) { return Ghost->Key == Entry.Key; });
+			if (GhostIndex != INDEX_NONE)
+			{
+				Existing = Node.RemovedChildren[GhostIndex];
+				Node.RemovedChildren.RemoveAt(GhostIndex);
+				Existing->bRemoving = false;
+				bRevived = true;
+			}
+		}
+
+		const bool bInserted = !Existing.IsValid();
 		if (TSharedPtr<FVekaNode> Child = Reconcile(&Node, Existing, Entry.Element, Node.Environment, Entry.Key))
 		{
+			if ((bInserted && Transaction && Node.bBuilt) || bRevived)
+			{
+				Implicit->StartTransition(*Child, true, Transaction ? *Transaction : FVekaAnimationSpec::Smooth());
+			}
 			NewChildren.Add(Child.ToSharedRef());
 		}
 	}
 
 	for (const TPair<FName, TSharedPtr<FVekaNode>>& Removed : OldByKey)
 	{
-		Removed.Value->Parent = nullptr;
+		const TSharedRef<FVekaNode> Child = Removed.Value.ToSharedRef();
+		if (Transaction)
+		{
+			// Keep drawing it at its last rect while it leaves.
+			Node.RemovedChildren.Add(Child);
+			TWeakPtr<FVekaNode> WeakParent = Node.AsShared();
+			TWeakPtr<FVekaNode> WeakChild = Child;
+			Implicit->StartTransition(*Child, false, *Transaction, [this, WeakParent, WeakChild]()
+			{
+				TSharedPtr<FVekaNode> Parent = WeakParent.Pin();
+				TSharedPtr<FVekaNode> Gone = WeakChild.Pin();
+				if (!Parent.IsValid() || !Gone.IsValid())
+				{
+					return;
+				}
+				if (Parent->RemovedChildren.Remove(Gone.ToSharedRef()) > 0)
+				{
+					Gone->Parent = nullptr;
+					Implicit->ForgetNode(*Gone);
+					Parent->InvalidateLayout();
+					Parent->SyncWidget();
+				}
+			});
+		}
+		else
+		{
+			Implicit->ForgetNode(*Child);
+			Child->Parent = nullptr;
+		}
 	}
 
-	bool bChanged = NewChildren.Num() != Node.Children.Num();
+	bool bChanged = NewChildren.Num() != Node.Children.Num() || Node.RemovedChildren.Num() != GhostCountBefore;
 	for (int32 Index = 0; !bChanged && Index < NewChildren.Num(); ++Index)
 	{
 		bChanged = NewChildren[Index] != Node.Children[Index];
@@ -236,6 +347,10 @@ bool FVekaRuntime::ReconcileChildren(FVekaNode& Node, const TArray<FVekaElement>
 
 void FVekaRuntime::MarkNodeDirty(FVekaNode& Node)
 {
+	if (const FVekaAnimationSpec* Transaction = Veka::Anima::GetActiveTransaction())
+	{
+		Node.PendingTransaction = *Transaction;
+	}
 	if (Node.bDirty)
 	{
 		return;
@@ -276,7 +391,7 @@ bool FVekaRuntime::Flush()
 		{
 			if (TSharedPtr<FVekaNode> Node = Weak.Pin())
 			{
-				if (Node->bDirty && IsAttachedTo(*Node, Root.Get()))
+				if (Node->bDirty && IsAttachedTo(*Node, Root.Get()) && !Node->IsInRemovedSubtree())
 				{
 					Batch.Add(Node);
 				}
@@ -295,6 +410,13 @@ bool FVekaRuntime::Flush()
 		{
 			if (Node->bDirty)
 			{
+				TOptional<FVekaAnimationSpec> Transaction = MoveTemp(Node->PendingTransaction);
+				Node->PendingTransaction.Reset();
+				if (Transaction.IsSet())
+				{
+					BeginLayoutTransaction(Transaction.GetValue());
+				}
+				TGuardValue<TOptional<FVekaAnimationSpec>> TransactionGuard(CurrentTransaction, Transaction);
 				EvaluateNode(*Node, false);
 				bAnyEvaluated = true;
 			}
@@ -307,13 +429,21 @@ bool FVekaRuntime::Tick(double DeltaSeconds)
 {
 	Flush();
 	Scheduler.Tick(DeltaSeconds);
+	Implicit->FlushTouched();
+	TickTimelines(DeltaSeconds);
 	Flush();
 	return HasPendingWork();
 }
 
 bool FVekaRuntime::HasPendingWork() const
 {
-	return DirtyNodes.Num() > 0 || Scheduler.IsAnimating();
+	bool bTimelinePlaying = false;
+	for (const TWeakPtr<FVekaTimelinePlayer>& Weak : Timelines)
+	{
+		const TSharedPtr<FVekaTimelinePlayer> Player = Weak.Pin();
+		bTimelinePlaying |= Player.IsValid() && Player->IsPlaying();
+	}
+	return DirtyNodes.Num() > 0 || Scheduler.IsAnimating() || bTimelinePlaying;
 }
 
 void FVekaRuntime::AddReferencedObjects(FReferenceCollector& Collector)

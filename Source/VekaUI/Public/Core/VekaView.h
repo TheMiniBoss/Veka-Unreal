@@ -10,6 +10,8 @@
 
 class FVekaNode;
 class FVekaRuntime;
+class FVekaTimelineHandle;
+struct FVekaTimelineData;
 
 /**
  * Given to a view's Body: access to @State storage and to the environment.
@@ -37,6 +39,12 @@ public:
 		}
 		return TVekaState<T>(StaticCastSharedRef<TVekaStateBox<T>>(Slot.ToSharedRef()));
 	}
+
+	/**
+	 * Timeline stored in the view (playback survives re-evaluations). Read track values in Body; while it plays,
+	 * the view is re-evaluated every frame. Include "Anima/VekaTimeline.h".
+	 */
+	FVekaTimelineHandle Timeline(FName Name, const FVekaTimelineData& Data);
 
 	const FVekaEnvironment& GetEnvironment() const { return Environment; }
 	FVekaNode& GetNode() const { return Node; }

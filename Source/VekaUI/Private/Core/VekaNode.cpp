@@ -3,6 +3,7 @@
 #include "Core/VekaNode.h"
 #include "Core/VekaRuntime.h"
 #include "Core/VekaView.h"
+#include "Anima/VekaImplicit.h"
 #include "Slate/SVekaNodeWidget.h"
 #include "UObject/GCObject.h"
 
@@ -157,8 +158,104 @@ bool FVekaNode::HitTest(const FVector2D& LocalPoint) const
 	return GetPrimitive().HitTest(LocalPoint - ContentRect.Position, ContentRect.Size);
 }
 
+bool FVekaNode::IsInRemovedSubtree() const
+{
+	for (const FVekaNode* Node = this; Node; Node = Node->Parent)
+	{
+		if (Node->bRemoving)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+float FVekaNode::GetTransitionOpacity() const
+{
+	return TransitionEffects.IsEmpty() ? 1.f : FVekaTransition::EvaluateOpacity(TransitionEffects, TransitionProgress);
+}
+
+FVekaEnvironment FVekaNode::ComputeEnvironment() const
+{
+	// Outermost modifier first: an inner `.Foreground(...)` overrides an outer one, like SwiftUI.
+	FVekaEnvironment Result = InheritedEnvironment;
+	for (int32 Index = Modifiers.Num() - 1; Index >= 0; --Index)
+	{
+		if (const FVekaModifier* Typed = Modifiers[Index].GetPtr<FVekaModifier>())
+		{
+			Typed->ModifyEnvironment(Result);
+		}
+	}
+	return Result;
+}
+
+void FVekaNode::RefreshEnvironment()
+{
+	FVekaEnvironment NewEnvironment = ComputeEnvironment();
+	if (NewEnvironment == Environment)
+	{
+		return;
+	}
+	Environment = MoveTemp(NewEnvironment);
+	auto Push = [this](const TSharedRef<FVekaNode>& Child)
+	{
+		Child->InheritedEnvironment = Environment;
+		Child->RefreshEnvironment();
+		Child->InvalidatePaint();
+	};
+	for (const TSharedRef<FVekaNode>& Child : Children)
+	{
+		Push(Child);
+	}
+	for (const TSharedRef<FVekaNode>& Child : RemovedChildren)
+	{
+		Push(Child);
+	}
+}
+
+void FVekaNode::PlaceAt(const FVekaRect& Rect)
+{
+	if (!bPlaced)
+	{
+		bPlaced = true;
+		LayoutTarget = Rect;
+		ArrangedRect = Rect;
+		if (!TransitionEffects.IsEmpty())
+		{
+			// Move transitions depend on the size, known only now.
+			SyncWidget();
+		}
+		return;
+	}
+
+	FVekaImplicitAnimator& Implicit = Runtime.GetImplicit();
+	if (Rect.Equals(LayoutTarget, 0.01))
+	{
+		if (!Implicit.IsRectAnimating(*this))
+		{
+			ArrangedRect = Rect;
+		}
+		return;
+	}
+
+	LayoutTarget = Rect;
+	if (const FVekaAnimationSpec* Spec = Runtime.GetLayoutTransaction())
+	{
+		Implicit.AnimateRect(*this, Rect, *Spec);
+	}
+	else
+	{
+		Implicit.CancelRect(*this);
+		ArrangedRect = Rect;
+	}
+}
+
 bool FVekaNode::HasRenderTransform() const
 {
+	if (!TransitionEffects.IsEmpty() && TransitionProgress < 1.f)
+	{
+		return true;
+	}
 	for (const FInstancedStruct& Modifier : Modifiers)
 	{
 		if (const FVekaModifier* Typed = Modifier.GetPtr<FVekaModifier>())
@@ -184,6 +281,10 @@ FSlateRenderTransform FVekaNode::ComputeRenderTransform(const FVector2D& Size) c
 				Typed->ModifyRenderTransform(Transform, Size);
 			}
 		}
+	}
+	if (!TransitionEffects.IsEmpty() && TransitionProgress < 1.f)
+	{
+		Transform = Concatenate(Transform, FVekaTransition::EvaluateTransform(TransitionEffects, TransitionProgress, Size));
 	}
 	return Transform;
 }
@@ -242,9 +343,18 @@ void FVekaNode::SyncWidget()
 void FVekaNode::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	Primitive.AddStructReferencedObjects(Collector);
+	TargetPrimitive.AddStructReferencedObjects(Collector);
 	for (FInstancedStruct& Modifier : Modifiers)
 	{
 		Modifier.AddStructReferencedObjects(Collector);
+	}
+	for (FInstancedStruct& Modifier : TargetModifiers)
+	{
+		Modifier.AddStructReferencedObjects(Collector);
+	}
+	for (const TSharedRef<FVekaNode>& Child : RemovedChildren)
+	{
+		Child->AddReferencedObjects(Collector);
 	}
 	if (View.IsValid())
 	{
