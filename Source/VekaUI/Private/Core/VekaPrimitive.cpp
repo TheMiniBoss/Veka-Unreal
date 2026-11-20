@@ -11,7 +11,7 @@ FVector2D FVekaLayoutChild::SizeThatFits(const FVekaProposal& Proposal) const
 
 void FVekaLayoutChild::Place(const FVekaRect& Rect) const
 {
-	Node->ArrangedRect = Rect;
+	Node->PlaceAt(Rect);
 }
 
 double FVekaLayoutChild::GetLayoutPriority() const

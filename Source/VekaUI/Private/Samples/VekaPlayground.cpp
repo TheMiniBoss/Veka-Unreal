@@ -5,6 +5,8 @@
 #include "Colora/VekaTheme.h"
 #include "Modifiers/VekaColoraModifiers.h"
 #include "Engine/Texture2D.h"
+#include "Anima/VekaImplicit.h"
+#include "Anima/VekaTimeline.h"
 
 namespace VekaPlaygroundPrivate
 {
@@ -164,6 +166,200 @@ namespace VekaPlaygroundPrivate
 		);
 	}
 
+
+	FVekaElement Button(const FText& Label, TFunction<void()> Action)
+	{
+		using namespace Veka;
+		return Text(Label).Font(Fonts::Bold(13)).Foreground(FLinearColor::White)
+			.Padding(FMargin(12, 6)).Background(FVekaPaint::FromToken(TEXT("Accent")), 8)
+			.OnTap(MoveTemp(Action));
+	}
+
+	/** Implicit animation: every property of the card follows one bool. */
+	class FImplicitCardView : public FVekaView
+	{
+		VEKA_VIEW(FImplicitCardView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<bool> Expanded = Ctx.State<bool>(TEXT("Expanded"), false);
+			const bool bOn = Expanded.Get();
+			return VStack(6, EVekaHAlign::Leading)(
+				ZStack()(
+					RoundedRectangle(bOn ? 36.f : 10.f).Fill(bOn ? Hex(TEXT("#FF5CB8FF")) : Hex(TEXT("#4C7DFFFF"))),
+					Text(bOn ? INVTEXT("Expanded") : INVTEXT("Tap me")).Font(Fonts::Bold(bOn ? 22 : 14)).Foreground(FLinearColor::White)
+				)
+				.Frame(bOn ? 260.0 : 140.0, bOn ? 120.0 : 60.0)
+				.Rotation(bOn ? 3.f : 0.f)
+				.Offset(FVector2D(bOn ? 20.0 : 0.0, 0.0))
+				.Animation(FVekaAnimationSpec::Bouncy(), bOn)
+				.OnTap([Expanded]() { Expanded.Set(!Expanded.Get()); }),
+				Text(INVTEXT(".Animation(Bouncy, expanded): size, radius, color, font size, rotation, offset.")).Foreground(Muted).Font(Fonts::Caption())
+			);
+		}
+	};
+
+	/** WithAnimation + insertion / removal transitions + layout transitions. */
+	class FAnimatedListView : public FVekaView
+	{
+		VEKA_VIEW(FAnimatedListView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<TArray<int32>> Items = Ctx.State<TArray<int32>>(TEXT("Items"), TArray<int32>{ 1, 2, 3 });
+			const TVekaState<int32> Next = Ctx.State<int32>(TEXT("Next"), 4);
+			const TArray<FLinearColor> Colors = { Hex(TEXT("#FF5E57FF")), Hex(TEXT("#FFA84CFF")), Hex(TEXT("#5CD65CFF")), Hex(TEXT("#4CD9C9FF")), Hex(TEXT("#8E5CFFFF")) };
+
+			return VStack(8, EVekaHAlign::Leading)(
+				HStack(8)(
+					Button(INVTEXT("Add on top"), [Items, Next]()
+					{
+						WithAnimation(FVekaAnimationSpec::Snappy(), [&]
+						{
+							Items.Modify([&](TArray<int32>& List) { List.Insert(Next.Get(), 0); });
+							Next.Set(Next.Get() + 1);
+						});
+					}),
+					Text(INVTEXT("Tap a row to remove it")).Foreground(Muted).Font(Fonts::Caption())
+				),
+				VStack(6, EVekaHAlign::Leading)(
+					ForEach(Items.Get(), [](int32 Item) { return Item; }, [Items, Colors](int32 Item)
+					{
+						return Text(FText::Format(INVTEXT("Row {0}"), FText::AsNumber(Item))).Font(Fonts::Bold(13)).Foreground(FLinearColor::White)
+							.Padding(FMargin(12, 6)).Frame(220, 30, FVekaAlignment::Leading())
+							.Background(Colors[Item % 5], 8)
+							.Transition(FVekaTransition::Asymmetric(FVekaTransition::Push(EVekaEdge::Top), FVekaTransition::Combined(FVekaTransition::Scale(0.6f), FVekaTransition::Opacity())))
+							.OnTap([Items, Item]()
+							{
+								WithAnimation(FVekaAnimationSpec::Smooth(), [&] { Items.Modify([Item](TArray<int32>& List) { List.Remove(Item); }); });
+							});
+					})
+				)
+			);
+		}
+	};
+
+	/** The Alpha 13 transitions, shown / hidden together. */
+	class FTransitionGalleryView : public FVekaView
+	{
+		VEKA_VIEW(FTransitionGalleryView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<bool> Shown = Ctx.State<bool>(TEXT("Shown"), true);
+			const bool bShown = Shown.Get();
+			auto Box = [bShown](const TCHAR* Name, const FVekaTransition& Transition, const TCHAR* Color)
+			{
+				return VStack(4)(
+					ZStack()(
+						RoundedRectangle(10).Fill(FLinearColor(1, 1, 1, 0.05f)).Frame(64, 64),
+						If(bShown, RoundedRectangle(10).Fill(Hex(Color)).Frame(64, 64).Transition(Transition))
+					),
+					Text(Name).Foreground(Muted).Font(Fonts::Caption())
+				);
+			};
+			return VStack(10, EVekaHAlign::Leading)(
+				Button(bShown ? INVTEXT("Hide") : INVTEXT("Show"), [Shown]() { WithAnimation(FVekaAnimationSpec::EaseInOut(0.6), [&] { Shown.Set(!Shown.Get()); }); }),
+				HStack(14)(
+					Box(TEXT("Opacity"), FVekaTransition::Opacity(), TEXT("#FF5E57FF")),
+					Box(TEXT("Scale"), FVekaTransition::Scale(), TEXT("#FFA84CFF")),
+					Box(TEXT("Slide"), FVekaTransition::Slide(), TEXT("#FFD84CFF")),
+					Box(TEXT("Move top"), FVekaTransition::Move(EVekaEdge::Top), TEXT("#5CD65CFF")),
+					Box(TEXT("Push bottom"), FVekaTransition::Push(EVekaEdge::Bottom), TEXT("#4CD9C9FF")),
+					Box(TEXT("Offset"), FVekaTransition::Offset(FVector2D(40, -30)), TEXT("#4C7DFFFF")),
+					Box(TEXT("Blur*"), FVekaTransition::Blur(), TEXT("#8E5CFFFF")),
+					Box(TEXT("Asymmetric"), FVekaTransition::Asymmetric(FVekaTransition::Scale(), FVekaTransition::Move(EVekaEdge::Bottom)), TEXT("#FF5CB8FF"))
+				),
+				Text(INVTEXT("* Blur is approximated by opacity until the render module (Phase 4).")).Foreground(Muted).Font(Fonts::Caption())
+			);
+		}
+	};
+
+	/** Same move with different curves. */
+	class FCurvesView : public FVekaView
+	{
+		VEKA_VIEW(FCurvesView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<bool> Right = Ctx.State<bool>(TEXT("Right"), false);
+			const bool bRight = Right.Get();
+			auto Row = [bRight](const TCHAR* Name, const FVekaAnimationSpec& Spec)
+			{
+				return HStack(10)(
+					Text(Name).Foreground(Muted).Font(Fonts::Caption()).Frame(130, 16, FVekaAlignment::Leading()),
+					ZStack(FVekaAlignment::Leading())(
+						Capsule().Fill(FLinearColor(1, 1, 1, 0.06f)).Frame(240, 16),
+						Circle().Fill(Accent).Frame(16, 16).Offset(FVector2D(bRight ? 224.0 : 0.0, 0.0)).Animation(Spec, bRight)
+					)
+				);
+			};
+			return VStack(6, EVekaHAlign::Leading)(
+				Button(INVTEXT("Go"), [Right]() { Right.Set(!Right.Get()); }),
+				Row(TEXT("Linear 0.8 s"), FVekaAnimationSpec::Linear(0.8)),
+				Row(TEXT("EaseInOut 0.8 s"), FVekaAnimationSpec::EaseInOut(0.8)),
+				Row(TEXT("Timing (0.7,0,0.2,1)"), FVekaAnimationSpec::Timing(0.7, 0.0, 0.2, 1.0, 0.8)),
+				Row(TEXT("Spring smooth"), FVekaAnimationSpec::Smooth()),
+				Row(TEXT("Spring bouncy"), FVekaAnimationSpec::Bouncy()),
+				Row(TEXT("Delayed 0.3 s"), FVekaAnimationSpec::EaseInOut(0.5).Delayed(0.3))
+			);
+		}
+	};
+
+	/** Timeline: keyframed tracks + events, read in Body. */
+	class FTimelineView : public FVekaView
+	{
+		VEKA_VIEW(FTimelineView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			FVekaTimelineData Data;
+			Data.AddTrack(TEXT("X"), { FVekaTimelineKey(0.f, 0.f), FVekaTimelineKey(1.f, 220.f, EVekaAnimationCurve::EaseIn), FVekaTimelineKey(1.6f, 120.f), FVekaTimelineKey(2.4f, 0.f) });
+			Data.AddTrack(TEXT("Size"), { FVekaTimelineKey(0.f, 18.f), FVekaTimelineKey(1.f, 34.f), FVekaTimelineKey(2.4f, 18.f) });
+			Data.AddEvent(1.f, TEXT("Peak")).AddEvent(2.4f, TEXT("Done"));
+
+			const TVekaState<FName> LastEvent = Ctx.State<FName>(TEXT("LastEvent"), NAME_None);
+			const FVekaTimelineHandle Timeline = Ctx.Timeline(TEXT("Demo"), Data);
+			Timeline.OnEvent([LastEvent](FName Event) { LastEvent.Set(Event); });
+			const float Size = Timeline.Value(TEXT("Size"));
+
+			return VStack(8, EVekaHAlign::Leading)(
+				HStack(8)(
+					Button(Timeline.IsPlaying() ? INVTEXT("Pause") : INVTEXT("Play"), [Timeline]() { if (Timeline.IsPlaying()) { Timeline.Pause(); } else { Timeline.Play(); } }),
+					Button(INVTEXT("Reverse"), [Timeline]() { Timeline.Reverse(); }),
+					Button(INVTEXT("Stop"), [Timeline]() { Timeline.Stop(); }),
+					Text(FText::Format(INVTEXT("t = {0} s, last event: {1}"), FText::AsNumber(FMath::RoundToFloat(Timeline.GetTime() * 100.f) / 100.f), FText::FromName(LastEvent.Get())))
+						.Foreground(Muted).Font(Fonts::Caption())
+				),
+				ZStack(FVekaAlignment::Leading())(
+					Capsule().Fill(FLinearColor(1, 1, 1, 0.06f)).Frame(260, 40),
+					Circle().Fill(FVekaPaint::Angular({ FVekaGradientStop(Hex(TEXT("#FF5E57FF")), 0.f), FVekaGradientStop(Hex(TEXT("#4C7DFFFF")), 0.5f), FVekaGradientStop(Hex(TEXT("#FF5E57FF")), 1.f) }))
+						.Frame(Size, Size).Offset(FVector2D(Timeline.Value(TEXT("X")), 0.0))
+				)
+			);
+		}
+	};
+
+	FVekaElement AnimaSection()
+	{
+		using namespace Veka;
+		return VStack(18, EVekaHAlign::Leading)(
+			HStack(30, EVekaVAlign::Top)(View<FImplicitCardView>(), View<FAnimatedListView>()),
+			View<FTransitionGalleryView>(),
+			HStack(30, EVekaVAlign::Top)(View<FCurvesView>(), View<FTimelineView>())
+		);
+	}
+
 	/** Counter with @State and a tap gesture. */
 	class FCounterView : public FVekaView
 	{
@@ -261,10 +457,12 @@ namespace Veka::Samples
 
 		return ScrollView(EVekaAxis::Vertical)(
 			VStack(16, EVekaHAlign::Leading)(
-				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora)")).Font(Fonts::LargeTitle()),
+				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima)")).Font(Fonts::LargeTitle()),
 				Text(INVTEXT("Declarative Slate-first views: one Stack for H/V/Z, modifiers, state, springs, vector shapes and strokes. "
 					"This paragraph wraps to the available width."))
 					.Foreground(Muted),
+
+				Section(INVTEXT("Anima: implicit, WithAnimation, transitions, layout, curves, timeline"), AnimaSection()),
 
 				Section(INVTEXT("Colora: paints, color spaces, adjustments, additive blend, tokens"), ColoraSection()),
 

@@ -9,6 +9,7 @@
 #include "Modifiers/VekaEnvironmentModifiers.h"
 #include "Modifiers/VekaInteractionModifiers.h"
 #include "Modifiers/VekaColoraModifiers.h"
+#include "Modifiers/VekaAnimaModifiers.h"
 #include "Primitives/VekaShapeView.h"
 #include "Vector/VekaStroke.h"
 #include "VekaUILog.h"
@@ -420,6 +421,25 @@ FVekaElement FVekaElement::BlendMode(EVekaBlendMode Mode) &&
 {
 	FVekaBlendModeModifier Modifier;
 	Modifier.Mode = Mode;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+// --- Anima -----------------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::AnimationKey(const FVekaAnimationSpec& Spec, int64 ValueKey) &&
+{
+	FVekaAnimationModifier Modifier;
+	Modifier.Spec = Spec;
+	Modifier.ValueKey = ValueKey;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::Transition(const FVekaTransition& InTransition) &&
+{
+	FVekaTransitionModifier Modifier;
+	Modifier.Transition = InTransition;
 	AddModifierInternal(FInstancedStruct::Make(Modifier));
 	return MoveTemp(*this);
 }

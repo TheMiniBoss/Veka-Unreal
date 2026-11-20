@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Anima/VekaAnimationSpec.h"
+#include "Colora/VekaColor.h"
+#include "Layout/Margin.h"
 #include <type_traits>
 
 class FVekaNode;
@@ -24,6 +26,44 @@ struct VEKAUI_API FVekaStateBoxBase
 
 	/** Drives a numeric value with the animation scheduler of the owner's runtime. */
 	void AnimateScalar(double From, double To, const FVekaAnimationSpec& Spec, TFunction<void(double)> Apply) const;
+
+	/** Drives a progress 0 -> 1 (restarts on each call); for values that are not a single number. */
+	void AnimateProgress(const FVekaAnimationSpec& Spec, TFunction<void(double)> Apply) const;
+};
+
+/**
+ * Types TVekaState::Animate can interpolate. Numbers animate directly (springs keep their velocity on retarget);
+ * the others interpolate a progress with Lerp (a retarget restarts from the presented value).
+ */
+template <typename T>
+struct TVekaAnimatable
+{
+	static constexpr bool bSupported = std::is_arithmetic_v<T>;
+};
+
+template <>
+struct TVekaAnimatable<FVector2D>
+{
+	static constexpr bool bSupported = true;
+	static FVector2D Lerp(const FVector2D& A, const FVector2D& B, double T) { return A + (B - A) * T; }
+};
+
+template <>
+struct TVekaAnimatable<FLinearColor>
+{
+	static constexpr bool bSupported = true;
+	static FLinearColor Lerp(const FLinearColor& A, const FLinearColor& B, double T) { return Veka::Colora::Lerp(A, B, static_cast<float>(T), EVekaColorSpace::OkLab); }
+};
+
+template <>
+struct TVekaAnimatable<FMargin>
+{
+	static constexpr bool bSupported = true;
+	static FMargin Lerp(const FMargin& A, const FMargin& B, double T)
+	{
+		const float F = static_cast<float>(T);
+		return FMargin(FMath::Lerp(A.Left, B.Left, F), FMath::Lerp(A.Top, B.Top, F), FMath::Lerp(A.Right, B.Right, F), FMath::Lerp(A.Bottom, B.Bottom, F));
+	}
 };
 
 template <typename T>
@@ -118,18 +158,33 @@ public:
 			[Shared](const T& Value) { TVekaState<T>(Shared).Set(Value); });
 	}
 
-	/** Animates a numeric state to Target. A new call on the same state retargets (springs keep their velocity). */
+	/**
+	 * Animates the state to Target (numbers, FVector2D, FLinearColor, FMargin; see TVekaAnimatable).
+	 * A new call on the same state retargets from the presented value.
+	 */
 	void Animate(const T& Target, const FVekaAnimationSpec& Spec) const
 	{
-		static_assert(std::is_arithmetic_v<T>, "TVekaState::Animate supports numeric states (Phase 1). Use implicit animations for other types.");
+		static_assert(TVekaAnimatable<T>::bSupported, "TVekaState::Animate: T needs a TVekaAnimatable specialization. Use `.Animation(spec, value)` for view properties.");
 		check(Box.IsValid());
 		TSharedRef<TVekaStateBox<T>> Shared = Box.ToSharedRef();
-		Box->AnimateScalar(static_cast<double>(Box->Value), static_cast<double>(Target), Spec,
-			[Shared](double Value)
+		if constexpr (std::is_arithmetic_v<T>)
+		{
+			Box->AnimateScalar(static_cast<double>(Box->Value), static_cast<double>(Target), Spec,
+				[Shared](double Value)
+				{
+					Shared->Value = static_cast<T>(Value);
+					Shared->NotifyChanged();
+				});
+		}
+		else
+		{
+			const T From = Box->Value;
+			Box->AnimateProgress(Spec, [Shared, From, Target](double Progress)
 			{
-				Shared->Value = static_cast<T>(Value);
+				Shared->Value = TVekaAnimatable<T>::Lerp(From, Target, Progress);
 				Shared->NotifyChanged();
 			});
+		}
 	}
 
 private:

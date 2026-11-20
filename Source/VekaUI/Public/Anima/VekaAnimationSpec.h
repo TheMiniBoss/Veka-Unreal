@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "VekaAnimationSpec.generated.h"
 
+class UCurveFloat;
+
 UENUM(BlueprintType)
 enum class EVekaAnimationCurve : uint8
 {
@@ -18,7 +20,9 @@ enum class EVekaAnimationCurve : uint8
 	/** Cubic Bézier (x1, y1, x2, y2), like CSS cubic-bezier / SwiftUI timingCurve. */
 	TimingCurve,
 	/** Physical spring (mass, stiffness, damping). Duration is ignored: the spring settles on its own. */
-	Spring
+	Spring,
+	/** UCurveFloat (CustomCurve): its time range is mapped to the duration, its value is the progress. */
+	Custom
 };
 
 /** How a value moves from its current value to a new one. */
@@ -66,6 +70,10 @@ struct VEKAUI_API FVekaAnimationSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Anima|Spring")
 	double InitialVelocity = 0.0;
 
+	/** Curve = Custom. Keep the curve asset loaded while the animation runs (assets are, by default). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Anima")
+	TObjectPtr<UCurveFloat> CustomCurve;
+
 	static FVekaAnimationSpec Linear(double InDuration = 0.35);
 	static FVekaAnimationSpec EaseIn(double InDuration = 0.35);
 	static FVekaAnimationSpec EaseOut(double InDuration = 0.35);
@@ -80,6 +88,12 @@ struct VEKAUI_API FVekaAnimationSpec
 
 	/** Spring with explicit physical parameters. */
 	static FVekaAnimationSpec InterpolatingSpring(double InMass, double InStiffness, double InDamping, double InInitialVelocity = 0.0);
+
+	/** Progress follows a UCurveFloat (time range mapped to Duration, value 0..1 = from..to). */
+	static FVekaAnimationSpec FromCurve(UCurveFloat* InCurve, double InDuration = 0.35);
+
+	/** Eased progress of a timed curve at T (0..1), custom curves included. */
+	double EvaluateProgress(double T) const;
 
 	static FVekaAnimationSpec Smooth() { return Spring(0.5, 1.0); }
 	static FVekaAnimationSpec Snappy() { return Spring(0.5, 0.85); }

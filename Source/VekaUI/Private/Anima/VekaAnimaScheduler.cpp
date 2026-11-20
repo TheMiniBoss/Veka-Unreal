@@ -100,7 +100,7 @@ void FVekaAnimaScheduler::Advance(FActiveAnimation& Animation, double DeltaSecon
 		Animation.Elapsed += Dt;
 		const double Duration = FMath::Max(Spec.Duration, 1.0e-4);
 		const double T = FMath::Clamp((Animation.Elapsed - Spec.Delay) / Duration, 0.0, 1.0);
-		const double Eased = Veka::Easing::Evaluate(Spec.Curve, T, Spec.TimingCurve);
+		const double Eased = Spec.EvaluateProgress(T);
 		Animation.Value = Start + (End - Start) * Eased;
 		bIterationDone = T >= 1.0;
 	}

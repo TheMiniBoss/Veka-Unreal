@@ -28,8 +28,9 @@ void SVekaNodeWidget::SyncFromNode()
 		return;
 	}
 
-	// Rebuild the child widget list only if it changed.
-	const TArray<TSharedRef<FVekaNode>>& ChildNodes = Pinned->GetChildren();
+	// Rebuild the child widget list only if it changed. Children being removed are drawn after the live ones.
+	TArray<TSharedRef<FVekaNode>> ChildNodes = Pinned->GetChildren();
+	ChildNodes.Append(Pinned->GetRemovedChildren());
 	bool bSame = Children.Num() == ChildNodes.Num();
 	TArray<TSharedRef<SWidget>> Widgets;
 	Widgets.Reserve(ChildNodes.Num());
@@ -61,7 +62,14 @@ void SVekaNodeWidget::SyncFromNode()
 	}
 
 	// Only interactive nodes take pointer events; others let them through to their children.
-	SetVisibility(Pinned->WantsInput() ? EVisibility::Visible : EVisibility::SelfHitTestInvisible);
+	if (Pinned->IsInRemovedSubtree())
+	{
+		SetVisibility(EVisibility::HitTestInvisible);
+	}
+	else
+	{
+		SetVisibility(Pinned->WantsInput() ? EVisibility::Visible : EVisibility::SelfHitTestInvisible);
+	}
 }
 
 FVector2D SVekaNodeWidget::ComputeDesiredSize(float LayoutScaleMultiplier) const
@@ -87,11 +95,13 @@ void SVekaNodeWidget::OnArrangeChildren(const FGeometry& AllottedGeometry, FArra
 
 void SVekaNodeWidget::ArrangeChildWidgets(const FVekaNode& InNode, const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const
 {
-	const TArray<TSharedRef<FVekaNode>>& ChildNodes = InNode.GetChildren();
-	const int32 Num = FMath::Min(ChildNodes.Num(), Children.Num());
+	const TArray<TSharedRef<FVekaNode>>& LiveNodes = InNode.GetChildren();
+	const TArray<TSharedRef<FVekaNode>>& RemovedNodes = InNode.GetRemovedChildren();
+	const int32 Num = FMath::Min(LiveNodes.Num() + RemovedNodes.Num(), Children.Num());
 	for (int32 Index = 0; Index < Num; ++Index)
 	{
-		const FVekaRect& Rect = ChildNodes[Index]->GetArrangedRect();
+		// Removed children keep the last rect they were given.
+		const FVekaRect& Rect = Index < LiveNodes.Num() ? LiveNodes[Index]->GetArrangedRect() : RemovedNodes[Index - LiveNodes.Num()]->GetArrangedRect();
 		// FChildren only gives const widgets from a const method; MakeChild needs a mutable reference.
 		const TSharedRef<SWidget> ChildWidget = const_cast<TSlotlessChildren<SWidget>&>(Children).GetChildAt(Index);
 		ArrangedChildren.AddWidget(AllottedGeometry.MakeChild(ChildWidget, FVector2f(Rect.Size), FSlateLayoutTransform(FVector2f(Rect.Position))));
@@ -117,6 +127,17 @@ int32 SVekaNodeWidget::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 	Pinned->Arrange(AllottedGeometry.GetLocalSize());
 
 	const FPaintPass Pass{ Args, AllottedGeometry, MyCullingRect, OutDrawElements, ShouldBeEnabled(bParentEnabled) };
+	const float TransitionOpacity = Pinned->GetTransitionOpacity();
+	if (TransitionOpacity < 1.f)
+	{
+		if (TransitionOpacity <= 0.f)
+		{
+			return LayerId;
+		}
+		FWidgetStyle Faded = InWidgetStyle;
+		Faded.BlendColorAndOpacityTint(FLinearColor(1.f, 1.f, 1.f, TransitionOpacity));
+		return PaintLevel(Pass, *Pinned, Pinned->GetModifiers().Num() - 1, LayerId, Faded);
+	}
 	return PaintLevel(Pass, *Pinned, Pinned->GetModifiers().Num() - 1, LayerId, InWidgetStyle);
 }
 

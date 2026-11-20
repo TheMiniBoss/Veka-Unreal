@@ -9,6 +9,8 @@
 #include "Anima/VekaAnimaScheduler.h"
 
 class FVekaNode;
+class FVekaImplicitAnimator;
+class FVekaTimelinePlayer;
 
 /**
  * Owns a node tree and keeps it in sync with an element tree (the reconciler).
@@ -38,6 +40,14 @@ public:
 	bool HasPendingWork() const;
 
 	FVekaAnimaScheduler& GetScheduler() { return Scheduler; }
+	FVekaImplicitAnimator& GetImplicit() { return *Implicit; }
+
+	/** Spec of the animation transaction whose layout changes are being placed (valid for the frame after the flush). */
+	const FVekaAnimationSpec* GetLayoutTransaction() const;
+	void BeginLayoutTransaction(const FVekaAnimationSpec& Spec);
+
+	/** Timelines tick with the runtime while they play. */
+	void RegisterTimeline(const TSharedRef<FVekaTimelinePlayer>& Player);
 
 	/** Called when the runtime needs a tick (state changed, animation started). Set by the host. */
 	TFunction<void()> OnUpdateRequested;
@@ -63,5 +73,13 @@ private:
 	FVekaEnvironment RootEnvironment;
 	TArray<TWeakPtr<FVekaNode>> DirtyNodes;
 	FVekaAnimaScheduler Scheduler;
+	TUniquePtr<FVekaImplicitAnimator> Implicit;
+	TArray<TWeakPtr<FVekaTimelinePlayer>> Timelines;
+	/** Transaction of the reconcile in progress (WithAnimation / `.Animation(spec, value)`). */
+	TOptional<FVekaAnimationSpec> CurrentTransaction;
+	TOptional<FVekaAnimationSpec> LayoutTransaction;
+	uint64 LayoutTransactionFrame = 0;
 	bool bFlushing = false;
+
+	void TickTimelines(double DeltaSeconds);
 };

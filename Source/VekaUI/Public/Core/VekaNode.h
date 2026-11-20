@@ -11,12 +11,15 @@
 #include "Core/VekaModifier.h"
 #include "Core/VekaPrimitive.h"
 #include "Core/VekaState.h"
+#include "Anima/VekaAnimationSpec.h"
+#include "Anima/VekaTransition.h"
 
 class FVekaRuntime;
 class FVekaView;
 class SVekaNodeWidget;
 class SWidget;
 class FReferenceCollector;
+class FVekaImplicitAnimator;
 
 /**
  * Retained instance of an element: owns @State, primitive state, layout results and (when displayed)
@@ -52,6 +55,39 @@ public:
 	double GetLayoutPriority() const { return LayoutPriority; }
 	int32 GetDepth() const;
 
+	/** Values of the last element; the presented modifiers (GetModifiers) may be animating toward them. */
+	const TArray<FInstancedStruct>& GetTargetModifiers() const { return TargetModifiers; }
+
+	/** First modifier of type T (presented values), or nullptr. */
+	template <typename T>
+	const T* FindModifier() const
+	{
+		for (const FInstancedStruct& Modifier : Modifiers)
+		{
+			if (const T* Typed = Modifier.GetPtr<T>())
+			{
+				return Typed;
+			}
+		}
+		return nullptr;
+	}
+
+	// --- Anima ---------------------------------------------------------------------------------
+
+	/** Children removed inside an animation transaction, still drawn while their removal transition plays. */
+	const TArray<TSharedRef<FVekaNode>>& GetRemovedChildren() const { return RemovedChildren; }
+	bool IsRemoving() const { return bRemoving; }
+	/** True if this node or an ancestor is being removed (no re-evaluation, no input). */
+	bool IsInRemovedSubtree() const;
+	/** 1 = identity; insertion goes 0 -> 1, removal 1 -> 0. */
+	float GetTransitionProgress() const { return TransitionProgress; }
+	float GetTransitionOpacity() const;
+
+	/** Recomputes the environment from the presented modifiers and pushes it down (views are not re-evaluated). */
+	void RefreshEnvironment();
+	/** Environment seen inside this node: inherited + its modifiers, outermost first. */
+	FVekaEnvironment ComputeEnvironment() const;
+
 	// --- Layout --------------------------------------------------------------------------------
 
 	/** Size for a proposal, modifiers included. Cached until the node is invalidated. */
@@ -63,7 +99,10 @@ public:
 	/** Arrange + arrange every descendant with the rect it was given (no Slate needed). */
 	void ArrangeRecursive(const FVector2D& Size);
 
-	/** Rect given by the parent, in the parent's local space. */
+	/** Sets the rect given by the parent layout (animated when a layout transaction is active). */
+	void PlaceAt(const FVekaRect& Rect);
+
+	/** Rect given by the parent, in the parent's local space (presented: may be animating). */
 	const FVekaRect& GetArrangedRect() const { return ArrangedRect; }
 	/** Rect of the content (inside all modifiers), local space. */
 	const FVekaRect& GetContentRect() const { return ContentRect; }
@@ -95,6 +134,7 @@ private:
 	friend class FVekaRuntime;
 	friend class FVekaContext;
 	friend class FVekaLayoutChild;
+	friend class FVekaImplicitAnimator;
 
 	FVector2D MeasureLevel(int32 Level, const FVekaProposal& Proposal);
 	FVector2D MeasureContent(const FVekaProposal& Proposal);
@@ -109,6 +149,8 @@ private:
 
 	FInstancedStruct Primitive;
 	TArray<FInstancedStruct> Modifiers;
+	FInstancedStruct TargetPrimitive;
+	TArray<FInstancedStruct> TargetModifiers;
 	TSharedPtr<const FVekaView> View;
 	FVekaElement SourceElement;
 	FVekaEnvironment InheritedEnvironment;
@@ -116,10 +158,21 @@ private:
 	TSharedPtr<FVekaPrimitiveState> PrimitiveState;
 	TMap<FName, TSharedPtr<FVekaStateBoxBase>> States;
 	TArray<TSharedRef<FVekaNode>> Children;
+	TArray<TSharedRef<FVekaNode>> RemovedChildren;
 	FVekaNode* Parent = nullptr;
 	FVekaGestureSet Gestures;
 	double LayoutPriority = 0.0;
 	bool bDirty = false;
+	/** Children were reconciled at least once (insertions after that can play transitions). */
+	bool bBuilt = false;
+	/** Transaction captured by WithAnimation when this view was marked dirty. */
+	TOptional<FVekaAnimationSpec> PendingTransaction;
+
+	TArray<FVekaTransitionEffect> TransitionEffects;
+	float TransitionProgress = 1.f;
+	bool bRemoving = false;
+	FVekaRect LayoutTarget;
+	bool bPlaced = false;
 
 	TArray<TPair<FVekaProposal, FVector2D>, TInlineAllocator<4>> MeasureCache;
 	FVekaRect ArrangedRect;
