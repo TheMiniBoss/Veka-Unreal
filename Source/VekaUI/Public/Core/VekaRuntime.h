@@ -58,6 +58,15 @@ public:
 	void RequestUpdate();
 	void MarkNodeDirty(FVekaNode& Node);
 
+	/** Last frame (root space) of the views with a matched-geometry id (`.MatchedGeometry`). */
+	struct FMatchedGeometry
+	{
+		TWeakPtr<FVekaNode> Node;
+		FVekaRect RootRect;
+	};
+	void RecordMatchedGeometry(FName Key, FVekaNode& Node, const FVekaRect& RootRect);
+	const FMatchedGeometry* FindMatchedGeometry(FName Key) const;
+
 	// FGCObject
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 	virtual FString GetReferencerName() const override { return TEXT("FVekaRuntime"); }
@@ -80,6 +89,7 @@ private:
 	TOptional<FVekaAnimationSpec> LayoutTransaction;
 	uint64 LayoutTransactionFrame = 0;
 	bool bFlushing = false;
+	TMap<FName, FMatchedGeometry> MatchedGeometry;
 
 	void TickTimelines(double DeltaSeconds);
 };

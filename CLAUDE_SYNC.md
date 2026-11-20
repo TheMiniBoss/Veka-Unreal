@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles**, **2e Contrôles** ✅ fusionnés dans `C++` ; prochain jalon **2f Morph** |
+| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles**, **2e Contrôles**, **2f Morph** ✅ fusionnés dans `C++` ; prochain jalon **2g UVekaView + bridge** |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles + Contrôles ; 52/52 tests automation ✅ |
-| Prochaine étape | 2f Morph (sur demande de TheMiniBoss) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles + Contrôles + Morph ; 56/56 tests automation ✅ |
+| Prochaine étape | 2g UVekaView + bridge Blueprint (sur demande de TheMiniBoss) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,39 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD + LOCAL → jalon 2f Morph
+
+- **Branche** : `cpp/phase-2f-morph` (partie de `C++` @ `9e46a91`), fusionnée dans `C++`.
+- **`matchedGeometry`** (`.MatchedGeometry(id, namespace)`, SwiftUI matchedGeometryEffect) : le runtime retient le cadre
+  (en espace racine) de chaque vue qui porte un id. Quand une vue avec le même id apparaît pendant une animation
+  (`WithAnimation`, `.Animation`), son cadre part de celui de l'autre et s'anime vers le sien (`AnimateRect`) ; la vue
+  qui part (fantôme de transition) vole vers le nouveau cadre en s'effaçant. Le contenu garde sa mise en page finale
+  pendant que le cadre s'anime (comportement 2c) : ajouter `.Clip()` sur la carte.
+- **`ShapeGroup`** (`Veka::ShapeGroup(lissage, remplissage)(...)`) : les formes du sous-arbre ne se dessinent plus une à
+  une ; leurs champs de distance signée sont fusionnés par un **smooth-min** polynomial, le contour est extrait par
+  **marching squares** (cellules de 1,5 px, croisements interpolés, chaînage en boucles fermées), puis rempli par le
+  renderer Colora (antialiasing, dégradés, cache). Les formes sont capturées à chaque mise en page, avec leurs offsets,
+  échelles et rotations (`.Offset` anime la fusion) ; le contour n'est recalculé que si une forme bouge. **Hit-test
+  fusionné** : un clic dans le pont entre deux formes touche le groupe. Formes : rectangle, arrondi, capsule, cercle,
+  ellipse, et chemins (distance au polygone aplati). Le texte et les symboles se dessinent normalement par-dessus.
+  Ce n'est pas un shader : tout est sur CPU, ce qui suffit pour une UI (pas besoin du module de rendu).
+- **Playground** (section Morph) : bouton « Open the card » → carte (et retour par la croix), goutte qui se détache d'un
+  blob et revient (ressort), cercle qui fond dans une capsule (« île »), blob rouge à glisser qui fusionne avec les
+  autres.
+- **Tests** : 56/56 ✅ — nouveaux `VekaUI.Morph.{Field, Contour, ShapeGroup, MatchedGeometry}` : smooth-min (min loin,
+  pont près, k = 0), cercle extrait à 1 % d'aire près, deux cercles = 2 boucles sans lissage / 1 avec ; les formes d'un
+  groupe ne se dessinent pas elles-mêmes (contre-épreuve hors groupe) ; clic dans le pont (contre-épreuve sans
+  lissage) ; carte qui part du cadre du bouton, grandit puis atteint le sien (contre-épreuves : sans animation, sans id).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase2f-morph*.jpg`) : ouverture et fermeture de la carte (captures
+  pendant l'animation), goutte qui s'étire et se détache, fusion de l'île, glisser du blob.
+- **Limites connues** :
+  - Les clics n'atteignent un groupe que dans ses limites de mise en page (Slate) : une forme décalée en dehors par
+    `.Offset` se dessine mais ne reçoit pas de clic hors de ces limites.
+  - Les transformations des conteneurs intermédiaires d'un groupe sont ignorées (seules celles des formes comptent).
+  - `.morphGroup` comme modificateur sur des vues quelconques (fonds de boutons) n'est pas fait : seules les formes
+    fusionnent.
 
 ### 2026-11-20 — LOCAL → correctifs 2e : lenteur (rendu et interaction), champs qui clignotent, teinte à 360°, picker sur 2 lignes
 

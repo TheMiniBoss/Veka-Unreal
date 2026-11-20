@@ -1,6 +1,7 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Core/VekaRuntime.h"
+#include "Morph/VekaMorph.h"
 #include "Core/VekaNode.h"
 #include "Core/VekaView.h"
 #include "VekaUILog.h"
@@ -103,6 +104,18 @@ const FVekaAnimationSpec* FVekaRuntime::GetLayoutTransaction() const
 {
 	// Layout happens in the paint that follows the flush (same or next frame).
 	return LayoutTransaction.IsSet() && GFrameCounter <= LayoutTransactionFrame + 1 ? &LayoutTransaction.GetValue() : nullptr;
+}
+
+void FVekaRuntime::RecordMatchedGeometry(FName Key, FVekaNode& Node, const FVekaRect& RootRect)
+{
+	FMatchedGeometry& Entry = MatchedGeometry.FindOrAdd(Key);
+	Entry.Node = Node.AsShared();
+	Entry.RootRect = RootRect;
+}
+
+const FVekaRuntime::FMatchedGeometry* FVekaRuntime::FindMatchedGeometry(FName Key) const
+{
+	return MatchedGeometry.Find(Key);
 }
 
 void FVekaRuntime::BeginLayoutTransaction(const FVekaAnimationSpec& Spec)
@@ -226,6 +239,14 @@ void FVekaRuntime::EvaluateNode(FVekaNode& Node, bool bDescriptionChanged)
 		}
 	}
 	Node.LayoutPriority = Traits.LayoutPriority;
+	Node.MatchedKey = NAME_None;
+	for (const FInstancedStruct& Modifier : Node.Modifiers)
+	{
+		if (const FVekaMatchedGeometryModifier* Matched = Modifier.GetPtr<FVekaMatchedGeometryModifier>())
+		{
+			Node.MatchedKey = Matched->Namespace.IsNone() ? Matched->Id : FName(*(Matched->Namespace.ToString() + TEXT("/") + Matched->Id.ToString()));
+		}
+	}
 
 	// Clear before running Body so state set during Body schedules a new pass instead of being lost.
 	Node.bDirty = false;

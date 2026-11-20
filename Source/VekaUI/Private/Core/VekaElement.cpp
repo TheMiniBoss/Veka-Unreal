@@ -13,6 +13,7 @@
 #include "Primitives/VekaShapeView.h"
 #include "Symbols/VekaSymbolView.h"
 #include "Controls/VekaControls.h"
+#include "Morph/VekaMorph.h"
 #include "Vector/VekaStroke.h"
 #include "VekaUILog.h"
 
@@ -665,4 +666,15 @@ FVekaElement FVekaElement::ContextMenu(const TArray<FVekaMenuItem>& Items) &&
 	{
 		Veka::Popup::Present(Veka::MenuContent(Items), EVekaPopupPlacement::AtCursor);
 	});
+}
+
+// --- Morph -----------------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::MatchedGeometry(FName InId, FName InNamespace) &&
+{
+	FVekaMatchedGeometryModifier Modifier;
+	Modifier.Id = InId;
+	Modifier.Namespace = InNamespace;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
 }
