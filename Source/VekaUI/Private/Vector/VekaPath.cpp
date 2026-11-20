@@ -761,7 +761,7 @@ namespace Veka::PathOps
 			TArray<FVector2D> Points = Polyline.Points;
 			if (Polyline.bClosed && Points.Num() > 1 && !Points.Last().Equals(Points[0]))
 			{
-				Points.Add(Points[0]);
+				Points.Add(Polyline.Points[0]); // not Points[0]: Add() may reallocate (UE asserts on aliasing)
 			}
 			return Points;
 		}

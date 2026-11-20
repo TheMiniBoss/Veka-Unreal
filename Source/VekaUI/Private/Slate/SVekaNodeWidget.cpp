@@ -82,8 +82,12 @@ void SVekaNodeWidget::OnArrangeChildren(const FGeometry& AllottedGeometry, FArra
 	}
 
 	Pinned->Arrange(AllottedGeometry.GetLocalSize());
+	ArrangeChildWidgets(*Pinned, AllottedGeometry, ArrangedChildren);
+}
 
-	const TArray<TSharedRef<FVekaNode>>& ChildNodes = Pinned->GetChildren();
+void SVekaNodeWidget::ArrangeChildWidgets(const FVekaNode& InNode, const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const
+{
+	const TArray<TSharedRef<FVekaNode>>& ChildNodes = InNode.GetChildren();
 	const int32 Num = FMath::Min(ChildNodes.Num(), Children.Num());
 	for (int32 Index = 0; Index < Num; ++Index)
 	{
@@ -107,6 +111,10 @@ int32 SVekaNodeWidget::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 	{
 		return LayerId;
 	}
+
+	// Modifier rects and the content rect must match this geometry before any modifier paints
+	// (leaves have no OnArrangeChildren call, and modifiers can change between two layouts).
+	Pinned->Arrange(AllottedGeometry.GetLocalSize());
 
 	const FPaintPass Pass{ Args, AllottedGeometry, MyCullingRect, OutDrawElements, ShouldBeEnabled(bParentEnabled) };
 	return PaintLevel(Pass, *Pinned, Pinned->GetModifiers().Num() - 1, LayerId, InWidgetStyle);
@@ -169,7 +177,7 @@ int32 SVekaNodeWidget::PaintContent(const FPaintPass& Pass, FVekaNode& InNode, i
 		}
 
 		FArrangedChildren Arranged(EVisibility::Visible);
-		ArrangeChildren(Pass.Geometry, Arranged);
+		ArrangeChildWidgets(InNode, Pass.Geometry, Arranged); // already arranged in OnPaint
 		const int32 ChildLayer = MaxLayer + 1;
 		for (int32 Index = 0; Index < Arranged.Num(); ++Index)
 		{
@@ -230,6 +238,13 @@ FReply SVekaNodeWidget::OnMouseButtonDown(const FGeometry& MyGeometry, const FPo
 
 	SetPressed(true);
 	return FReply::Handled().CaptureMouse(SharedThis(this));
+}
+
+FReply SVekaNodeWidget::OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	// Slate sends the second click of a fast pair as a double-click instead of a button down: treat it as a
+	// new press so rapid taps all count (like SButton).
+	return OnMouseButtonDown(MyGeometry, MouseEvent);
 }
 
 FReply SVekaNodeWidget::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)

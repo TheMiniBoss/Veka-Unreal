@@ -33,6 +33,7 @@ public:
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
 		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
@@ -49,6 +50,8 @@ private:
 		bool bEnabled;
 	};
 
+	/** Child widget geometries from the node's last Arrange (does not arrange the node). */
+	void ArrangeChildWidgets(const FVekaNode& InNode, const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const;
 	int32 PaintLevel(const FPaintPass& Pass, FVekaNode& Node, int32 Level, int32 LayerId, const FWidgetStyle& Style) const;
 	int32 PaintContent(const FPaintPass& Pass, FVekaNode& Node, int32 LayerId, const FWidgetStyle& Style) const;
 	void SetPressed(bool bInPressed);

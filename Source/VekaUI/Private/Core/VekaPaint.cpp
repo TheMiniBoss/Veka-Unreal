@@ -119,9 +119,10 @@ int32 FVekaPaint::DrawOutline(FVekaPaintContext& Context, const FVekaRect& Rect,
 	}
 
 	// Fill transparent, outline colored. The outline color carries the inherited tint itself.
+	// A RoundedBox element is filled with the MakeBox tint (the brush TintColor is not used), so it must be transparent.
 	SetupRoundedBox(BrushCache, Radii.ClampedTo(Rect.Size), Context.Tint(GetAverageColor()), Width);
 	BrushCache.TintColor = FSlateColor(FLinearColor::Transparent);
 	FSlateDrawElement::MakeBox(Context.DrawElements, Context.LayerId, Context.MakePaintGeometry(Rect), &BrushCache, Context.DrawEffects,
-		FLinearColor::White);
+		FLinearColor::Transparent);
 	return Context.LayerId;
 }
