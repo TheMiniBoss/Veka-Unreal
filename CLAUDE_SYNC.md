@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **1 — Core** : ✅ compilée et testée (D-002), fusionnée dans `C++` |
-| Branche active | `C++` (Phase 2 : `cpp/phase-2-colora-anima`, pas encore créée) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` Phase 1 ; 13/13 tests automation ✅ |
-| Prochaine étape | Phase 2, jalon 2.0 (dette Phase 1) puis 2a ; police = LTFlode Neue, glyphes redessinés en SVG |
+| Phase | **2** — jalon **2.0** (dette Phase 1) ✅ fusionné dans `C++` ; prochain jalon **2a Colora** |
+| Branche active | `C++` (2a : `cpp/phase-2a-colora`, pas encore créée) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` Phase 1 ; 16/16 tests automation ✅ (dont 3 tests Slate/UMG) |
+| Prochaine étape | 2a Colora ; police = LTFlode Neue, glyphes redessinés en SVG |
 | Bloquant | aucun (point à vérifier à la main : clics répétés sur « +1 », voir `LOCAL → D-002`) |
 
 ---
@@ -119,6 +119,26 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — LOCAL → jalon 2.0 : tests du chemin Slate et du bridge UMG
+
+- **Branche** : `cpp/phase-2.0-tests` (partie de `C++` @ `ede2f52`), fusionnée dans `C++`.
+- **Nouveau fichier** : `Source/VekaUI/Private/Tests/VekaUISlateTests.cpp`. Les tests peignent dans une liste d'éléments
+  hors écran (fenêtre non enregistrée) et appellent directement les handlers souris des widgets : ils tournent en
+  `-nullrhi`, sans fenêtre OS.
+  - `VekaUI.Slate.PaintModifiers` : peint une feuille avec padding + background + border ; vérifie le fond, et que la
+    bordure a un remplissage **transparent**, la bonne couleur et la bonne épaisseur.
+  - `VekaUI.Slate.UMGHostPlayground` : `UVekaHostWidget` + `ViewClass = UVekaPlaygroundViewSource` → `TakeWidget()`
+    renvoie un `SVekaHost`, la racine existe, le Playground se peint (ce que fait le Designer d'un Widget Blueprint).
+  - `VekaUI.Slate.TapAndDoubleClick` : sur le vrai « +1 » du Playground (onPress + onTap + scale), tap → 1,
+    double-clic → 2, tap → 3, avec une frame (flush) entre l'appui et le relâchement.
+- **Contre-épreuve** (bugs réintroduits temporairement) : sans le fix bordure → `PaintModifiers` échoue ; sans le fix
+  double-clic → `TapAndDoubleClick` échoue ; sans l'`Arrange()` en tête de `OnPaint` → `PaintModifiers` reproduit le
+  **crash exact** de l'éditeur (`GetModifierRect` hors bornes). Code restauré ensuite.
+- **Tests** : 16/16 ✅. **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Pas fait** : vérification dans le Designer d'un vrai Widget Blueprint (remplacée par le test UMG ci-dessus) ;
+  clics répétés sur « +1 » à la vraie souris → à faire par TheMiniBoss. Les handlers sont maintenant couverts par
+  les tests ; si des clics se perdent encore à la main, le problème est en amont (routage Slate / OS).
 
 ### 2026-11-20 — CLOUD → décisions police et glyphes (réponses de TheMiniBoss)
 
