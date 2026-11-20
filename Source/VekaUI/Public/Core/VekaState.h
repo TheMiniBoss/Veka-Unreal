@@ -72,12 +72,17 @@ struct TVekaStateBox final : public FVekaStateBoxBase
 	T Value{};
 };
 
-/** Two-way access to a value owned elsewhere (SwiftUI's Binding / `$value`). */
+template <typename T>
+class TVekaState;
+
+/** Two-way access to a value owned elsewhere (SwiftUI's Binding / `$value`). A TVekaState converts to it. */
 template <typename T>
 class TVekaBinding
 {
 public:
 	TVekaBinding() = default;
+	/** Binding to a @State (controls: Veka::Toggle(Title, OnState)). */
+	TVekaBinding(const TVekaState<T>& State);
 	TVekaBinding(TFunction<T()> InGetter, TFunction<void(const T&)> InSetter)
 		: Getter(MoveTemp(InGetter)), Setter(MoveTemp(InSetter))
 	{
@@ -190,3 +195,9 @@ public:
 private:
 	TSharedPtr<TVekaStateBox<T>> Box;
 };
+
+template <typename T>
+TVekaBinding<T>::TVekaBinding(const TVekaState<T>& State)
+	: TVekaBinding(State.Binding())
+{
+}

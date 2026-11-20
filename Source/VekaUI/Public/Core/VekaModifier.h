@@ -9,15 +9,50 @@
 
 class FVekaEnvironment;
 
+enum class EVekaDragPhase : uint8
+{
+	Began,
+	Changed,
+	Ended
+};
+
+/** One step of a drag (SwiftUI DragGesture.Value). Positions are in the node's local space. */
+struct FVekaDragValue
+{
+	EVekaDragPhase Phase = EVekaDragPhase::Began;
+	FVector2D Location = FVector2D::ZeroVector;
+	FVector2D StartLocation = FVector2D::ZeroVector;
+	FVector2D Translation = FVector2D::ZeroVector;
+	/** Size of the node (to turn a location into a fraction). */
+	FVector2D Size = FVector2D::ZeroVector;
+};
+
 /** Gesture callbacks collected from the modifiers of a node. */
 struct VEKAUI_API FVekaGestureSet
 {
 	TArray<TFunction<void()>> OnTap;
 	TArray<TFunction<void(bool)>> OnHover;
 	TArray<TFunction<void(bool)>> OnPress;
+	/** Right click (context menus); screen position of the click. */
+	TArray<TFunction<void(const FVector2D&)>> OnSecondaryTap;
+	TArray<TFunction<void(const FVekaDragValue&)>> OnDrag;
+	/** Keys while focused; return true when handled. Unhandled Enter / Space activate OnTap. */
+	TArray<TFunction<bool(const FKeyEvent&)>> OnKey;
+	/** Keyboard focus shown (true only for keyboard navigation, so a click shows no focus ring). */
+	TArray<TFunction<void(bool)>> OnFocus;
+	/** Takes keyboard focus (Tab navigation, click). */
+	bool bFocusable = false;
 
-	bool IsEmpty() const { return OnTap.IsEmpty() && OnHover.IsEmpty() && OnPress.IsEmpty(); }
-	void Reset() { OnTap.Reset(); OnHover.Reset(); OnPress.Reset(); }
+	bool IsEmpty() const
+	{
+		return OnTap.IsEmpty() && OnHover.IsEmpty() && OnPress.IsEmpty() && OnSecondaryTap.IsEmpty() && OnDrag.IsEmpty()
+			&& OnKey.IsEmpty() && OnFocus.IsEmpty() && !bFocusable;
+	}
+	void Reset()
+	{
+		OnTap.Reset(); OnHover.Reset(); OnPress.Reset(); OnSecondaryTap.Reset(); OnDrag.Reset(); OnKey.Reset(); OnFocus.Reset();
+		bFocusable = false;
+	}
 };
 
 /** Layout hints collected from the modifiers of a node. */

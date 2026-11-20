@@ -93,7 +93,8 @@ FVector2D FVekaFrameModifier::Measure(const FVekaProposal& Proposal, FMeasureFn 
 
 FVekaRect FVekaFrameModifier::Place(const FVekaRect& Outer, FMeasureFn Inner) const
 {
-	// The content gets the frame's final size as proposal, then is aligned inside the frame.
-	const FVector2D Content = Inner(FVekaProposal::FromSize(Outer.Size)).ComponentMin(Outer.Size);
+	// The content gets the frame's final size as proposal (through the frame's own bounds: a root node is given the
+	// whole host, larger than its fixed frame), then is aligned inside the frame.
+	const FVector2D Content = Inner(MakeInnerProposal(FVekaProposal::FromSize(Outer.Size))).ComponentMin(Outer.Size);
 	return FVekaRect(Outer.Position + Alignment.Offset(Outer.Size, Content), Content);
 }

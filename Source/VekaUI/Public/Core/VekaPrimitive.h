@@ -13,6 +13,7 @@
 
 class FVekaNode;
 class FVekaEnvironment;
+class SWidget;
 
 /** Mutable runtime data owned by a node for its primitive (scroll offset, text layout cache, brushes...). */
 struct VEKAUI_API FVekaPrimitiveState
@@ -131,4 +132,10 @@ struct VEKAUI_API FVekaPrimitive
 	virtual bool WantsInput() const { return false; }
 
 	virtual FReply OnMouseWheel(FVekaInputContext& Context, const FPointerEvent& Event) const { return FReply::Unhandled(); }
+
+	/**
+	 * A native Slate widget placed over the content rect (text input...), owned by the state so it survives
+	 * re-evaluations. nullptr for drawn primitives.
+	 */
+	virtual TSharedPtr<SWidget> GetNativeWidget(FVekaPrimitiveState* State) const { return nullptr; }
 };

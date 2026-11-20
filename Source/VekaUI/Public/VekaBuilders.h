@@ -32,7 +32,7 @@ namespace Veka
 	VEKAUI_API FVekaElement Image(UObject* Source, bool bResizable = false);
 	/** Veka symbol by name ("bell", "wifi", "checkmark.circle.fill", or an Alpha 13 name like "Warning"). VariableValue 0..1, -1 = off. */
 	VEKAUI_API FVekaElement Symbol(FName Name, float VariableValue = -1.f);
-	/** Symbol and title side by side (SwiftUI Label). */
+	/** Symbol and title side by side (SwiftUI Label); `.LabelStyle` shows both, the title or the icon. */
 	VEKAUI_API FVekaElement Label(const FText& Title, FName SymbolName);
 	VEKAUI_API FVekaElement Shape(const FVekaShape& InShape);
 	VEKAUI_API FVekaElement Rectangle();

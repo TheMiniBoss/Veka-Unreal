@@ -287,6 +287,12 @@ namespace
 
 namespace Veka::TextLayout
 {
+	/**
+	 * Layout sizes are fractional and Slate snaps geometry to pixels: a text proposed its own width minus a
+	 * fraction of a pixel must not wrap or truncate (labels in buttons wrapped to two lines).
+	 */
+	constexpr double WrapSlack = 1.0;
+
 	FString TruncateLine(const FString& Line, double MaxWidth, EVekaTextTruncation Truncation, FMeasureWidth MeasureWidth)
 	{
 		if (Truncation == EVekaTextTruncation::None)
@@ -294,7 +300,7 @@ namespace Veka::TextLayout
 			return Line;
 		}
 		const bool bLimit = MaxWidth > 0.0 && !Veka::IsInfinite(MaxWidth);
-		auto Fits = [&](const FString& Candidate) { return !bLimit || MeasureWidth(Candidate) <= MaxWidth; };
+		auto Fits = [&](const FString& Candidate) { return !bLimit || MeasureWidth(Candidate) <= MaxWidth + WrapSlack; };
 
 		// Number of characters kept, found by binary search on the fit.
 		auto Build = [&](int32 Kept) -> FString
@@ -364,7 +370,7 @@ namespace Veka::TextLayout
 			for (const FString& Word : Words)
 			{
 				const FString Candidate = Current.IsEmpty() ? Word : Current + TEXT(" ") + Word;
-				if (Current.IsEmpty() || MeasureWidth(Candidate) <= MaxWidth)
+				if (Current.IsEmpty() || MeasureWidth(Candidate) <= MaxWidth + WrapSlack)
 				{
 					Current = Candidate;
 				}
@@ -375,10 +381,10 @@ namespace Veka::TextLayout
 				}
 
 				// A single word wider than the line is split by characters.
-				while (MeasureWidth(Current) > MaxWidth && Current.Len() > 1)
+				while (MeasureWidth(Current) > MaxWidth + WrapSlack && Current.Len() > 1)
 				{
 					int32 Fit = Current.Len() - 1;
-					while (Fit > 1 && MeasureWidth(Current.Left(Fit)) > MaxWidth)
+					while (Fit > 1 && MeasureWidth(Current.Left(Fit)) > MaxWidth + WrapSlack)
 					{
 						--Fit;
 					}
@@ -525,8 +531,15 @@ FVector2D FVekaText::SizeThatFits(const FVekaProposal& Proposal, FVekaLayoutCont
 
 	const Veka::Typography::FResolvedText Resolved = ResolveText(Context.Environment);
 	const FString String = ApplyCase(Text.ToString(), Resolved.Case);
-	const FVekaLaidOutText& Result = Layout(State, String, Resolved, MaxWidthFor(Proposal), false);
-	return FVector2D(FMath::CeilToDouble(Result.MaxLineWidth), FMath::CeilToDouble(Result.LineHeight * Result.Lines.Num()));
+	const double MaxWidth = MaxWidthFor(Proposal);
+	const FVekaLaidOutText& Result = Layout(State, String, Resolved, MaxWidth, false);
+	double Width = FMath::CeilToDouble(Result.MaxLineWidth);
+	if (MaxWidth >= 0.0 && Width > MaxWidth && Result.MaxLineWidth <= MaxWidth + Veka::TextLayout::WrapSlack)
+	{
+		// Kept on one line thanks to the sub-pixel slack: still report the proposed width (glyphs overhang < 1 px).
+		Width = MaxWidth;
+	}
+	return FVector2D(Width, FMath::CeilToDouble(Result.LineHeight * Result.Lines.Num()));
 }
 
 int32 FVekaText::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds) const
