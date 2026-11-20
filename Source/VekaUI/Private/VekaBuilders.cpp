@@ -7,6 +7,7 @@
 #include "Primitives/VekaText.h"
 #include "Primitives/VekaImage.h"
 #include "Primitives/VekaShapeView.h"
+#include "Symbols/VekaSymbolView.h"
 #include "Styling/CoreStyle.h"
 #include "VekaUILog.h"
 
@@ -30,6 +31,19 @@ namespace Veka
 		Primitive.Source = Source;
 		Primitive.bResizable = bResizable;
 		return FVekaElement::Make(Primitive);
+	}
+
+	FVekaElement Symbol(FName Name, float VariableValue)
+	{
+		FVekaSymbolView Primitive;
+		Primitive.Name = Name;
+		Primitive.VariableValue = FMath::Clamp(VariableValue, -1.f, 1.f);
+		return FVekaElement::Make(Primitive);
+	}
+
+	FVekaElement Label(const FText& Title, FName SymbolName)
+	{
+		return HStack(6.f)(Symbol(SymbolName), Text(Title));
 	}
 
 	FVekaElement Shape(const FVekaShape& InShape)

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Core/VekaPaint.h"
+#include "Vector/VekaStroke.h"
 
 struct FVekaPaintContext;
 struct FVekaPolyline;
@@ -61,8 +62,12 @@ namespace Veka::PaintRender
 	/** Fills closed polylines (local space) with a resolved paint fitted to Bounds. */
 	VEKAUI_API int32 FillPolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, const FVekaRect& Bounds);
 
-	/** Antialiased lines along polylines; gradient paints get a color per point. */
-	VEKAUI_API int32 StrokePolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds);
+	/**
+	 * Tessellated, antialiased strokes along polylines (caps, joins, miter limit; gradient paints colored per vertex).
+	 * Joins only fill the outer side of each turn, so translucent strokes do not darken at their joints.
+	 */
+	VEKAUI_API int32 StrokePolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds,
+		EVekaLineCap Cap = EVekaLineCap::Butt, EVekaLineJoin Join = EVekaLineJoin::Miter, float MiterLimit = 4.f);
 
 	/** Color matrix of the environment, then the widget style tint (opacity). */
 	VEKAUI_API FLinearColor ApplyTint(const FVekaPaintContext& Context, const FLinearColor& Color);

@@ -18,6 +18,13 @@ class UVekaTheme;
 struct FVekaElementData;
 struct FVekaPaint;
 struct FVekaStrokeStyle;
+struct FVekaSymbolStyle;
+struct FVekaSymbolVariant;
+struct FVekaSymbolEffect;
+enum class EVekaSymbolStyleField : uint8;
+enum class EVekaSymbolRenderingMode : uint8;
+enum class EVekaSymbolScale : uint8;
+enum class EVekaSymbolReplace : uint8;
 
 enum class EVekaElementKind : uint8
 {
@@ -248,6 +255,46 @@ public:
 	/** How this view enters / leaves inside an animation transaction (default: opacity). */
 	FVekaElement Transition(const FVekaTransition& InTransition) const& { return FVekaElement(*this).Transition(InTransition); }
 	FVekaElement Transition(const FVekaTransition& InTransition) &&;
+
+	// --- Symbols ---------------------------------------------------------------------------------
+
+	/** Sets one field of the symbol style of the subtree (the methods below are shortcuts). */
+	FVekaElement SymbolStyleField(EVekaSymbolStyleField Field, const FVekaSymbolStyle& Value) const& { return FVekaElement(*this).SymbolStyleField(Field, Value); }
+	FVekaElement SymbolStyleField(EVekaSymbolStyleField Field, const FVekaSymbolStyle& Value) &&;
+	/** Monochrome, hierarchical (100 / 60 / 30 %), palette or multicolor. */
+	FVekaElement SymbolRenderingMode(EVekaSymbolRenderingMode Mode) const& { return FVekaElement(*this).SymbolRenderingMode(Mode); }
+	FVekaElement SymbolRenderingMode(EVekaSymbolRenderingMode Mode) &&;
+	/** Adds a variant (fill, circle / square enclosure, slash) to the symbols of the subtree. */
+	FVekaElement SymbolVariant(const FVekaSymbolVariant& Variant) const& { return FVekaElement(*this).SymbolVariant(Variant); }
+	FVekaElement SymbolVariant(const FVekaSymbolVariant& Variant) &&;
+	/** Small, medium or large symbols relative to the font (SwiftUI imageScale). */
+	FVekaElement SymbolScale(EVekaSymbolScale Scale) const& { return FVekaElement(*this).SymbolScale(Scale); }
+	FVekaElement SymbolScale(EVekaSymbolScale Scale) &&;
+	/** Palette mode colors (primary, secondary, tertiary layers); also sets the palette mode. */
+	FVekaElement SymbolPalette(const TArray<FVekaPaint>& Paints) const& { return FVekaElement(*this).SymbolPalette(Paints); }
+	FVekaElement SymbolPalette(const TArray<FVekaPaint>& Paints) &&;
+	/** Explicit symbol weight 0..1 (default: the font weight). */
+	FVekaElement SymbolWeight(float Weight) const& { return FVekaElement(*this).SymbolWeight(Weight); }
+	FVekaElement SymbolWeight(float Weight) &&;
+	/** Indefinite effect while bIsActive (pulse, rotate, breathe...), or appear / disappear / draw on when it becomes true. */
+	FVekaElement SymbolEffect(const FVekaSymbolEffect& Effect, bool bIsActive = true) const& { return FVekaElement(*this).SymbolEffect(Effect, bIsActive); }
+	FVekaElement SymbolEffect(const FVekaSymbolEffect& Effect, bool bIsActive = true) &&;
+	/** Plays the effect once every time Value changes (SwiftUI `.symbolEffect(_:value:)`). */
+	template <typename TValue>
+	FVekaElement SymbolEffectOnChange(const FVekaSymbolEffect& Effect, const TValue& Value) const& { return FVekaElement(*this).SymbolEffectKey(Effect, static_cast<int64>(GetTypeHash(Value))); }
+	template <typename TValue>
+	FVekaElement SymbolEffectOnChange(const FVekaSymbolEffect& Effect, const TValue& Value) && { return MoveTemp(*this).SymbolEffectKey(Effect, static_cast<int64>(GetTypeHash(Value))); }
+	FVekaElement SymbolEffectKey(const FVekaSymbolEffect& Effect, int64 Trigger) const& { return FVekaElement(*this).SymbolEffectKey(Effect, Trigger); }
+	FVekaElement SymbolEffectKey(const FVekaSymbolEffect& Effect, int64 Trigger) &&;
+	/** How symbols animate when their name or variant changes. */
+	FVekaElement SymbolReplace(EVekaSymbolReplace Mode, float Duration = 0.35f) const& { return FVekaElement(*this).SymbolReplace(Mode, Duration); }
+	FVekaElement SymbolReplace(EVekaSymbolReplace Mode, float Duration = 0.35f) &&;
+	/** Symbol element only: variable value 0..1 (-1 = off). */
+	FVekaElement SymbolValue(float Value) const& { return FVekaElement(*this).SymbolValue(Value); }
+	FVekaElement SymbolValue(float Value) &&;
+	/** Symbol element only: badge count (> 0), dot (-1) or none (0). */
+	FVekaElement SymbolBadge(int32 Count) const& { return FVekaElement(*this).SymbolBadge(Count); }
+	FVekaElement SymbolBadge(int32 Count) &&;
 
 	// --- Interaction -----------------------------------------------------------------------------
 

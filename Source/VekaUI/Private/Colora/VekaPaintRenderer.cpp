@@ -597,6 +597,50 @@ namespace Veka::PaintRender
 		return Out * Context.WidgetStyle.GetColorAndOpacityTint();
 	}
 
+	/** Colors (sampled in the paint's space, tinted, coverage in alpha) and draws a mesh as Slate custom vertices. */
+	static int32 EmitMesh(FVekaPaintContext& Context, const FMesh& Mesh, const Veka::Colora::FPaintSampler& Sampler, const FVekaPaint& Paint)
+	{
+		if (Mesh.Indices.IsEmpty())
+		{
+			return Context.LayerId;
+		}
+		FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer();
+		const FSlateBrush* WhiteBrush = GetWhiteBrush();
+		if (!Renderer || !WhiteBrush)
+		{
+			return Context.LayerId;
+		}
+		const FSlateResourceHandle Handle = Renderer->GetResourceHandle(*WhiteBrush);
+
+		const bool bAdditive = VekaEnv::GetBlendMode(Context.Environment) == EVekaBlendMode::Add;
+		const ESlateDrawEffect Effects = bAdditive ? (Context.DrawEffects | ESlateDrawEffect::PreMultipliedAlpha) : Context.DrawEffects;
+		const FSlateRenderTransform& Transform = Context.Geometry.GetAccumulatedRenderTransform();
+		const bool bConstant = !Paint.IsGradient();
+		const FLinearColor ConstantColor = bConstant ? ApplyTint(Context, Sampler.Sample(FVector2D::ZeroVector)) : FLinearColor::Transparent;
+
+		TArray<FSlateVertex> Vertices;
+		Vertices.Reserve(Mesh.Positions.Num());
+		for (int32 Index = 0; Index < Mesh.Positions.Num(); ++Index)
+		{
+			FLinearColor Color = bConstant ? ConstantColor : ApplyTint(Context, Sampler.Sample(Mesh.Positions[Index]));
+			Color.A *= Mesh.Coverage[Index];
+			if (bAdditive)
+			{
+				Color = FLinearColor(Color.R * Color.A, Color.G * Color.A, Color.B * Color.A, 0.f);
+			}
+			Vertices.Add(MakeVertex(Transform, Mesh.Positions[Index], Color.ToFColor(true)));
+		}
+
+		TArray<SlateIndex> Indices;
+		Indices.Reserve(Mesh.Indices.Num());
+		for (int32 Index : Mesh.Indices)
+		{
+			Indices.Add(static_cast<SlateIndex>(Index));
+		}
+		FSlateDrawElement::MakeCustomVerts(Context.DrawElements, Context.LayerId, Handle, Vertices, Indices, nullptr, 0, 0, Effects);
+		return Context.LayerId;
+	}
+
 	int32 FillPolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, const FVekaRect& Bounds)
 	{
 		if (!Paint.IsVisible() || Polylines.IsEmpty() || !FSlateApplication::IsInitialized())
@@ -676,128 +720,246 @@ namespace Veka::PaintRender
 			AddFringe(Mesh, Polygon, FringeWidth);
 		}
 
-		if (Mesh.Indices.IsEmpty())
-		{
-			return Context.LayerId;
-		}
-
-		FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer();
-		const FSlateBrush* WhiteBrush = GetWhiteBrush();
-		if (!Renderer || !WhiteBrush)
-		{
-			return Context.LayerId;
-		}
-		const FSlateResourceHandle Handle = Renderer->GetResourceHandle(*WhiteBrush);
-
-		const bool bAdditive = VekaEnv::GetBlendMode(Context.Environment) == EVekaBlendMode::Add;
-		const ESlateDrawEffect Effects = bAdditive ? (Context.DrawEffects | ESlateDrawEffect::PreMultipliedAlpha) : Context.DrawEffects;
-		const FSlateRenderTransform& Transform = Context.Geometry.GetAccumulatedRenderTransform();
-		const bool bConstant = !Paint.IsGradient();
-		const FLinearColor ConstantColor = bConstant ? ApplyTint(Context, Sampler.Sample(FVector2D::ZeroVector)) : FLinearColor::Transparent;
-
-		TArray<FSlateVertex> Vertices;
-		Vertices.Reserve(Mesh.Positions.Num());
-		for (int32 Index = 0; Index < Mesh.Positions.Num(); ++Index)
-		{
-			FLinearColor Color = bConstant ? ConstantColor : ApplyTint(Context, Sampler.Sample(Mesh.Positions[Index]));
-			Color.A *= Mesh.Coverage[Index];
-			if (bAdditive)
-			{
-				Color = FLinearColor(Color.R * Color.A, Color.G * Color.A, Color.B * Color.A, 0.f);
-			}
-			Vertices.Add(MakeVertex(Transform, Mesh.Positions[Index], Color.ToFColor(true)));
-		}
-
-		TArray<SlateIndex> Indices;
-		Indices.Reserve(Mesh.Indices.Num());
-		for (int32 Index : Mesh.Indices)
-		{
-			Indices.Add(static_cast<SlateIndex>(Index));
-		}
-
-		FSlateDrawElement::MakeCustomVerts(Context.DrawElements, Context.LayerId, Handle, Vertices, Indices, nullptr, 0, 0, Effects);
-		return Context.LayerId;
+		return EmitMesh(Context, Mesh, Sampler, Paint);
 	}
 
-	int32 StrokePolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds)
+	namespace
 	{
-		if (!Paint.IsVisible() || Width <= 0.f || Polylines.IsEmpty())
+		int32 ArcSteps(double Span, double RadiusPixels)
+		{
+			return FMath::Clamp(FMath::CeilToInt32(FMath::Abs(Span) * FMath::Sqrt(FMath::Max(RadiusPixels, 1.0)) * 0.9), 2, 32);
+		}
+
+		/** Fan (core + fringe ring) around Center from direction U0, sweeping Span radians. */
+		void AddRoundFan(FMesh& Mesh, const FVector2D& Center, const FVector2D& U0, double Span, double HalfWidth, double Fringe, double PixelsPerUnit)
+		{
+			const int32 Steps = ArcSteps(Span, HalfWidth * PixelsPerUnit);
+			const double Start = FMath::Atan2(U0.Y, U0.X);
+			const int32 CenterIndex = Mesh.AddVertex(Center, 1.f);
+			int32 PrevIn = INDEX_NONE;
+			int32 PrevOut = INDEX_NONE;
+			for (int32 Step = 0; Step <= Steps; ++Step)
+			{
+				const double Angle = Start + Span * Step / Steps;
+				const FVector2D U(FMath::Cos(Angle), FMath::Sin(Angle));
+				const int32 In = Mesh.AddVertex(Center + U * HalfWidth, 1.f);
+				const int32 Out = Mesh.AddVertex(Center + U * (HalfWidth + Fringe), 0.f);
+				if (PrevIn != INDEX_NONE)
+				{
+					Mesh.Indices.Append({ CenterIndex, PrevIn, In, PrevIn, PrevOut, Out, PrevIn, Out, In });
+				}
+				PrevIn = In;
+				PrevOut = Out;
+			}
+		}
+
+		/** Signed angle from A to B (unit vectors), in -PI..PI. */
+		double SignedAngle(const FVector2D& A, const FVector2D& B)
+		{
+			return FMath::Atan2(CrossZ(A, B), FVector2D::DotProduct(A, B));
+		}
+
+		/** Quad strip of one segment: rows at -(h+f), -h, +h, +(h+f) across, coverage 0 1 1 0. */
+		void AddSegment(FMesh& Mesh, const FVector2D& A, const FVector2D& B, const FVector2D& Normal, double HalfWidth, double Fringe,
+			float StartCoverage = 1.f, float EndCoverage = 1.f)
+		{
+			const double Offsets[4] = { -(HalfWidth + Fringe), -HalfWidth, HalfWidth, HalfWidth + Fringe };
+			const float Coverage[4] = { 0.f, 1.f, 1.f, 0.f };
+			int32 RowA[4];
+			int32 RowB[4];
+			for (int32 Row = 0; Row < 4; ++Row)
+			{
+				RowA[Row] = Mesh.AddVertex(A + Normal * Offsets[Row], Coverage[Row] * StartCoverage);
+				RowB[Row] = Mesh.AddVertex(B + Normal * Offsets[Row], Coverage[Row] * EndCoverage);
+			}
+			for (int32 Row = 0; Row < 3; ++Row)
+			{
+				Mesh.Indices.Append({ RowA[Row], RowB[Row], RowB[Row + 1], RowA[Row], RowB[Row + 1], RowA[Row + 1] });
+			}
+		}
+
+		void AddStroke(FMesh& Mesh, TArray<FVector2D> Points, bool bClosed, double HalfWidth, double Fringe, EVekaLineCap Cap, EVekaLineJoin Join,
+			double MiterLimit, double PixelsPerUnit)
+		{
+			if (bClosed && Points.Num() > 2)
+			{
+				const FVector2D First = Points[0]; // copy: Add() may reallocate
+				Points.Add(First);
+			}
+			const int32 Num = Points.Num();
+			if (Num < 2)
+			{
+				return;
+			}
+
+			TArray<FVector2D> Directions;
+			Directions.Reserve(Num - 1);
+			for (int32 Index = 0; Index + 1 < Num; ++Index)
+			{
+				Directions.Add((Points[Index + 1] - Points[Index]).GetSafeNormal());
+			}
+
+			// Square caps extend the first / last segment; round caps add half discs; butt ends fade over the fringe.
+			FVector2D Start = Points[0];
+			FVector2D End = Points[Num - 1];
+			const FVector2D D0 = Directions[0];
+			const FVector2D D1 = Directions.Last();
+			if (!bClosed && Cap == EVekaLineCap::Square)
+			{
+				Start -= D0 * HalfWidth;
+				End += D1 * HalfWidth;
+			}
+
+			for (int32 Index = 0; Index + 1 < Num; ++Index)
+			{
+				const FVector2D A = Index == 0 ? Start : Points[Index];
+				const FVector2D B = Index + 2 == Num ? End : Points[Index + 1];
+				AddSegment(Mesh, A, B, FVector2D(-Directions[Index].Y, Directions[Index].X), HalfWidth, Fringe);
+			}
+
+			// Joins fill the gap on the outer side of each turn.
+			const int32 NumDirections = Directions.Num();
+			const int32 FirstJoin = bClosed ? 0 : 1;
+			const int32 LastJoin = bClosed ? NumDirections - 1 : Num - 2;
+			for (int32 Index = FirstJoin; Index <= LastJoin; ++Index)
+			{
+				const FVector2D In = Directions[(Index - 1 + NumDirections) % NumDirections];
+				const FVector2D Out = Directions[Index % NumDirections];
+				const double Turn = SignedAngle(In, Out);
+				if (FMath::Abs(Turn) < 1.0e-3)
+				{
+					continue;
+				}
+				const FVector2D P = Points[Index];
+				const double Side = Turn > 0.0 ? -1.0 : 1.0;
+				const FVector2D N0 = FVector2D(-In.Y, In.X) * Side;
+				const FVector2D N1 = FVector2D(-Out.Y, Out.X) * Side;
+				const double Span = SignedAngle(N0, N1);
+
+				EVekaLineJoin Effective = Join;
+				if (Join == EVekaLineJoin::Miter && 1.0 / FMath::Max(FMath::Cos(FMath::Abs(Turn) * 0.5), 1.0e-3) > MiterLimit)
+				{
+					Effective = EVekaLineJoin::Bevel;
+				}
+
+				if (Effective == EVekaLineJoin::Round)
+				{
+					AddRoundFan(Mesh, P, N0, Span, HalfWidth, Fringe, PixelsPerUnit);
+					continue;
+				}
+				const int32 C = Mesh.AddVertex(P, 1.f);
+				const int32 A = Mesh.AddVertex(P + N0 * HalfWidth, 1.f);
+				const int32 B = Mesh.AddVertex(P + N1 * HalfWidth, 1.f);
+				const int32 AO = Mesh.AddVertex(P + N0 * (HalfWidth + Fringe), 0.f);
+				const int32 BO = Mesh.AddVertex(P + N1 * (HalfWidth + Fringe), 0.f);
+				if (Effective == EVekaLineJoin::Miter)
+				{
+					const FVector2D Bisector = (N0 + N1).GetSafeNormal();
+					const double Length = HalfWidth / FMath::Max(FVector2D::DotProduct(Bisector, N0), 1.0e-3);
+					const int32 M = Mesh.AddVertex(P + Bisector * Length, 1.f);
+					const int32 MO = Mesh.AddVertex(P + Bisector * (Length + Fringe), 0.f);
+					Mesh.Indices.Append({ C, A, M, C, M, B, A, AO, MO, A, MO, M, M, MO, BO, M, BO, B });
+				}
+				else
+				{
+					Mesh.Indices.Append({ C, A, B, A, AO, BO, A, BO, B });
+				}
+			}
+
+			if (bClosed)
+			{
+				return;
+			}
+			if (Cap == EVekaLineCap::Round)
+			{
+				AddRoundFan(Mesh, Start, FVector2D(-D0.Y, D0.X), UE_PI, HalfWidth, Fringe, PixelsPerUnit);
+				AddRoundFan(Mesh, End, FVector2D(D1.Y, -D1.X), UE_PI, HalfWidth, Fringe, PixelsPerUnit);
+			}
+			else
+			{
+				AddSegment(Mesh, Start - D0 * Fringe, Start, FVector2D(-D0.Y, D0.X), HalfWidth, Fringe, 0.f, 1.f);
+				AddSegment(Mesh, End, End + D1 * Fringe, FVector2D(-D1.Y, D1.X), HalfWidth, Fringe, 1.f, 0.f);
+			}
+		}
+	}
+
+	int32 StrokePolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds,
+		EVekaLineCap Cap, EVekaLineJoin Join, float MiterLimit)
+	{
+		if (!Paint.IsVisible() || Width <= 0.f || Polylines.IsEmpty() || !FSlateApplication::IsInitialized())
 		{
 			return Context.LayerId;
 		}
 
 		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
-		const bool bGradient = Paint.IsGradient();
 		const double PixelsPerUnit = GetPixelsPerUnit(Context);
-		const double Spacing = bGradient ? Sampler.GetSampleSpacingPixels() / PixelsPerUnit : 0.0;
+		const double Fringe = 1.0 / PixelsPerUnit;
+		double HalfWidth = Width * 0.5;
+		float Thin = 1.f;
+		if (Width * PixelsPerUnit < 1.0)
+		{
+			// Hairlines: keep a 1px core and fade it instead of thinning below a pixel.
+			Thin = static_cast<float>(Width * PixelsPerUnit);
+			HalfWidth = 0.5 / PixelsPerUnit;
+		}
+		const double Spacing = Paint.IsGradient() ? Sampler.GetSampleSpacingPixels() / PixelsPerUnit : 0.0;
 
+		FMesh Mesh;
 		for (const FVekaPolyline& Polyline : Polylines)
 		{
-			// Repeated points (joints of Bézier segments) make zero-length segments, which antialiased lines draw as notches.
-			TArray<FVector2D> Source;
+			// Repeated points (joints of Bezier segments) make zero-length segments.
+			TArray<FVector2D> Points;
 			if (Polyline.bClosed)
 			{
-				Source = CleanPolygon(Polyline);
+				Points = CleanPolygon(Polyline);
 			}
 			else
 			{
 				for (const FVector2D& Point : Polyline.Points)
 				{
-					if (Source.IsEmpty() || !Source.Last().Equals(Point, 1.0e-6))
+					if (Points.IsEmpty() || !Points.Last().Equals(Point, 1.0e-6))
 					{
-						Source.Add(Point);
+						Points.Add(Point);
 					}
 				}
 			}
-			if (Polyline.bClosed && Source.Num() > 2)
+			if (Spacing > 0.0 && Points.Num() > 1)
 			{
-				// Close, then run one segment further: Slate lines only join interior points, so the closing
-				// point would otherwise show a notch.
-				const FVector2D First = Source[0]; // copies: Add() may reallocate
-				const FVector2D Second = Source[1];
-				Source.Add(First);
-				Source.Add(Second);
+				// Subdivide long segments so the color follows the gradient.
+				TArray<FVector2D> Dense;
+				for (int32 Index = 0; Index < Points.Num(); ++Index)
+				{
+					if (Index > 0)
+					{
+						const FVector2D A = Points[Index - 1];
+						const FVector2D B = Points[Index];
+						const int32 Steps = FMath::Min(FMath::FloorToInt32(FVector2D::Distance(A, B) / Spacing), 256);
+						for (int32 Step = 1; Step <= Steps; ++Step)
+						{
+							Dense.Add(FMath::Lerp(A, B, static_cast<double>(Step) / (Steps + 1)));
+						}
+					}
+					Dense.Add(Points[Index]);
+				}
+				Points = MoveTemp(Dense);
 			}
-			if (Source.Num() < 2)
+			if (Points.Num() == 1)
 			{
+				if (Cap == EVekaLineCap::Round)
+				{
+					AddRoundFan(Mesh, Points[0], FVector2D(1.0, 0.0), UE_TWO_PI, HalfWidth, Fringe, PixelsPerUnit);
+				}
 				continue;
 			}
-
-			TArray<FVector2f> Points;
-			Points.Reserve(Source.Num());
-			for (int32 Index = 0; Index < Source.Num(); ++Index)
+			AddStroke(Mesh, MoveTemp(Points), Polyline.bClosed, HalfWidth, Fringe, Cap, Join, MiterLimit, PixelsPerUnit);
+		}
+		if (Thin < 1.f)
+		{
+			for (float& Coverage : Mesh.Coverage)
 			{
-				if (Spacing > 0.0 && Index > 0)
-				{
-					// Subdivide long segments so the color follows the gradient.
-					const FVector2D& A = Source[Index - 1];
-					const FVector2D& B = Source[Index];
-					const int32 Steps = FMath::Min(FMath::FloorToInt32(FVector2D::Distance(A, B) / Spacing), 256);
-					for (int32 Step = 1; Step <= Steps; ++Step)
-					{
-						Points.Add(FVector2f(FMath::Lerp(A, B, static_cast<double>(Step) / (Steps + 1))));
-					}
-				}
-				Points.Add(FVector2f(Source[Index]));
-			}
-
-			if (bGradient)
-			{
-				TArray<FLinearColor> Colors;
-				Colors.Reserve(Points.Num());
-				for (const FVector2f& Point : Points)
-				{
-					Colors.Add(ApplyTint(Context, Sampler.Sample(FVector2D(Point))));
-				}
-				FSlateDrawElement::MakeLines(Context.DrawElements, Context.LayerId, Context.Geometry.ToPaintGeometry(), MoveTemp(Points), MoveTemp(Colors),
-					Context.DrawEffects, FLinearColor::White, true, Width);
-			}
-			else
-			{
-				FSlateDrawElement::MakeLines(Context.DrawElements, Context.LayerId, Context.Geometry.ToPaintGeometry(), MoveTemp(Points),
-					Context.DrawEffects, ApplyTint(Context, Sampler.Sample(FVector2D::ZeroVector)), true, Width);
+				Coverage *= Thin;
 			}
 		}
-		return Context.LayerId;
+		return EmitMesh(Context, Mesh, Sampler, Paint);
 	}
 }

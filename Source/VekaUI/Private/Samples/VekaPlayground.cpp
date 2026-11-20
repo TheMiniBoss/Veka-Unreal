@@ -7,6 +7,7 @@
 #include "Engine/Texture2D.h"
 #include "Anima/VekaImplicit.h"
 #include "Anima/VekaTimeline.h"
+#include "Symbols/VekaSymbolView.h"
 
 namespace VekaPlaygroundPrivate
 {
@@ -480,6 +481,187 @@ namespace VekaPlaygroundPrivate
 		);
 	}
 
+	// --- Symbols ---------------------------------------------------------------------------------------------------
+
+	FVekaElement Caption(const TCHAR* Value)
+	{
+		using namespace Veka;
+		return Text(Value).Font(EVekaTextStyle::Caption2).Foreground(Muted);
+	}
+
+	FVekaElement Captioned(FVekaElement Content, const TCHAR* Value)
+	{
+		using namespace Veka;
+		return VStack(4)(MoveTemp(Content), Caption(Value));
+	}
+
+	/** Variable value: tap to step 0 -> 1. */
+	class FSymbolValueView : public FVekaView
+	{
+		VEKA_VIEW(FSymbolValueView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<int32> Step = Ctx.State<int32>(TEXT("Step"), 2);
+			const float Value = Step.Get() / 4.f;
+			return VStack(6, EVekaHAlign::Leading)(
+				HStack(18)(
+					Symbol(TEXT("wifi"), Value), Symbol(TEXT("speaker.wave.3"), Value), Symbol(TEXT("cellularbars"), Value),
+					Symbol(TEXT("battery"), Value), Symbol(TEXT("waveform"), Value), Symbol(TEXT("chart.bar"), Value)
+				).Font(EVekaTextStyle::Title1),
+				Text(FText::Format(INVTEXT("Variable value {0} (tap)"), FText::AsNumber(Value))).Font(EVekaTextStyle::Caption2).Foreground(Muted)
+			)
+			.Padding(8)
+			.Background(FLinearColor(1, 1, 1, 0.04f), 8)
+			.OnTap([Step]() { Step.Set((Step.Get() + 1) % 5); });
+		}
+	};
+
+	/** Every effect: tap a tile to play it; indefinite ones toggle. */
+	class FSymbolEffectsView : public FVekaView
+	{
+		VEKA_VIEW(FSymbolEffectsView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			struct FEntry { EVekaSymbolEffectKind Kind; const TCHAR* Symbol; const TCHAR* Name; bool bToggle; };
+			const FEntry Entries[] = {
+				{ EVekaSymbolEffectKind::Bounce, TEXT("bell"), TEXT("Bounce"), false },
+				{ EVekaSymbolEffectKind::Wiggle, TEXT("bell"), TEXT("Wiggle"), false },
+				{ EVekaSymbolEffectKind::Appear, TEXT("star"), TEXT("Appear"), false },
+				{ EVekaSymbolEffectKind::DrawOn, TEXT("checkmark.circle"), TEXT("Draw on"), false },
+				{ EVekaSymbolEffectKind::Scale, TEXT("heart"), TEXT("Scale"), false },
+				{ EVekaSymbolEffectKind::Pulse, TEXT("record"), TEXT("Pulse"), true },
+				{ EVekaSymbolEffectKind::VariableColor, TEXT("wifi"), TEXT("Variable color"), true },
+				{ EVekaSymbolEffectKind::Rotate, TEXT("gearshape"), TEXT("Rotate"), true },
+				{ EVekaSymbolEffectKind::Breathe, TEXT("heart"), TEXT("Breathe"), true },
+				{ EVekaSymbolEffectKind::Disappear, TEXT("cloud"), TEXT("Disappear"), true },
+			};
+			TArray<FVekaElement> Tiles;
+			for (int32 Index = 0; Index < UE_ARRAY_COUNT(Entries); ++Index)
+			{
+				const FEntry& Entry = Entries[Index];
+				const TVekaState<int32> Count = Ctx.State<int32>(FName(*FString::Printf(TEXT("Effect%d"), Index)), 0);
+				FVekaSymbolEffect Effect;
+				Effect.Kind = Entry.Kind;
+				FVekaElement Glyph = Symbol(Entry.Symbol).Font(EVekaTextStyle::LargeTitle).SymbolRenderingMode(EVekaSymbolRenderingMode::Hierarchical);
+				Glyph = Entry.bToggle ? MoveTemp(Glyph).SymbolEffect(Effect, Count.Get() % 2 == 1) : MoveTemp(Glyph).SymbolEffectOnChange(Effect, Count.Get());
+				Tiles.Add(VStack(6)(
+					MoveTemp(Glyph).Frame(56, 48),
+					Caption(Entry.bToggle ? *FString::Printf(TEXT("%s (%s)"), Entry.Name, Count.Get() % 2 == 1 ? TEXT("on") : TEXT("off")) : Entry.Name))
+					.Padding(8)
+					.Background(FLinearColor(1, 1, 1, 0.04f), 8)
+					.OnTap([Count]() { Count.Set(Count.Get() + 1); }));
+			}
+			return HStack(10).Children(MoveTemp(Tiles));
+		}
+	};
+
+	/** Replace and magic replace (tap). */
+	class FSymbolReplaceView : public FVekaView
+	{
+		VEKA_VIEW(FSymbolReplaceView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<bool> Toggled = Ctx.State<bool>(TEXT("Toggled"), false);
+			const bool bOn = Toggled.Get();
+			return HStack(24)(
+				Captioned(Symbol(bOn ? TEXT("pause") : TEXT("play")).SymbolReplace(EVekaSymbolReplace::Replace).Frame(48, 40), TEXT("Replace")),
+				Captioned(Symbol(bOn ? TEXT("bell.slash") : TEXT("bell")).SymbolReplace(EVekaSymbolReplace::MagicReplace, 0.45f).Frame(48, 40), TEXT("Magic replace")),
+				Captioned(Symbol(bOn ? TEXT("heart.fill") : TEXT("heart")).SymbolRenderingMode(EVekaSymbolRenderingMode::Multicolor)
+					.SymbolReplace(EVekaSymbolReplace::MagicReplace).Frame(48, 40), TEXT("Fill (magic)")),
+				Captioned(Symbol(bOn ? TEXT("speaker") : TEXT("speaker.wave.3")).SymbolReplace(EVekaSymbolReplace::Replace).Frame(48, 40), TEXT("Different symbol"))
+			)
+			.Font(EVekaTextStyle::Title1)
+			.Padding(8)
+			.Background(FLinearColor(1, 1, 1, 0.04f), 8)
+			.OnTap([Toggled]() { Toggled.Set(!Toggled.Get()); });
+		}
+	};
+
+	FVekaElement SymbolsSection()
+	{
+		using namespace Veka;
+
+		// Gallery of the built-in library.
+		const TArray<FName> Names = Veka::Symbols::GetBuiltInNames();
+		TArray<FVekaElement> Gallery;
+		for (const FName Name : Names)
+		{
+			Gallery.Add(Symbol(Name).FlexFrame(-1, Veka::Infinity, 34, 34));
+		}
+
+		// Weights follow the font.
+		const TCHAR* WeightNames[] = { TEXT("Hairline"), TEXT("Thin"), TEXT("ExtraLight"), TEXT("Light"), TEXT("News"), TEXT("Regular"),
+			TEXT("Medium"), TEXT("SemiBold"), TEXT("Bold"), TEXT("ExtraBold"), TEXT("Black"), TEXT("ExtraBlack") };
+		TArray<FVekaElement> Weights;
+		for (int32 Index = 0; Index < 12; ++Index)
+		{
+			Weights.Add(VStack(4)(
+				HStack(3)(Symbol(TEXT("gearshape")), Text(TEXT("Ag"))).Font(EVekaTextStyle::Title2).FontWeight(static_cast<EVekaFontWeight>(Index)),
+				Caption(WeightNames[Index])));
+		}
+
+		const TCHAR* Variants[] = { TEXT("bell"), TEXT("bell.fill"), TEXT("bell.slash"), TEXT("bell.slash.fill"), TEXT("checkmark.circle"),
+			TEXT("checkmark.circle.fill"), TEXT("heart.square"), TEXT("heart.square.fill"), TEXT("envelope.fill"), TEXT("folder.fill"), TEXT("person.circle.fill") };
+		TArray<FVekaElement> VariantTiles;
+		for (const TCHAR* Variant : Variants)
+		{
+			VariantTiles.Add(Captioned(Symbol(Variant).Font(EVekaTextStyle::Title1), Variant));
+		}
+
+		const TPair<EVekaSymbolRenderingMode, const TCHAR*> Modes[] = {
+			{ EVekaSymbolRenderingMode::Monochrome, TEXT("Monochrome") }, { EVekaSymbolRenderingMode::Hierarchical, TEXT("Hierarchical") },
+			{ EVekaSymbolRenderingMode::Palette, TEXT("Palette") }, { EVekaSymbolRenderingMode::Multicolor, TEXT("Multicolor") } };
+		TArray<FVekaElement> ModeColumns;
+		for (const TPair<EVekaSymbolRenderingMode, const TCHAR*>& Mode : Modes)
+		{
+			FVekaElement Row = HStack(12)(
+				Symbol(TEXT("exclamationmark.triangle")), Symbol(TEXT("cloud.rain")), Symbol(TEXT("sun")), Symbol(TEXT("person.2")), Symbol(TEXT("paintpalette"))
+			).Font(EVekaTextStyle::Title1);
+			Row = Mode.Key == EVekaSymbolRenderingMode::Palette
+				? MoveTemp(Row).SymbolPalette({ FVekaPaint::FromToken(TEXT("Orange")), FVekaPaint::FromToken(TEXT("Teal")), FVekaPaint::FromToken(TEXT("Purple")) })
+				: MoveTemp(Row).SymbolRenderingMode(Mode.Key);
+			ModeColumns.Add(Captioned(MoveTemp(Row), Mode.Value));
+		}
+
+		TArray<FVekaElement> Aliases;
+		TArray<FName> AliasNames;
+		Veka::Symbols::GetAlpha13Aliases().GenerateKeyArray(AliasNames);
+		for (const FName Alias : AliasNames)
+		{
+			Aliases.Add(Captioned(Symbol(Alias).Font(EVekaTextStyle::Title2).SymbolRenderingMode(EVekaSymbolRenderingMode::Hierarchical), *Alias.ToString()));
+		}
+
+		return VStack(18, EVekaHAlign::Leading)(
+			Text(FText::Format(INVTEXT("{0} built-in symbols (stroke skeletons on a 24 grid: any weight, no masters)"), FText::AsNumber(Names.Num())))
+				.Font(EVekaTextStyle::Caption1).Foreground(Muted),
+			Grid({ FVekaGridItem::Adaptive(34.f) }, 6.f, 6.f).Children(MoveTemp(Gallery)).Font(EVekaTextStyle::Title3),
+			HStack(14).Children(MoveTemp(Weights)),
+			HStack(28, EVekaVAlign::Bottom)(
+				Captioned(HStack(4)(Symbol(TEXT("cloud")).SymbolScale(EVekaSymbolScale::Small), Text(TEXT("Small"))), TEXT("SymbolScale")),
+				HStack(4)(Symbol(TEXT("cloud")), Text(TEXT("Medium"))),
+				HStack(4)(Symbol(TEXT("cloud")).SymbolScale(EVekaSymbolScale::Large), Text(TEXT("Large"))),
+				Label(INVTEXT("Label: symbol + title"), TEXT("paperplane")).Foreground(Accent),
+				Captioned(HStack(18)(Symbol(TEXT("bell")).SymbolBadge(3), Symbol(TEXT("envelope")).SymbolBadge(128), Symbol(TEXT("bubble")).SymbolBadge(-1))
+					.Font(EVekaTextStyle::Title1), TEXT("Badges"))
+			).Font(EVekaTextStyle::Title3),
+			HStack(16).Children(MoveTemp(VariantTiles)),
+			HStack(30).Children(MoveTemp(ModeColumns)),
+			HStack(30, EVekaVAlign::Top)(View<FSymbolValueView>(), View<FSymbolReplaceView>()),
+			View<FSymbolEffectsView>(),
+			Caption(TEXT("Alpha 13 glyphs (names kept as aliases):")),
+			HStack(14).Children(MoveTemp(Aliases))
+		);
+	}
+
 	FVekaElement AnimaSection()
 	{
 		using namespace Veka;
@@ -587,10 +769,12 @@ namespace Veka::Samples
 
 		return ScrollView(EVekaAxis::Vertical)(
 			VStack(16, EVekaHAlign::Leading)(
-				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography)")).Font(Fonts::LargeTitle()),
+				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography + Symbols)")).Font(Fonts::LargeTitle()),
 				Text(INVTEXT("Declarative Slate-first views: one Stack for H/V/Z, modifiers, state, springs, vector shapes and strokes. "
 					"This paragraph wraps to the available width."))
 					.Foreground(Muted),
+
+				Section(INVTEXT("Symbols: library, weights, scales, variants, rendering modes, variable value, effects, replace"), SymbolsSection()),
 
 				Section(INVTEXT("Typography: LT Flode Neue, styles, weights, truncation, numeric text, glyph effects"), TypographySection()),
 

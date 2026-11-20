@@ -11,6 +11,7 @@
 #include "Modifiers/VekaColoraModifiers.h"
 #include "Modifiers/VekaAnimaModifiers.h"
 #include "Primitives/VekaShapeView.h"
+#include "Symbols/VekaSymbolView.h"
 #include "Vector/VekaStroke.h"
 #include "VekaUILog.h"
 
@@ -152,14 +153,14 @@ T* FVekaElement::MutablePrimitive(const TCHAR* Context)
 {
 	if (GetKind() != EVekaElementKind::Primitive)
 	{
-		UE_LOG(LogVekaUI, Warning, TEXT("%s: only valid on a Shape element"), Context);
+		UE_LOG(LogVekaUI, Warning, TEXT("%s: not valid on this element"), Context);
 		return nullptr;
 	}
 	MakeUnique();
 	T* Typed = Data->Primitive.GetMutablePtr<T>();
 	if (!Typed)
 	{
-		UE_LOG(LogVekaUI, Warning, TEXT("%s: only valid on a Shape element"), Context);
+		UE_LOG(LogVekaUI, Warning, TEXT("%s: not valid on this element"), Context);
 	}
 	return Typed;
 }
@@ -452,5 +453,94 @@ FVekaElement FVekaElement::TypographyField(EVekaTypographyField Field, const FVe
 	Modifier.Field = Field;
 	Modifier.Value = Value;
 	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+// --- Symbols ---------------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::SymbolStyleField(EVekaSymbolStyleField Field, const FVekaSymbolStyle& Value) &&
+{
+	FVekaSymbolStyleModifier Modifier;
+	Modifier.Field = Field;
+	Modifier.Value = Value;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::SymbolRenderingMode(EVekaSymbolRenderingMode Mode) &&
+{
+	FVekaSymbolStyle V;
+	V.RenderingMode = Mode;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::RenderingMode, V);
+}
+
+FVekaElement FVekaElement::SymbolVariant(const FVekaSymbolVariant& Variant) &&
+{
+	FVekaSymbolStyle V;
+	V.Variant = Variant;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Variant, V);
+}
+
+FVekaElement FVekaElement::SymbolScale(EVekaSymbolScale Scale) &&
+{
+	FVekaSymbolStyle V;
+	V.Scale = Scale;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Scale, V);
+}
+
+FVekaElement FVekaElement::SymbolPalette(const TArray<FVekaPaint>& Paints) &&
+{
+	FVekaSymbolStyle V;
+	V.Palette = Paints;
+	V.RenderingMode = EVekaSymbolRenderingMode::Palette;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Palette, V).SymbolStyleField(EVekaSymbolStyleField::RenderingMode, V);
+}
+
+FVekaElement FVekaElement::SymbolWeight(float Weight) &&
+{
+	FVekaSymbolStyle V;
+	V.Weight = Weight;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Weight, V);
+}
+
+FVekaElement FVekaElement::SymbolEffect(const FVekaSymbolEffect& Effect, bool bIsActive) &&
+{
+	FVekaSymbolStyle V;
+	V.Effect = Effect;
+	V.bEffectActive = bIsActive;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Effect, V);
+}
+
+FVekaElement FVekaElement::SymbolEffectKey(const FVekaSymbolEffect& Effect, int64 Trigger) &&
+{
+	FVekaSymbolStyle V;
+	V.Effect = Effect;
+	V.EffectTrigger = Trigger;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Effect, V);
+}
+
+FVekaElement FVekaElement::SymbolReplace(EVekaSymbolReplace Mode, float Duration) &&
+{
+	FVekaSymbolStyle V;
+	V.Replace = Mode;
+	V.ReplaceDuration = Duration;
+	return MoveTemp(*this).SymbolStyleField(EVekaSymbolStyleField::Replace, V);
+}
+
+FVekaElement FVekaElement::SymbolValue(float Value) &&
+{
+	if (FVekaSymbolView* Symbol = MutablePrimitive<FVekaSymbolView>(TEXT("SymbolValue")))
+	{
+		Symbol->VariableValue = FMath::Clamp(Value, -1.f, 1.f);
+	}
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::SymbolBadge(int32 Count) &&
+{
+	if (FVekaSymbolView* Symbol = MutablePrimitive<FVekaSymbolView>(TEXT("SymbolBadge")))
+	{
+		Symbol->Badge = Count;
+	}
 	return MoveTemp(*this);
 }

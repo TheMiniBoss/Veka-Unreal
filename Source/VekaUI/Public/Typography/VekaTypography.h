@@ -258,6 +258,8 @@ namespace Veka::Typography
 	struct VEKAUI_API FResolvedText
 	{
 		FSlateFontInfo Font;
+		/** Weight of the font (Regular for a custom Slate font); symbols match it. */
+		EVekaFontWeight Weight = EVekaFontWeight::Regular;
 		float LineHeight = 1.f;
 		EVekaTextCase Case = EVekaTextCase::None;
 		bool bMonospacedDigits = false;

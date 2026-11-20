@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie** ✅ fusionnés dans `C++` ; prochain jalon **2d Symboles** |
-| Branche active | `C++` (2d : `cpp/phase-2d-symbols`, pas encore créée) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie ; 39/39 tests automation ✅ |
-| Prochaine étape | 2d Symboles (19 glyphes Alpha 13 redessinés en SVG, nombre de symboles de base à fixer) |
+| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles** ✅ fusionnés dans `C++` ; prochain jalon **2e Contrôles + Styles** |
+| Branche active | `C++` |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles ; 45/45 tests automation ✅ |
+| Prochaine étape | 2e Contrôles + Styles (sur demande de TheMiniBoss) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,55 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD + LOCAL → jalon 2d Symboles
+
+- **Branche** : `cpp/phase-2d-symbols` (partie de `C++` @ `03a8fed`), fusionnée dans `C++`.
+- **Choix (réponses de TheMiniBoss)** : pas de SVG d'origine → les 19 glyphes Alpha 13 sont **redessinés** ; « ~150
+  essentiels » → **205** symboles intégrés (catégories Arrows, Math, Status, Shapes, Weather, People, Communication,
+  Interface, Media, Connectivity, Devices, Commerce, Objects, Tools, Text, Places, Veka), tous dessinés pour Veka.
+- **Modèle** : un symbole est un **squelette de traits** sur une grille de 24 (zone utile 3..21, voir `keylinegrid`). La
+  graisse est l'épaisseur du trait → les 12 graisses (et toute valeur entre deux) sans masters, animables en continu.
+  Trait = `lerp(0.45, 3.4, poids^0.85)` unités ; graisse prise de la police (Hairline 0 … ExtraBlack 1) ou `.SymbolWeight`.
+  Taille = taille de la police × 4/3 × échelle (Small 0.95, Medium 1.2, Large 1.5).
+- **Codé** :
+  - Moteur de traits (`VekaPaintRenderer`) : bouts Butt / Round / Square, jointures Miter / Round / Bevel (côté
+    extérieur), frange AA de 1 px, traits plus fins que 1 px estompés, points (trait de longueur nulle, bout rond).
+    `FVekaStrokeStyle` (Cap, Join, MiterLimit) est maintenant respecté par toutes les formes.
+  - `Symbols/VekaSymbol.h` : `FVekaSymbolDefinition` (formes avec rôle primaire / secondaire / tertiaire, couche variable,
+    contour remplissable, couleur multicolore), assets `UVekaSymbol` / `UVekaSymbolLibrary` (`RegisterLibrary`, cherchées
+    avant les symboles intégrés), `Resolve("bell.slash.fill")` (suffixes `.fill .circle .square .slash`), alias Alpha 13
+    (`Info`, `Warning`, `Check`, `Exclamation`, `Interrogation`, `Clock`, `Arrows`, `ArrowUpDown`, `Thunder`, `Triangle`,
+    `Eraser`, `Loading`, `Logo`, `Placeholder`, `Test`, `KeylineGrid`).
+  - Primitive `FVekaSymbolView` + `Veka::Symbol(name, value)`, `Veka::Label(title, symbol)`. Style d'environnement
+    `FVekaSymbolStyle` : `.SymbolRenderingMode` (Monochrome / Hierarchical 100-60-30 % / Palette / Multicolor),
+    `.SymbolVariant` (s'additionne), `.SymbolScale`, `.SymbolPalette`, `.SymbolWeight`, `.SymbolEffect(effet, actif)`,
+    `.SymbolEffectOnChange(effet, valeur)`, `.SymbolReplace(Replace | MagicReplace)` ; sur l'élément : `.SymbolValue`,
+    `.SymbolBadge` (nombre, « 99+ », point).
+  - Variantes : `.fill` (les traits intérieurs deviennent des **découpes** couleur `Background`, ou la 2e couleur de
+    palette), cercle / carré englobant, barre oblique avec espace découpé.
+  - Valeur variable : couches éteintes à 25 %. Effets : Appear, Disappear, Bounce, Pulse, Scale, VariableColor, Wiggle,
+    Rotate, Breathe, DrawOn, par couche ou en bloc, vitesse ; repaint continu seulement pendant l'effet.
+    Remplacement : Replace (l'ancien rétrécit, le nouveau surgit) et MagicReplace (même symbole : seule la barre se dessine).
+  - Nom inconnu → symbole `placeholder` à 60 %, pour que le trou se voie.
+  - `VekaImport` : `Veka::Import::ImportSymbolSvg` (path, circle, rect, line, polyline, polygon ; viewBox → grille 24 ;
+    rôle par `class` / `id` / `data-role`).
+  - `FResolvedText::Weight` ajouté (les symboles suivent la graisse résolue).
+- **Tests** : 45/45 ✅ — nouveaux : `VekaUI.Symbols.{Library, Resolve, Metrics, Effects, Render, SvgImport}` (205 symboles
+  dans la grille, alias, suffixes, contre-épreuves noms / suffixes inconnus ; trait plus épais avec la graisse, taille
+  avec la police ; modes de rendu par couleur des sommets ; valeur variable ; badge ; jetons multicolores).
+- **Bug trouvé à l'écran et corrigé** : `.Color(token)` placé après une forme ne la colorait pas (cœur blanc en
+  Multicolor). Il colore maintenant la forme qui vient d'être ajoutée (si elle n'a pas déjà un jeton) ; test ajouté.
+  Graisses légères d'abord trop lourdes à côté du texte Hairline / Thin : courbe de trait ajustée.
+- **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérif visuelle** (`Docs/Sync/Screens/phase2d-symbols*.jpg`) : galerie des 205 symboles, 12 graisses à côté de « Ag »,
+  échelles, Label, badges, variantes, 4 modes de rendu ; à la souris : Draw on, Pulse, Rotate, Replace / MagicReplace,
+  valeur variable.
+- **Limites connues** :
+  - Les découpes (`.fill`, barre, anneau du badge) peignent la couleur `Background` : correctes sur un fond uni, visibles
+    sur une image ou un dégradé (un vrai masque viendra avec le module de rendu).
+  - Pas encore d'interpolation entre deux symboles différents (le MagicReplace ne gère que les variantes du même symbole).
+  - L'import SVG ne lit pas les transformations (`transform=`), les groupes ni les styles CSS.
 
 ### 2026-11-20 — LOCAL → correctif 2c : la graisse s'appliquait mal sur un style
 
