@@ -98,13 +98,13 @@ TSharedPtr<FVekaPrimitiveState> FVekaTrack::CreateState() const
 
 FVector2D FVekaTrack::SizeThatFits(const FVekaProposal& Proposal, FVekaLayoutContext& Context, TConstArrayView<FVekaLayoutChild> Children) const
 {
-	auto Usable = [](const TOptional<double>& Value) { return Value.IsSet() && Value.GetValue() > 0.0 && Value.GetValue() < Veka::Infinity * 0.5; };
 	if (Shape == EVekaTrackShape::Circular)
 	{
 		// Rings keep their size (SwiftUI circular gauges and spinners do): a stack row would squeeze them.
 		return FVector2D(IdealLength, IdealLength);
 	}
-	const double Width = Usable(Proposal.Width) ? Proposal.Width.GetValue() : IdealLength;
+	// Linear tracks expand like SwiftUI sliders: infinite proposal -> infinite, unspecified -> ideal length.
+	const double Width = Proposal.Width.IsSet() ? FMath::Max(Proposal.Width.GetValue(), 0.0) : IdealLength;
 	return FVector2D(Width, FMath::Max(Thickness, KnobSize));
 }
 
@@ -231,7 +231,7 @@ namespace
 		// Last values pushed to the widget (Slate setters invalidate every time).
 		FSlateFontInfo LastFont;
 		FLinearColor LastColor = FLinearColor::Transparent;
-		FText LastHint;
+		FString LastHint;
 		bool bLastSecure = false;
 		bool bLastEnabled = true;
 		float LastPadding = -1.f;
@@ -290,7 +290,7 @@ TSharedPtr<SWidget> FVekaTextInput::GetNativeWidget(FVekaPrimitiveState* InState
 					}
 				})
 			];
-		State.LastHint = Placeholder;
+		State.LastHint = Placeholder.ToString();
 		State.bLastSecure = bSecure;
 	}
 	return State.Box;
@@ -302,8 +302,7 @@ FVector2D FVekaTextInput::SizeThatFits(const FVekaProposal& Proposal, FVekaLayou
 	const FSlateFontInfo Font = Veka::Typography::Resolve(Context.Environment).Font;
 	const double Line = FMath::CeilToDouble(Font.Size * (4.0 / 3.0) * 1.2);
 	const double Height = Line + (Style == EVekaTextFieldStyle::Plain ? 4.0 : 9.0);
-	const bool bWidth = Proposal.Width.IsSet() && Proposal.Width.GetValue() > 0.0 && Proposal.Width.GetValue() < Veka::Infinity * 0.5;
-	return FVector2D(bWidth ? Proposal.Width.GetValue() : 200.0, Height);
+	return FVector2D(Proposal.Width.IsSet() ? FMath::Max(Proposal.Width.GetValue(), 0.0) : 200.0, Height);
 }
 
 int32 FVekaTextInput::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds) const
@@ -333,10 +332,12 @@ int32 FVekaTextInput::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds)
 			State.Editable->SetColorAndOpacity(FSlateColor(Color));
 			State.LastColor = Color;
 		}
-		if (!Placeholder.IdenticalTo(State.LastHint))
+		// By content: every re-evaluation makes a new FText (INVTEXT), and SetHintText resets the text layout (flicker).
+		const FString Hint = Placeholder.ToString();
+		if (Hint != State.LastHint)
 		{
 			State.Editable->SetHintText(Placeholder);
-			State.LastHint = Placeholder;
+			State.LastHint = Hint;
 		}
 		if (bSecure != State.bLastSecure)
 		{
@@ -430,8 +431,7 @@ TSharedPtr<FVekaPrimitiveState> FVekaMediaScrubber::CreateState() const
 
 FVector2D FVekaMediaScrubber::SizeThatFits(const FVekaProposal& Proposal, FVekaLayoutContext& Context, TConstArrayView<FVekaLayoutChild> Children) const
 {
-	const bool bWidth = Proposal.Width.IsSet() && Proposal.Width.GetValue() > 0.0 && Proposal.Width.GetValue() < Veka::Infinity * 0.5;
-	return FVector2D(bWidth ? Proposal.Width.GetValue() : 260.0, 20.0);
+	return FVector2D(Proposal.Width.IsSet() ? FMath::Max(Proposal.Width.GetValue(), 0.0) : 260.0, 20.0);
 }
 
 int32 FVekaMediaScrubber::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds) const

@@ -57,6 +57,9 @@ int32 FVekaNode::GetDepth() const
 
 // --- Layout -------------------------------------------------------------------------------------
 
+/** Proposals remembered per node. Nested stacks ask each child for more than 8 (0, infinity, ideal, shares...). */
+static constexpr int32 MeasureCacheCapacity = 32;
+
 FVector2D FVekaNode::Measure(const FVekaProposal& Proposal)
 {
 	for (const TPair<FVekaProposal, FVector2D>& Entry : MeasureCache)
@@ -69,7 +72,7 @@ FVector2D FVekaNode::Measure(const FVekaProposal& Proposal)
 
 	const FVector2D Size = Sanitize(MeasureLevel(Modifiers.Num() - 1, Proposal));
 
-	if (MeasureCache.Num() >= 8)
+	if (MeasureCache.Num() >= MeasureCacheCapacity)
 	{
 		MeasureCache.RemoveAt(0);
 	}
@@ -100,7 +103,7 @@ FVector2D FVekaNode::MeasureContent(const FVekaProposal& Proposal)
 
 	// Remember which proposal gave which size (most recent last) for FindContentProposal.
 	ContentMeasureCache.RemoveAll([&Proposal](const TPair<FVekaProposal, FVector2D>& Entry) { return Entry.Key == Proposal; });
-	if (ContentMeasureCache.Num() >= 8)
+	if (ContentMeasureCache.Num() >= MeasureCacheCapacity)
 	{
 		ContentMeasureCache.RemoveAt(0);
 	}
@@ -353,14 +356,29 @@ void FVekaNode::MarkDirty()
 
 void FVekaNode::InvalidateLayout()
 {
-	for (FVekaNode* Node = this; Node; Node = Node->Parent)
+	// Re-measure this node with the proposals its parent used. If every size is unchanged, the parent's layout still
+	// holds and only this node re-arranges: a hover or a color animation used to clear every ancestor's cache, and
+	// re-measuring from the root cost ~90 000 measures (70 ms) in the Playground.
+	const auto Previous = MeasureCache;
+	MeasureCache.Reset();
+	ContentMeasureCache.Reset();
+	if (Widget.IsValid())
 	{
-		Node->MeasureCache.Reset();
-		Node->ContentMeasureCache.Reset();
-		if (Node->Widget.IsValid())
-		{
-			Node->Widget->Invalidate(EInvalidateWidgetReason::Layout);
-		}
+		Widget->Invalidate(EInvalidateWidgetReason::Layout);
+	}
+	if (!Parent)
+	{
+		return;
+	}
+	// Never measured, or entries may have been evicted: the parent cannot be trusted, propagate.
+	bool bSizeChanged = Previous.IsEmpty() || Previous.Num() >= MeasureCacheCapacity;
+	for (int32 Index = 0; !bSizeChanged && Index < Previous.Num(); ++Index)
+	{
+		bSizeChanged = !Measure(Previous[Index].Key).Equals(Previous[Index].Value, 0.01);
+	}
+	if (bSizeChanged)
+	{
+		Parent->InvalidateLayout();
 	}
 }
 

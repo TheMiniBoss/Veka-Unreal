@@ -55,9 +55,45 @@ namespace
 	constexpr double Grid = 24.0;
 	const FVector2D GridCenter(12.0, 12.0);
 
+	/** One fill or stroke of a symbol, tessellated once. */
+	struct FCachedOp
+	{
+		FVekaTessellation Mesh;
+		FVekaPaint Paint;
+		int32 LayerOffset = 0;
+	};
+
+	/** Everything the tessellated symbol depends on (not the position on screen nor the opacity). */
+	struct FSymbolCacheKey
+	{
+		const FVekaSymbolDefinition* Definition = nullptr;
+		FVekaSymbolVariant Variant;
+		FVector2D BoxPosition = FVector2D::ZeroVector;
+		FVector2D BoxSize = FVector2D::ZeroVector;
+		float StrokePixels = 0.f;
+		double RenderScale = 0.0;
+		FVekaPaint Foreground;
+		FVekaPaint Knockout;
+		FVekaSymbolStyle Style;
+		float VariableValue = -1.f;
+
+		bool operator==(const FSymbolCacheKey& Other) const
+		{
+			return Definition == Other.Definition && Variant == Other.Variant && BoxPosition.Equals(Other.BoxPosition, 1e-4) && BoxSize.Equals(Other.BoxSize, 1e-4)
+				&& StrokePixels == Other.StrokePixels && RenderScale == Other.RenderScale && Foreground == Other.Foreground && Knockout == Other.Knockout
+				&& Style == Other.Style && VariableValue == Other.VariableValue;
+		}
+	};
+
 	struct FVekaSymbolState : public FVekaPrimitiveState
 	{
 		bool bInitialized = false;
+
+		// Tessellation cache (static symbols: most of them).
+		bool bHasCache = false;
+		FSymbolCacheKey CachedKey;
+		TArray<FCachedOp> CachedOps;
+		int32 CachedLayers = 0;
 
 		// Effect.
 		int64 LastTrigger = 0;
@@ -225,6 +261,8 @@ namespace
 		/** Effect placement per layer (0..2), identity when no effect runs. */
 		FVekaSymbolLayerTransform Layers[3];
 		float VariableValue = -1.f;
+		/** When set, every fill / stroke is kept (tessellation cache). */
+		TArray<FCachedOp>* Record = nullptr;
 
 		FSymbolPainter(FVekaPaintContext& InContext, const FVekaSymbolStyle& InStyle) : Context(InContext), Style(InStyle) {}
 
@@ -279,6 +317,15 @@ namespace
 			if (Paint.IsVisible())
 			{
 				FVekaPaintContext Layer = NewLayer();
+				if (Record)
+				{
+					FCachedOp& Op = Record->AddDefaulted_GetRef();
+					Veka::PaintRender::TessellateFill(Layer, Polylines, Paint, Box, Op.Mesh);
+					Op.Paint = Paint;
+					Op.LayerOffset = Layer.LayerId - Context.LayerId;
+					Veka::PaintRender::DrawTessellation(Layer, Op.Mesh, Paint, Box);
+					return;
+				}
 				Veka::PaintRender::FillPolylines(Layer, Polylines, Paint, Box);
 			}
 		}
@@ -290,14 +337,22 @@ namespace
 				return;
 			}
 			FVekaPaintContext Layer = NewLayer();
+			TArray<FVekaPolyline> Trimmed;
 			if (Trim < 1.f)
 			{
-				TArray<FVekaPolyline> Trimmed;
 				Veka::PathOps::Trim(Polylines, 0.0, Trim, Trimmed);
-				Veka::PaintRender::StrokePolylines(Layer, Trimmed, Paint, Width, Box, EVekaLineCap::Round, EVekaLineJoin::Round);
+			}
+			const TArray<FVekaPolyline>& Lines = Trim < 1.f ? Trimmed : Polylines;
+			if (Record)
+			{
+				FCachedOp& Op = Record->AddDefaulted_GetRef();
+				Veka::PaintRender::TessellateStroke(Layer, Lines, Paint, Width, Box, EVekaLineCap::Round, EVekaLineJoin::Round, 4.f, Op.Mesh);
+				Op.Paint = Paint;
+				Op.LayerOffset = Layer.LayerId - Context.LayerId;
+				Veka::PaintRender::DrawTessellation(Layer, Op.Mesh, Paint, Box);
 				return;
 			}
-			Veka::PaintRender::StrokePolylines(Layer, Polylines, Paint, Width, Box, EVekaLineCap::Round, EVekaLineJoin::Round);
+			Veka::PaintRender::StrokePolylines(Layer, Lines, Paint, Width, Box, EVekaLineCap::Round, EVekaLineJoin::Round);
 		}
 
 		FPlacement MakePlacement(const FVekaSymbolDefinition& Definition, int32 Role, double InnerScale, double GlobalScale) const
@@ -563,10 +618,45 @@ int32 FVekaSymbolView::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds
 	if (!Previous)
 	{
 		State.ReplaceStart = -1.0;
-		Painter.Draw(State, *Definition, Effective, 1.0, 1.f, 1.f);
+		const FVector2f Scale = Context.Geometry.GetAccumulatedRenderTransform().GetMatrix().GetScale().GetVector();
+		FSymbolCacheKey Key;
+		Key.Definition = Definition;
+		Key.Variant = Effective;
+		Key.BoxPosition = Painter.Box.Position;
+		Key.BoxSize = Painter.Box.Size;
+		Key.StrokePixels = Painter.StrokePixels;
+		Key.RenderScale = FMath::Max(FMath::Abs(Scale.X), FMath::Abs(Scale.Y));
+		Key.Foreground = Painter.Foreground;
+		Key.Knockout = Painter.Knockout;
+		Key.Style = Style;
+		Key.VariableValue = VariableValue;
+		const bool bStatic = State.EffectStart < 0.0;
+		if (bStatic && State.bHasCache && State.CachedKey == Key)
+		{
+			// Same symbol as last frame: draw the kept meshes, no tessellation.
+			for (const FCachedOp& Op : State.CachedOps)
+			{
+				FVekaPaintContext Layer = Context;
+				Layer.LayerId = Context.LayerId + Op.LayerOffset;
+				Veka::PaintRender::DrawTessellation(Layer, Op.Mesh, Op.Paint, Painter.Box);
+			}
+			Painter.MaxLayer = Context.LayerId + State.CachedLayers;
+			Painter.NextLayer = Painter.MaxLayer + 1;
+		}
+		else
+		{
+			State.CachedOps.Reset();
+			State.bHasCache = bStatic;
+			Painter.Record = bStatic ? &State.CachedOps : nullptr;
+			Painter.Draw(State, *Definition, Effective, 1.0, 1.f, 1.f);
+			Painter.Record = nullptr;
+			State.CachedKey = Key;
+			State.CachedLayers = Painter.MaxLayer - Context.LayerId;
+		}
 	}
 	else
 	{
+		State.bHasCache = false;
 		const double P = FMath::Clamp(Progress, 0.0, 1.0);
 		const double E = P * P * (3.0 - 2.0 * P);
 		const FVekaSymbolVariant& Old = State.PreviousVariant;

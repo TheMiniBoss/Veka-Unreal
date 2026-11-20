@@ -663,6 +663,25 @@ namespace
 		}
 	}
 
+	/**
+	 * Channel values the panel last set. Channels are a lossy view of a color (hue 360 = hue 0, any hue at zero
+	 * saturation): while they still give the current color, they are shown instead of re-decomposing the color.
+	 */
+	struct FChannelMemory
+	{
+		EVekaColorPickerMode Mode = EVekaColorPickerMode::RGB;
+		TArray<float> Channels;
+	};
+
+	TArray<float> CurrentChannels(const FLinearColor& Color, EVekaColorPickerMode Mode, const FChannelMemory& Memory)
+	{
+		if (Memory.Mode == Mode && !Memory.Channels.IsEmpty() && ColorMath::Compose(Memory.Channels, Mode, Color).Equals(Color, 2e-3f))
+		{
+			return Memory.Channels;
+		}
+		return ColorMath::Decompose(Color, Mode);
+	}
+
 	class FVekaColorPanelView : public FVekaView
 	{
 		VEKA_VIEW(FVekaColorPanelView)
@@ -679,23 +698,26 @@ namespace
 			const TVekaState<int32> ModeState = Ctx.State<int32>(TEXT("Mode"), static_cast<int32>(InitialMode));
 			const EVekaColorPickerMode Mode = static_cast<EVekaColorPickerMode>(FMath::Clamp(ModeState.Get(), 0, static_cast<int32>(EVekaColorPickerMode::CMYK)));
 			const FLinearColor Current = Color.Get();
+			const TSharedPtr<FChannelMemory> Memory = Ctx.State<TSharedPtr<FChannelMemory>>(TEXT("Memory"), MakeShared<FChannelMemory>()).Get();
 
 			TArray<FText> Names;
 			TArray<FVector2f> Ranges;
 			ColorMath::GetChannels(Mode, Names, Ranges);
-			const TArray<float> Channels = ColorMath::Decompose(Current, Mode);
+			const TArray<float> Channels = CurrentChannels(Current, Mode, *Memory);
 
 			TArray<FVekaElement> Rows;
 			for (int32 Index = 0; Index < Names.Num(); ++Index)
 			{
 				const TVekaBinding<FLinearColor> Binding = Color;
 				TVekaBinding<float> ChannelBinding(
-					[Binding, Mode, Index]() { return ColorMath::Decompose(Binding.Get(), Mode)[Index]; },
-					[Binding, Mode, Index](const float& Value)
+					[Binding, Mode, Index, Memory]() { return CurrentChannels(Binding.Get(), Mode, *Memory)[Index]; },
+					[Binding, Mode, Index, Memory](const float& Value)
 					{
 						const FLinearColor Base = Binding.Get();
-						TArray<float> Values = ColorMath::Decompose(Base, Mode);
+						TArray<float> Values = CurrentChannels(Base, Mode, *Memory);
 						Values[Index] = Value;
+						Memory->Mode = Mode;
+						Memory->Channels = Values;
 						Binding.Set(ColorMath::Compose(Values, Mode, Base));
 					});
 
