@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Core/VekaModifier.h"
+#include "Core/VekaPaint.h"
 #include "VekaEnvironmentModifiers.generated.h"
 
 USTRUCT(BlueprintType, meta = (VekaName = "foreground", VekaCategory = "Environment"))
@@ -12,8 +13,9 @@ struct VEKAUI_API FVekaForegroundModifier : public FVekaModifier
 {
 	GENERATED_BODY()
 
+	/** Color or theme token (gradients give their average color until gradient text, 2c). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Environment")
-	FLinearColor Color = FLinearColor::White;
+	FVekaPaint Paint = FVekaPaint(FLinearColor::White);
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
 };

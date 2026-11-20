@@ -8,6 +8,7 @@
 #include "Modifiers/VekaVisualModifiers.h"
 #include "Modifiers/VekaEnvironmentModifiers.h"
 #include "Modifiers/VekaInteractionModifiers.h"
+#include "Modifiers/VekaColoraModifiers.h"
 #include "Primitives/VekaShapeView.h"
 #include "Vector/VekaStroke.h"
 #include "VekaUILog.h"
@@ -346,10 +347,10 @@ FVekaElement FVekaElement::Trim(float From, float To) &&
 
 // --- Environment --------------------------------------------------------------------------------
 
-FVekaElement FVekaElement::Foreground(const FLinearColor& Color) &&
+FVekaElement FVekaElement::Foreground(const FVekaPaint& Paint) &&
 {
 	FVekaForegroundModifier Modifier;
-	Modifier.Color = Color;
+	Modifier.Paint = Paint;
 	AddModifierInternal(FInstancedStruct::Make(Modifier));
 	return MoveTemp(*this);
 }
@@ -392,6 +393,33 @@ FVekaElement FVekaElement::OnPress(TFunction<void(bool)> Action) &&
 {
 	FVekaOnPressModifier Modifier;
 	Modifier.Action = MoveTemp(Action);
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+// --- Colora ----------------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::Theme(UVekaTheme* InTheme) &&
+{
+	FVekaThemeModifier Modifier;
+	Modifier.Theme = InTheme;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::ColorAdjust(EVekaColorAdjust Adjust, float Amount) &&
+{
+	FVekaColorAdjustModifier Modifier;
+	Modifier.Adjust = Adjust;
+	Modifier.Amount = Amount;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::BlendMode(EVekaBlendMode Mode) &&
+{
+	FVekaBlendModeModifier Modifier;
+	Modifier.Mode = Mode;
 	AddModifierInternal(FInstancedStruct::Make(Modifier));
 	return MoveTemp(*this);
 }

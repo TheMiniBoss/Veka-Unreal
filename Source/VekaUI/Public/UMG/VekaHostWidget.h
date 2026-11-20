@@ -10,6 +10,7 @@
 
 class SVekaHost;
 class UVekaViewSource;
+class UVekaTheme;
 
 /**
  * Legacy / bridge: puts a Veka view inside any Widget Blueprint or Canvas. The Veka Editor is the main
@@ -27,6 +28,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VekaUI")
 	EVekaColorScheme ColorScheme = EVekaColorScheme::Dark;
+
+	/** Colora theme of the whole view (nullptr = built-in defaults). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VekaUI")
+	TObjectPtr<UVekaTheme> Theme;
+
+	UFUNCTION(BlueprintCallable, Category = "VekaUI")
+	void SetTheme(UVekaTheme* InTheme);
 
 	UFUNCTION(BlueprintCallable, Category = "VekaUI")
 	void SetViewClass(TSubclassOf<UVekaViewSource> InViewClass);

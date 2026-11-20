@@ -9,13 +9,16 @@ struct FVekaPaintContext;
 struct FVekaStrokeStyle;
 
 /**
- * Phase 1 vector renderer on top of Slate:
- *  - fills: ear-clipping triangulation -> FSlateDrawElement::MakeCustomVerts, plus a 1px antialiased edge line;
- *  - strokes: trim + dashes -> FSlateDrawElement::MakeLines (antialiased).
- * Phase 2 replaces it with a full tessellator (holes, caps, joins, analytic AA, gradient strokes) with caching.
+ * Vector renderer on top of Slate:
+ *  - fills: Colora tessellator (Veka::PaintRender::FillPolylines): triangulation, per-vertex colors, 1px AA fringe;
+ *  - strokes: trim + dashes -> antialiased Slate lines, per-point colors for gradient paints.
+ * Caps / joins / alignment and variable width come with the full stroke tessellator.
  */
 namespace Veka::VectorRender
 {
+	/** Solid fill (resolved color). */
 	VEKAUI_API int32 Fill(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FLinearColor& Color);
-	VEKAUI_API int32 Stroke(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaStrokeStyle& Style);
+
+	/** Stroke with a resolved paint; Bounds is the rect gradient paints are fitted to. */
+	VEKAUI_API int32 Stroke(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaStrokeStyle& Style, const FVekaRect& Bounds);
 }

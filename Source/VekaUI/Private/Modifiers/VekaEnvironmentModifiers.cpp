@@ -2,10 +2,12 @@
 
 #include "Modifiers/VekaEnvironmentModifiers.h"
 #include "Core/VekaEnvironment.h"
+#include "Colora/VekaTheme.h"
 
 void FVekaForegroundModifier::ModifyEnvironment(FVekaEnvironment& Environment) const
 {
-	Environment.Set<FLinearColor>(VekaEnv::ForegroundColor(), Color);
+	// Outer modifiers ran first: the theme and color scheme of this point of the tree are known.
+	Environment.Set<FLinearColor>(VekaEnv::ForegroundColor(), Veka::Colora::Resolve(Paint, Environment).GetAverageColor());
 }
 
 void FVekaFontModifier::ModifyEnvironment(FVekaEnvironment& Environment) const
