@@ -1,5 +1,7 @@
 # TODO — Conversion de Veka en C++
 
+> ⚠️ **Plan remplacé** par [`VEKAUI_PHASE0.md`](VEKAUI_PHASE0.md) §12. Une nouvelle TODO sera écrite après validation de la Phase 0.
+
 Référence : [`CAHIER_DES_CHARGES.md`](CAHIER_DES_CHARGES.md) (les `§` renvoient à ce document).
 Source : branche `Blueprint` @ `f6d5cfd` (Alpha 13). Cible : branche `C++`.
 

@@ -1,5 +1,8 @@
 # Cahier des charges — Conversion de Veka en C++ natif
 
+> ⚠️ **Architecture remplacée** par [`VEKAUI_PHASE0.md`](VEKAUI_PHASE0.md) (framework déclaratif VekaUI + Veka Editor).
+> Ce document reste la référence pour l'**inventaire** de l'existant (§4, annexes A–D).
+
 | | |
 |---|---|
 | Projet | Veka (plugin UI pour Unreal Engine) |
