@@ -525,6 +525,17 @@ Proposition : **2 + 3** (sinon 1 + 3).
 
 ## 13. Questions ouvertes
 
+### Décidé (2026-11-20)
+
+| # | Question | Réponse |
+|---|---|---|
+| 1 | Compilation | **Runner GitHub Actions self-hosted** sur ta machine (UE 5.8, `RunUAT BuildPlugin` + tests automation à chaque push) + tests de la logique sans moteur ici |
+| 2 | Nom | **Renommer en `VekaUI`** (`VekaUI.uplugin`, modules `VekaUI`, `VekaUIRender`, `VekaLang`, `VekaEditor`, `VekaWeb`) |
+| 3 | Logique DSL / Mode Simple | **(b)** : affichage, bindings, `if`/`else`, `ForEach`, actions simples (affectation, toggle, `withAnimation`, `emit`) — pas de fonctions utilisateur |
+| 5 | Composants Alpha 13 | **Tous** recréés en Phase 2 |
+
+### Encore ouvertes (défaut proposé appliqué si pas de réponse)
+
 1. **Compilation** : quelle option du §12.3 ?
 2. **Nom** : le plugin devient-il `VekaUI` (fichier `VekaUI.uplugin`, dossier `VekaUI`) ou garde-t-on
    le plugin `Veka` avec des modules `VekaUI*` ?
