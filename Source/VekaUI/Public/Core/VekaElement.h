@@ -348,6 +348,15 @@ public:
 	FVekaElement ContextMenu(const TArray<FVekaMenuItem>& Items) const& { return FVekaElement(*this).ContextMenu(Items); }
 	FVekaElement ContextMenu(const TArray<FVekaMenuItem>& Items) &&;
 
+	// --- Morph -----------------------------------------------------------------------------------
+
+	/**
+	 * SwiftUI matchedGeometryEffect: inside an animation, a view appearing with this id starts from the frame of the
+	 * view that had it, and the leaving view flies to the new frame. Use the same id on both sides (button and card).
+	 */
+	FVekaElement MatchedGeometry(FName InId, FName InNamespace = NAME_None) const& { return FVekaElement(*this).MatchedGeometry(InId, InNamespace); }
+	FVekaElement MatchedGeometry(FName InId, FName InNamespace = NAME_None) &&;
+
 	// --- Interaction -----------------------------------------------------------------------------
 
 	FVekaElement OnTap(TFunction<void()> Action) const& { return FVekaElement(*this).OnTap(MoveTemp(Action)); }

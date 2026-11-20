@@ -9,6 +9,7 @@
 #include "Anima/VekaTimeline.h"
 #include "Symbols/VekaSymbolView.h"
 #include "Controls/VekaControls.h"
+#include "Morph/VekaMorph.h"
 
 namespace VekaPlaygroundPrivate
 {
@@ -848,6 +849,144 @@ namespace VekaPlaygroundPrivate
 		return Veka::View<FControlsView>();
 	}
 
+	// --- Morph -------------------------------------------------------------------------------------------------------
+
+	/** matchedGeometry: a capsule button opens into a card and closes back into it. */
+	class FMorphCardView : public FVekaView
+	{
+		VEKA_VIEW(FMorphCardView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<bool> Open = Ctx.State<bool>(TEXT("Open"), false);
+			auto Toggle = [Open]() { WithAnimation(FVekaAnimationSpec::Spring(0.45, 0.8), [Open]() { Open.Set(!Open.Get()); }); };
+
+			FVekaElement Collapsed = HStack(6)(Symbol(TEXT("sparkles")), Text(INVTEXT("Open the card")).FontWeight(EVekaFontWeight::SemiBold))
+				.Foreground(FLinearColor::White)
+				.Padding(FMargin(16, 10))
+				.Background(Accent, 20)
+				.Clip()
+				.MatchedGeometry(TEXT("card"), TEXT("playground"))
+				.OnTap(Toggle);
+
+			FVekaElement Expanded = VStack(8, EVekaHAlign::Leading)(
+				HStack(8)(Symbol(TEXT("sparkles")).Font(EVekaTextStyle::Title2), Text(INVTEXT("Matched geometry")).Font(EVekaTextStyle::Title3).FontWeight(EVekaFontWeight::Bold),
+					Spacer(), Symbol(TEXT("xmark.circle.fill")).SymbolRenderingMode(EVekaSymbolRenderingMode::Hierarchical).Font(EVekaTextStyle::Title2).OnTap(Toggle)),
+				Text(INVTEXT("The card starts from the button's frame and grows into its own; closing sends it back. Same id on both views.")).Opacity(0.85f),
+				Spacer(),
+				HStack(8)(Spacer(), Text(INVTEXT("Tap the cross to close")).Font(EVekaTextStyle::Caption1).Opacity(0.7f))
+			)
+			.Foreground(FLinearColor::White)
+			.Padding(18)
+			.Frame(340, 190, FVekaAlignment::TopLeading())
+			.Background(FVekaPaint::Linear(Accent, Hex(TEXT("#8E5CFFFF")), FVector2D(0.0, 0.0), FVector2D(1.0, 1.0)), 22)
+			.Clip()
+			.MatchedGeometry(TEXT("card"), TEXT("playground"));
+
+			return ZStack(FVekaAlignment::TopLeading())(If(!Open.Get(), MoveTemp(Collapsed)), If(Open.Get(), MoveTemp(Expanded)))
+				.Frame(340, 190, FVekaAlignment::TopLeading());
+		}
+	};
+
+	/** ShapeGroup: a drop leaves a blob and comes back (tap). */
+	class FMorphDropView : public FVekaView
+	{
+		VEKA_VIEW(FMorphDropView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<float> Progress = Ctx.State<float>(TEXT("Progress"), 0.f);
+			const TVekaState<bool> Out = Ctx.State<bool>(TEXT("Out"), false);
+			const float P = Progress.Get();
+			return VStack(6, EVekaHAlign::Leading)(
+				ShapeGroup(26.f, FVekaPaint::Linear(Hex(TEXT("#4CD9C9FF")), Accent, FVector2D(0.0, 0.0), FVector2D(1.0, 1.0)))(
+					ZStack(FVekaAlignment::Leading())(
+						Circle().Frame(90, 90),
+						Circle().Frame(38, 38).Offset(FVector2D(26.0 + 130.0 * P, 0.0)),
+						Circle().Frame(22, 22).Offset(FVector2D(34.0 + 40.0 * P, -46.0 * P))
+					).Frame(240, 110, FVekaAlignment::Leading())
+				).OnTap([Progress, Out]()
+				{
+					const bool bNext = !Out.Get();
+					Out.Set(bNext);
+					Progress.Animate(bNext ? 1.f : 0.f, FVekaAnimationSpec::Spring(0.9, 0.55));
+				}),
+				Text(INVTEXT("ShapeGroup: tap the blob, the drop leaves and comes back")).Foreground(Muted).Font(Fonts::Caption())
+			);
+		}
+	};
+
+	/** Two shapes merging like an island (tap). */
+	class FMorphIslandView : public FVekaView
+	{
+		VEKA_VIEW(FMorphIslandView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<float> Gap = Ctx.State<float>(TEXT("Gap"), 1.f);
+			const TVekaState<bool> Joined = Ctx.State<bool>(TEXT("Joined"), false);
+			const float G = Gap.Get();
+			return VStack(6, EVekaHAlign::Leading)(
+				ShapeGroup(14.f, FLinearColor::Black)(
+					ZStack(FVekaAlignment::Leading())(
+						Capsule().Frame(130, 38),
+						Circle().Frame(38, 38).Offset(FVector2D(92.0 + 70.0 * G, 0.0))
+					).Frame(240, 50, FVekaAlignment::Leading())
+				)
+				.Border(FLinearColor(1, 1, 1, 0.08f), 1, 25)
+				.OnTap([Gap, Joined]()
+				{
+					const bool bNext = !Joined.Get();
+					Joined.Set(bNext);
+					Gap.Animate(bNext ? 0.f : 1.f, FVekaAnimationSpec::Spring(0.55, 0.75));
+				}),
+				Text(INVTEXT("Tap: the circle melts into the capsule")).Foreground(Muted).Font(Fonts::Caption())
+			);
+		}
+	};
+
+	/** Drag a blob around the others. */
+	class FMorphDragView : public FVekaView
+	{
+		VEKA_VIEW(FMorphDragView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<FVector2D> Position = Ctx.State<FVector2D>(TEXT("Position"), FVector2D(170.0, 40.0));
+			const FVector2D At = Position.Get();
+			return VStack(6, EVekaHAlign::Leading)(
+				ShapeGroup(30.f, FVekaPaint::Linear(Hex(TEXT("#FF5E57FF")), Hex(TEXT("#FFA84CFF")), FVector2D(0.0, 0.0), FVector2D(1.0, 1.0)))(
+					ZStack(FVekaAlignment::TopLeading())(
+						Circle().Frame(56, 56).Offset(FVector2D(20.0, 52.0)),
+						Circle().Frame(44, 44).Offset(FVector2D(100.0, 70.0)),
+						RoundedRectangle(14).Frame(60, 40).Offset(FVector2D(60.0, 10.0)),
+						Circle().Frame(48, 48).Offset(At - FVector2D(24.0, 24.0))
+					).Frame(300, 140, FVekaAlignment::TopLeading())
+				)
+				.Background(FLinearColor(1, 1, 1, 0.03f), 12)
+				.OnDrag([Position](const FVekaDragValue& Drag)
+				{
+					Position.Set(FVector2D(FMath::Clamp(Drag.Location.X, 24.0, 276.0), FMath::Clamp(Drag.Location.Y, 24.0, 116.0)));
+				}),
+				Text(INVTEXT("Drag anywhere: the red blob melts into the others")).Foreground(Muted).Font(Fonts::Caption())
+			);
+		}
+	};
+
+	FVekaElement MorphSection()
+	{
+		using namespace Veka;
+		return HStack(36, EVekaVAlign::Top)(View<FMorphCardView>(), VStack(18, EVekaHAlign::Leading)(View<FMorphDropView>(), View<FMorphIslandView>()), View<FMorphDragView>());
+	}
+
 	FVekaElement AnimaSection()
 	{
 		using namespace Veka;
@@ -955,10 +1094,12 @@ namespace Veka::Samples
 
 		return ScrollView(EVekaAxis::Vertical)(
 			VStack(16, EVekaHAlign::Leading)(
-				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography + Symbols + Controls)")).Font(Fonts::LargeTitle()),
+				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography + Symbols + Controls + Morph)")).Font(Fonts::LargeTitle()),
 				Text(INVTEXT("Declarative Slate-first views: one Stack for H/V/Z, modifiers, state, springs, vector shapes and strokes. "
 					"This paragraph wraps to the available width."))
 					.Foreground(Muted),
+
+				Section(INVTEXT("Morph: matched geometry (button to card), ShapeGroup (shapes that melt, merged hit-test)"), MorphSection()),
 
 				Section(INVTEXT("Controls: buttons, toggles, sliders, stepper, pickers, menus, text fields, color, gauges, progress (Tab / arrows / Enter work)"), ControlsSection()),
 

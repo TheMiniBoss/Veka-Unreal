@@ -5,6 +5,7 @@
 #include "Vector/VekaVectorRenderer.h"
 #include "Colora/VekaTheme.h"
 #include "Colora/VekaPaintRenderer.h"
+#include "Morph/VekaMorph.h"
 
 namespace
 {
@@ -52,8 +53,9 @@ bool FVekaShapeView::HitTest(const FVector2D& LocalPoint, const FVector2D& Size)
 
 int32 FVekaShapeView::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds) const
 {
-	if (!Context.State || Bounds.Size.X <= 0.0 || Bounds.Size.Y <= 0.0)
+	if (!Context.State || Bounds.Size.X <= 0.0 || Bounds.Size.Y <= 0.0 || VekaEnv::IsInShapeGroup(Context.Environment))
 	{
+		// Inside a ShapeGroup the group draws the merged outline.
 		return Context.LayerId;
 	}
 	FVekaShapeState& State = static_cast<FVekaShapeState&>(*Context.State);

@@ -1,6 +1,7 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Core/VekaNode.h"
+#include "Misc/ScopeExit.h"
 #include "Core/VekaRuntime.h"
 #include "Core/VekaView.h"
 #include "Anima/VekaImplicit.h"
@@ -266,6 +267,25 @@ void FVekaNode::RefreshEnvironment()
 	}
 }
 
+FVector2D FVekaNode::GetRootPosition() const
+{
+	FVector2D Position = FVector2D::ZeroVector;
+	for (const FVekaNode* Node = this; Node; Node = Node->Parent)
+	{
+		Position += Node->ArrangedRect.Position;
+	}
+	return Position;
+}
+
+void FVekaNode::RecordMatchedGeometry()
+{
+	if (!MatchedKey.IsNone() && !IsInRemovedSubtree())
+	{
+		const FVector2D ParentOrigin = Parent ? Parent->GetRootPosition() : FVector2D::ZeroVector;
+		Runtime.RecordMatchedGeometry(MatchedKey, *this, FVekaRect(ParentOrigin + ArrangedRect.Position, ArrangedRect.Size));
+	}
+}
+
 void FVekaNode::PlaceAt(const FVekaRect& Rect)
 {
 	if (!bPlaced)
@@ -273,6 +293,24 @@ void FVekaNode::PlaceAt(const FVekaRect& Rect)
 		bPlaced = true;
 		LayoutTarget = Rect;
 		ArrangedRect = Rect;
+
+		// Matched geometry: a view with this id was elsewhere (it is leaving, or left this frame): start from its
+		// frame, and send the leaving one to this frame.
+		const FVekaAnimationSpec* Spec = Runtime.GetLayoutTransaction();
+		const FVekaRuntime::FMatchedGeometry* Matched = MatchedKey.IsNone() ? nullptr : Runtime.FindMatchedGeometry(MatchedKey);
+		const TSharedPtr<FVekaNode> Other = Matched ? Matched->Node.Pin() : nullptr;
+		if (Spec && Matched && Other.Get() != this)
+		{
+			const FVector2D ParentOrigin = Parent ? Parent->GetRootPosition() : FVector2D::ZeroVector;
+			ArrangedRect = FVekaRect(Matched->RootRect.Position - ParentOrigin, Matched->RootRect.Size);
+			Runtime.GetImplicit().AnimateRect(*this, Rect, *Spec);
+			if (Other.IsValid() && Other->IsInRemovedSubtree())
+			{
+				const FVector2D OtherParentOrigin = Other->Parent ? Other->Parent->GetRootPosition() : FVector2D::ZeroVector;
+				Runtime.GetImplicit().AnimateRect(*Other, FVekaRect(ParentOrigin + Rect.Position - OtherParentOrigin, Rect.Size), *Spec);
+			}
+		}
+		RecordMatchedGeometry();
 		if (!TransitionEffects.IsEmpty())
 		{
 			// Move transitions depend on the size, known only now.
@@ -280,6 +318,7 @@ void FVekaNode::PlaceAt(const FVekaRect& Rect)
 		}
 		return;
 	}
+	ON_SCOPE_EXIT { RecordMatchedGeometry(); };
 
 	FVekaImplicitAnimator& Implicit = Runtime.GetImplicit();
 	if (Rect.Equals(LayoutTarget, 0.01))

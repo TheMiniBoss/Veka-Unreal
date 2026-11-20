@@ -112,6 +112,10 @@ public:
 	const FVekaRect& GetArrangedRect() const { return ArrangedRect; }
 	/** Rect of the content (inside all modifiers), local space. */
 	const FVekaRect& GetContentRect() const { return ContentRect; }
+	/** Position of this node's local origin in the root's space (sum of the arranged positions up the tree). */
+	FVector2D GetRootPosition() const;
+	/** Remembers this node's frame for `.MatchedGeometry` (no-op without an id). */
+	void RecordMatchedGeometry();
 	/** Rect given to modifier Index (local space). */
 	const FVekaRect& GetModifierRect(int32 Index) const { return ModifierRects[Index]; }
 
@@ -179,6 +183,8 @@ private:
 	bool bRemoving = false;
 	FVekaRect LayoutTarget;
 	bool bPlaced = false;
+	/** `.MatchedGeometry` id (namespace/id), or none. */
+	FName MatchedKey;
 
 	TArray<TPair<FVekaProposal, FVector2D>, TInlineAllocator<4>> MeasureCache;
 	TArray<TPair<FVekaProposal, FVector2D>, TInlineAllocator<4>> ContentMeasureCache;

@@ -41,6 +41,7 @@
 #include "Controls/VekaControlStyles.h"
 #include "Controls/VekaControlPrimitives.h"
 #include "Controls/VekaControls.h"
+#include "Morph/VekaMorph.h"
 #include "Modifiers/VekaLayoutModifiers.h"
 #include "Modifiers/VekaVisualModifiers.h"
 #include "Modifiers/VekaEnvironmentModifiers.h"
