@@ -7,8 +7,8 @@
 
 | | |
 |---|---|
-| Source auditée | branche `Blueprint` @ `f6d5cfd` — Veka Alpha 13, 335 `.uasset` |
-| Branche de travail | `C++` (+ branches de phase, cf. §12) |
+| Source auditée | branche `Blueprint` @ `f6d5cfd` — Veka Alpha 13, 335 `.uasset` (**lecture seule**) |
+| Branche de travail | `C++` (+ branches de phase, cf. §16) |
 | Moteur | UE 5.8 (`.uplugin`) — assets sauvés en 5.7 |
 | Cible | plugin **VekaUI** : framework UI déclaratif Slate-first + **Veka Editor** |
 
@@ -197,7 +197,9 @@ lisibilité — ils produisent le même nœud. Bonus : l'axe devient animable / 
 | Transform | `scale`, `rotation`, `skew`, `transform` (render transform, sans relayout) |
 | Interaction | `onTap`, `onDoubleTap`, `onHover`, `onPress`, `onDrag`, `contextMenu`, `disabled`, `focusable`, `hitShape` |
 | Environnement | `theme`, `colorScheme`, `font`, `tint`, `environment(key, value)` |
-| Anima | `animation(spec, value)`, `transition(...)`, `timeline(...)`, `matchedGeometry(id)` (plus tard) |
+| Anima | `animation(spec, value)`, `transition(...)`, `contentTransition(...)`, `timeline(...)`, `matchedGeometry(id)`, `morphGroup(id, blend)` |
+| Traits | `stroke(paint, width, dash, cap, join)`, `strokeBorder`, `trim(from, to)` |
+| Symboles / texte | `symbolRenderingMode`, `symbolVariant`, `symbolEffect`, `imageScale`, `fontWeight`, `textStyle` |
 | Effets (Phase 4) | `backdropBlur`, `glass(...)`, `refraction`, `chromaticAberration`, `liquidDistortion` |
 
 **Implémentation performante** : un nœud ne crée **pas** un widget Slate par modifier.
@@ -253,7 +255,7 @@ modifiers de layout dans `ComputeDesiredSize` / `OnArrangeChildren`, modifiers d
 | `LinearGradient` | start/end (points unitaires ou presets), stops `TArray` (illimité côté C++, borné par le shader) |
 | `RadialGradient` / `EllipticalGradient` | centre, rayons |
 | `AngularGradient` | centre, angles |
-| `MeshGradient` | reprise du « Matrix » Alpha 13 (points 2D, distorsion, seed, OkLCH) |
+| `MeshGradient` | **vrai dégradé maillé** (remplace le « Matrix » Alpha 13, cf. §6.5) |
 | `Material` | `UMaterialInterface` + paramètres |
 | `Image` | texture, tiling, 9-slice |
 | `Glass` (Phase 4) | backdrop + teinte + blur + réfraction |
@@ -278,9 +280,25 @@ Interpolation des couleurs au choix : sRGB, linéaire, **OkLab/OkLCH** (dégrad�
 - Dégradés, mesh, continuous corners, formes custom : **shader Veka partagé** (`.usf` du module
   `VekaUIRender`, ou matériau UI unique) avec les paramètres passés par vertex
   (`FSlateDrawElement::MakeCustomVerts`) pour batcher plusieurs formes en un draw. MID par nœud
-  seulement en dernier recours. → spike technique en Phase 1 (cf. §11).
+  seulement en dernier recours. → spike technique en Phase 1 (cf. §15).
 
 ---
+
+### 6.5 Mesh gradient (remplace le Gradient Matrix)
+
+Le « Gradient Matrix » d'Alpha 13 simulait un maillage avec 9 points, du bruit et du flou,
+à cause des limites du Blueprint. Il est remplacé par un **vrai mesh gradient** (comme
+Illustrator / `MeshGradient` de SwiftUI) :
+
+- Grille **W × H** de points de contrôle (pas limitée à 3×3), chaque point avec position,
+  **couleur** (ou token Colora) et **poignées de Bézier** optionnelles (patchs de Coons).
+- Interpolation des couleurs en OkLab (défaut), linéaire ou sRGB ; option de lissage (bicubique).
+- Rendu : subdivision des patchs en triangles avec couleurs par sommet
+  (`MakeCustomVerts`), mise en cache, retessellation seulement si la grille change.
+- **Tout est animable** (points, poignées, couleurs) → fonds vivants, auras, « blobs ».
+- Éditeur dédié dans le Veka Editor (poignées, ajout/suppression de lignes/colonnes, pipette,
+  presets) qui remplace l'EUW Gradient Matrix. Les réglages `Matrix` d'Alpha 13 ne sont pas
+  convertis (formules différentes) — un preset proche peut être recréé à la main.
 
 ## 7. Anima (cible)
 
@@ -341,9 +359,170 @@ Un **scheduler central** (`FVekaAnimaScheduler`) par hôte, pas un tick par widg
 
 ---
 
-## 8. Rendu avancé (Phase 4) : Backdrop et Liquid Glass
+## 8. Vecteurs, traits et morphing de formes
 
-### 8.1 Capture du backdrop
+### 8.1 Noyau vectoriel `FVekaPath`
+
+Une seule représentation vectorielle pour **tout** : formes, traits, symboles, texte vectoriel,
+masques, chemins de morph.
+
+- Commandes : `MoveTo`, `LineTo`, `QuadTo`, `CubicTo`, `ArcTo`, `Close` ; sous-chemins ; règle de
+  remplissage `NonZero` / `EvenOdd`.
+- Constructeurs : `Rect`, `RoundedRect` (rayons par coin, style **continuous** / squircle),
+  `Capsule`, `Circle`, `Ellipse`, `Polygon`, `Star`, `Arc`, depuis **SVG `d=`**, depuis un glyphe
+  de police (contours FreeType).
+- Opérations : transformation, bounds, longueur, point/tangente à une distance, **trim**
+  (`From`/`To`), aplatissement adaptatif, **booléens** (union, soustraction, intersection, xor —
+  via `GeometryCore` du moteur ou Clipper2, licence Boost, à évaluer), offset.
+- `FVekaShape` (interface) : `Path(Rect)` + SDF analytique quand il existe (rect, capsule,
+  cercle, ellipse) pour le hit-test exact et les effets. Toute forme custom = une classe qui
+  renvoie un `FVekaPath` (cf. §11).
+
+### 8.2 Traits (strokes)
+
+| Propriété | Détail |
+|---|---|
+| Épaisseur | constante, ou **variable le long du trait** (profil) |
+| Alignement | intérieur / centré / extérieur |
+| Extrémités / jointures | `Butt`, `Round`, `Square` / `Miter` (+ limite), `Round`, `Bevel` |
+| Pointillés | motif `TArray<float>` + phase **animable** (marching ants) |
+| Peinture | n'importe quel `FVekaPaint` (dégradé le long ou à travers le trait) |
+| Trim animable | `.trim(from, to)` → effet « dessin à la main », progress circulaire, signatures |
+| Vues | `Line`, `Polyline`, `Path`, `.stroke(...)` / `.strokeBorder(...)` sur toute forme, `fill` + `stroke` ensemble |
+
+Rendu : tessellation CPU (remplissage + expansion du trait) avec **antialiasing analytique** dans
+le shader, résultat **mis en cache** tant que le chemin ne change pas ; seules les animations de
+géométrie retessellent.
+
+### 8.3 Morphing et fusion « goutte » (style Liquid Glass)
+
+Deux mécanismes complémentaires :
+
+1. **Morph de géométrie** — `matchedGeometry(id, in: namespace)` : quand une vue disparaît et
+   qu'une autre avec le même id apparaît (bouton → picker, pastille → carte), le moteur anime
+   **cadre + rayons + paint** de l'une vers l'autre avec un ressort, puis le contenu fait un
+   fondu croisé. Pour deux chemins arbitraires : ré-échantillonnage à N points, alignement des
+   points de départ, interpolation (ou interpolation des SDF).
+2. **Fusion SDF (metaballs)** — conteneur `ShapeGroup(blend: r) { ... }` / modifier
+   `.morphGroup(id, blend:)` : les formes d'un même groupe sont rendues **en un seul passage**
+   avec une union lisse (`smooth-min`) de leurs SDF. Une forme qui sort d'une autre « s'étire
+   comme une goutte » puis se détache quand la distance dépasse le rayon de fusion. Animable
+   (position, taille, rayon de fusion). Combiné au glass (§12), c'est l'effet Liquid Glass d'Apple.
+
+Le hit-test suit la forme fusionnée (même SDF).
+
+## 9. Symboles (refonte complète type SF Symbols)
+
+### 9.1 Format source : SVG « Veka Symbol Template »
+
+- Import de **SVG** (chemins, groupes, transforms, `fill`/`stroke`), avec un **gabarit** comme SF
+  Symbols : lignes guides `Baseline`, `CapHeight`, marges gauche/droite, et **3 masters**
+  (Ultralight, Regular, Black) aux chemins compatibles (même nombre de points).
+- Si un seul master est fourni : épaisseur simulée par **offset du contour** (moins précis,
+  signalé dans l'éditeur).
+- **Calques nommés** avec rôle : `primary`, `secondary`, `tertiary`, plus un **ordre** pour les
+  animations par calque, et des **ancres** (point de rotation, point de rebond).
+- Variantes : `.fill`, `.circle`, `.square`, `.slash` — dessinées ou **générées** (enclosure et
+  barre oblique générées par booléens).
+- Asset `UVekaSymbol` : chemins des masters, calques, guides, variantes, métadonnées (nom,
+  catégories, mots-clés pour la recherche). Un `UVekaSymbolLibrary` regroupe un jeu de symboles
+  (la bibliothèque Veka par défaut + celles des utilisateurs).
+
+### 9.2 Taille et épaisseur automatiques
+
+- **9 graisses** (Ultralight → Black) obtenues par **interpolation** des masters — n'importe
+  quelle valeur intermédiaire est possible et **animable**.
+- **3 échelles** (Small, Medium, Large) relatives à la police.
+- Par défaut, un symbole **hérite de la police de son environnement** : taille, graisse et
+  alignement sur la ligne de base / cap height du texte voisin
+  (`Label("Wi-Fi", symbol: "wifi")` ou symbole dans un `Text` : tout s'aligne tout seul).
+- Rendu net à toute taille : chemins vectoriels tessellés + cache par (symbole, graisse, taille
+  arrondie, variante) ; option atlas MSDF pour les très grandes quantités (listes, HUD).
+
+### 9.3 Modes de rendu
+
+`Monochrome`, `Hierarchical` (une teinte, opacités par calque), `Palette` (une couleur par rôle),
+`Multicolor` (couleurs du symbole), avec n'importe quel `FVekaPaint` (dégradés compris).
+**Valeur variable** (0–1) qui allume les calques progressivement (wifi, volume, batterie).
+
+### 9.4 Animations de symboles
+
+| Effet | Détail |
+|---|---|
+| `Appear` / `Disappear` | par calque ou en entier, échelle + opacité |
+| `Bounce` | rebond haut/bas, par calque décalé |
+| `Scale` | up/down, maintenu tant qu'un état est vrai |
+| `Pulse` | opacité pulsée |
+| `VariableColor` | itératif / cumulatif, inversé, en boucle |
+| `Replace` | down-up, up-up, off-up, et **Magic Replace** (morph des calques communs, ex. `bell` → `bell.slash`) |
+| `Wiggle`, `Rotate`, `Breathe` | autour des ancres |
+| Graisse / variante | interpolation continue (ex. outline → fill) |
+
+Déclenchement : discret (`.symbolEffect(.bounce, value: count)`), continu
+(`.symbolEffect(.pulse, isActive: loading)`), ou transition de contenu
+(`.contentTransition(.symbolEffect(.replace))`). Paramétrage Anima (ressort, vitesse, répétition).
+
+### 9.5 Éditeur et aperçus (Veka Editor)
+
+- **Symbol Library** : grille de recherche (nom, mot-clé, catégorie), aperçu en direct dans
+  toutes les graisses × échelles × modes de rendu × light/dark, copie du nom / du code DSL.
+- **Symbol Editor** : import SVG (drag & drop), validation du gabarit (masters compatibles,
+  guides), édition des calques (rôles, ordre, ancres), génération des variantes, réglages de
+  marges, **aperçu d'animation** de chaque effet, comparaison côte à côte avec du texte.
+- Export / ré-import SVG, import en lot d'un dossier.
+- Migration des 19 glyphes Alpha 13 (textures + badges) : ré-import à partir des sources SVG si tu
+  les as, sinon vectorisation à refaire (à confirmer, cf. §17).
+
+## 10. Typographie (même logique que les symboles)
+
+- **Styles de texte sémantiques** (tokens du thème) : `LargeTitle`, `Title1-3`, `Headline`,
+  `Body`, `Callout`, `Subheadline`, `Footnote`, `Caption1-2` → taille, graisse, interlignage,
+  approche (tracking) **calculés automatiquement**, avec mise à l'échelle globale (réglage
+  d'accessibilité « taille du texte ») et **tracking optique** selon la taille.
+- `UVekaFontFamily` : faces par graisse (12 graisses Alpha 13) et italique, police de repli,
+  chiffres tabulaires, et support des **polices variables** (axes `wght`, `wdth`, `opsz`) si
+  possible (cf. risque ci-dessous).
+- Modifiers : `.font(.title)`, `.fontWeight`, `.fontWidth`, `.italic`, `.tracking`,
+  `.lineSpacing`, `.textCase`, `.monospacedDigit`, `.lineLimit`, `.truncation(.middle)`,
+  `.multilineAlignment`, `.minimumScaleFactor`.
+- **Animations de texte** : taille et couleur animables ; `.contentTransition(.numericText)`
+  (chiffres qui roulent), interpolation de contenu, effets **par glyphe** (apparition décalée,
+  vague, machine à écrire) via un `TextRenderer` personnalisable.
+- **Deux chemins de rendu** :
+  - *Slate* (défaut) : rapide, `FSlateFontInfo`, graisses discrètes ;
+  - *Vectoriel* : contours FreeType → `FVekaPath` → même moteur que les symboles ; permet
+    l'**interpolation de graisse** (polices variables), le morph de glyphes, les traits sur le texte.
+- ⚠️ Risque : Slate ne gère pas les axes des polices variables. Le chemin vectoriel passe par
+  FreeType (embarqué dans le moteur) ; à valider par un spike en Phase 2.
+
+## 11. Extensibilité (DA personnalisable)
+
+Objectif : un studio peut créer **sa propre direction artistique** sans toucher au code de Veka.
+
+| Niveau | Comment | Pour qui |
+|---|---|---|
+| **Thème** | `UVekaTheme` : tokens couleur, paints, typo, rayons, espacements, ombres, animations par défaut | designer, sans code |
+| **Styles de composants** | chaque contrôle (Button, Toggle, Slider, Picker, Menu…) délègue son apparence à un **Style** (`.buttonStyle(MyStyle)`), qui est une vue (DSL ou C++) recevant une *configuration* (`label`, `isPressed`, `isOn`, `isHovered`, `isFocused`, `isEnabled`, `value`…). Le look Veka par défaut n'est qu'**un** jeu de styles parmi d'autres | designer (DSL / Mode Simple) |
+| **Composants composés** | une `UVekaView` avec `@Param`, `@Slot` (contenu injecté) et `@Event` devient un composant réutilisable, **ajouté automatiquement au registre** (palette, auto-complétion, inspecteur) | designer / intégrateur |
+| **Primitives C++** | dériver `FVekaPrimitive` (mesure, paint, hit-test, propriétés animables), déclarer avec `VEKA_REGISTER_COMPONENT(...)` | programmeur |
+| **Conteneurs C++** | dériver `FVekaLayout` (`SizeThatFits` / `PlaceChildren`, comme le protocole `Layout` de SwiftUI) — `Stack`, `Grid`, etc. sont eux-mêmes écrits ainsi | programmeur |
+| **Modifiers C++** | dériver `FVekaModifier` (layout, paint, hit-test, environnement), enregistré dans le schéma | programmeur |
+| **Formes C++** | implémenter `FVekaShape` (`Path(Rect)` + SDF optionnel) | programmeur |
+| **Effets / shaders** | `FVekaEffect` + shader `.usf` ou matériau UI, branché au backdrop si besoin | technical artist |
+
+Règles :
+- **Le framework utilise sa propre API d'extension** : aucun composant Veka n'a d'accès privilégié.
+  Si Veka peut le faire, un utilisateur aussi.
+- Tout ce qui est enregistré dans le schéma apparaît **automatiquement** dans le DSL, le Mode
+  Simple, l'auto-complétion, la doc et le DesignLab (parité garantie).
+- Les composants et styles peuvent être **packagés** en bibliothèques (`UVekaComponentLibrary`)
+  partageables entre projets.
+
+---
+
+## 12. Rendu avancé (Phase 4) : Backdrop et Liquid Glass
+
+### 12.1 Capture du backdrop
 
 Besoin : lire, sous le widget, l'image déjà composée (scène 3D + UI dessinée avant).
 
@@ -357,7 +536,7 @@ Besoin : lire, sous le widget, l'image déjà composée (scène 3D + UI dessiné
 une pyramide de flou (dual Kawase) par frame et par couche**, partagée par tous les widgets
 glass de la couche (pas une capture par widget).
 
-### 8.2 Effets
+### 12.2 Effets
 
 `backdropBlur(radius)`, `frostedGlass(tint, blur, noise)`, `glass(...)` (style Liquid Glass :
 réfraction basée sur la **normale du SDF** de la forme — on réutilise nos SDF —, reflet
@@ -367,7 +546,7 @@ réaction au mouvement (pointeur / inclinaison / vitesse de scroll). Shaders `.u
 
 ---
 
-## 9. Threading (stratégie)
+## 13. Threading (stratégie)
 
 Contrainte : **Slate n'est pas thread-safe** — layout, création et paint des widgets se font sur
 le Game Thread.
@@ -389,9 +568,9 @@ Budget visé : écran de 500 nœuds au repos = 0 coût CPU Veka ; 100 animations
 
 ---
 
-## 10. Veka Editor (Phase 3)
+## 14. Veka Editor (Phase 3)
 
-### 10.1 Modèle unique
+### 14.1 Modèle unique
 
 ```
 UVekaView (asset)
@@ -411,7 +590,7 @@ Mode Simple  ──édite──>  FVekaDocument  <──parse──  Mode Avanc�
   lignes vides sont rattachés aux nœuds (trivia) pour survivre aux allers-retours.
 - Undo/Redo unifié (`FScopedTransaction` sur le document) quel que soit le mode.
 
-### 10.2 Le DSL (VekaLang)
+### 14.2 Le DSL (VekaLang)
 
 ```swift
 view ProfileCard {
@@ -447,7 +626,7 @@ view ProfileCard {
   (rapide, car on n'évalue qu'au changement d'état). Le parser n'est **pas** embarqué dans le jeu
   packagé (module UncookedOnly).
 
-### 10.3 Éditeur
+### 14.3 Éditeur
 
 - Asset Editor `FVekaViewEditorToolkit` (onglets dockables) : **Outliner** (arbre, drag & drop,
   renommage, multi-sélection), **Viewport** (centre), **Inspecteur** (généré depuis le schéma :
@@ -466,14 +645,15 @@ view ProfileCard {
 
 ---
 
-## 11. Modules et assets
+## 15. Modules et assets
 
 | Module | Type / LoadingPhase | Contenu | Dépendances |
 |---|---|---|---|
 | `VekaUI` | Runtime / PreDefault | Element, Node, Reconciler, State/Binding/Environment, Schema, layout, modifiers, primitives et contrôles, **Colora**, **Anima**, interpréteur d'AST, `SVekaHost`, `UVekaHostWidget` (bridge UMG) | Core, CoreUObject, Engine, Slate, SlateCore, UMG, InputCore, DeveloperSettings |
 | `VekaUIRender` | Runtime / **PostConfigInit** (shaders) | shaders `.usf`, backdrop, blur, glass, éléments Slate custom | RenderCore, RHI, Renderer, SlateRHIRenderer, Projects |
 | `VekaLang` | **UncookedOnly** | lexer, parser, printer, analyse, complétion, formateur | VekaUI |
-| `VekaEditor` | Editor | Asset Editor `UVekaView`, viewport, outliner, inspecteur, éditeur de code, timeline, Hub, factories, thumbnails | VekaUI, VekaLang, UnrealEd, ToolMenus, PropertyEditor, AssetTools, Slate… |
+| `VekaImport` | **UncookedOnly** | import SVG (symboles, formes), validation du gabarit symboles, contours de polices pour le texte vectoriel offline | VekaUI, (FreeType du moteur) |
+| `VekaEditor` | Editor | Asset Editor `UVekaView`, Symbol Library + Symbol Editor, éditeur de mesh gradient, viewport, outliner, inspecteur, éditeur de code, timeline, Hub, factories, thumbnails | VekaUI, VekaLang, UnrealEd, ToolMenus, PropertyEditor, AssetTools, Slate… |
 | `VekaWeb` | Runtime (optionnel) | `WebView` | VekaUI, WebBrowser |
 
 Les modules `VekaColora` / `VekaAnima` séparés ont été écartés : ils sont trop liés au core
@@ -481,77 +661,78 @@ Les modules `VekaColora` / `VekaAnima` séparés ont été écartés : ils sont 
 `Veka::Anima`) dans `VekaUI` — séparables plus tard si besoin.
 
 **Assets** : `UVekaView`, `UVekaTheme`, `UVekaTimeline`, `UVekaAnimationPreset` (ressorts/courbes
-nommés), `UVekaSymbol` (ex-`Veka_Glyph`), `UVekaFontFamily`. Les textures de glyphes, polices et
-logos d'Alpha 13 sont ré-importés ; les **matériaux** d'Alpha 13 ne sont pas repris tels quels
+nommés), `UVekaSymbol` + `UVekaSymbolLibrary` (ex-`Veka_Glyph`, désormais vectoriels),
+`UVekaFontFamily`, `UVekaComponentLibrary` (composants et styles partageables). Les polices et logos d'Alpha 13 sont
+ré-importés (les glyphes passent en SVG, cf. §9) ; les **matériaux** d'Alpha 13 ne sont pas repris tels quels
 (remplacés par le rendu §6.4 / shaders `.usf`), mais leurs formules SDF et Colora servent de
 référence.
 
 ---
 
-## 12. Plan de migration et exécution
+## 16. Plan de migration et exécution
 
-### 12.1 Branches
+### 16.1 Branches
 
 Git interdit d'avoir `C++` **et** `C++/quelque-chose` en même temps (conflit de refs). Proposition :
 `C++` reste la branche d'intégration, une branche par phase : `cpp/phase-1-core`,
 `cpp/phase-2-colora-anima`, `cpp/phase-3-editor`, `cpp/phase-4-render-hub`, fusionnées dans `C++`
 après validation.
 
-### 12.2 Phases
+### 16.2 Phases
 
 | Phase | Contenu | Livrable / critère |
 |---|---|---|
-| **0** | Ce document + réponses aux questions §13 | ✅ validation |
-| **1** — Core | `.uplugin` VekaUI + 5 modules (vides sauf VekaUI) ; Element / Node / Reconciler ; State / Binding / Environment ; Schema ; `Stack`, `Spacer`, `Grid`, `ScrollView` ; primitives `Text`, `Image`, `Shape`, `Symbol`, `Color` ; modifiers layout + apparence de base ; `SVekaHost` + `UVekaHostWidget` ; scheduler Anima minimal ; spike rendu des formes ; tests automation | une vue C++ s'affiche dans un Widget Blueprint et dans un onglet Slate ; tests verts ; compile Win64 Editor + Shipping |
-| **2** — Colora + Anima | thèmes/tokens/schémas, `FVekaPaint` complet, OkLCH, ajustements ; Anima complet (courbes, ressorts, implicite, transitions, layout, timelines) ; contrôles Alpha 13 (Button, Toggle, Slider, Stepper, Picker, Menu, ContextMenu, TextField, ColorPicker, Gauge, Progress, Label, Divider, Media) ; `UVekaView` + interpréteur | parité fonctionnelle Alpha 13 en C++ ; démo de toutes les animations |
-| **3** — Veka Editor | VekaLang (parse/print/analyse/complétion) ; Asset Editor : outliner, inspecteur, viewport, code, state, timeline ; Mode Test ; migration des glyphes/thèmes Alpha 13 | aller-retour Simple ⇄ Avancé sans perte sur la suite de tests ; une vue complète faite à 100 % en Mode Simple et une à 100 % en code |
-| **4** — Rendu + Hub | backdrop, blur, glass, réfraction, aberration, distorsion, blend modes ; Hub : DesignLab, Exemples, Doc, Changelog | Liquid Glass in-game sur scène 3D ; Hub complet ; budgets perf §9 tenus |
+| **0** | Ce document + réponses aux questions §17 | ✅ validation |
+| **1** — Core | `VekaUI.uplugin` + 6 modules (vides sauf VekaUI) ; Element / Node / Reconciler ; State / Binding / Environment ; Schema ; `Stack`, `Spacer`, `Grid`, `ScrollView` ; noyau vectoriel `FVekaPath` + formes + **traits** ; primitives `Text`, `Image`, `Shape`, `Color` ; API d'extension (`FVekaPrimitive`, `FVekaLayout`, `FVekaModifier`, `FVekaShape`) utilisée par les composants Veka eux-mêmes ; modifiers layout + apparence de base ; `SVekaHost` + `UVekaHostWidget` ; scheduler Anima minimal ; spike rendu des formes ; tests automation | une vue C++ s'affiche dans un Widget Blueprint et dans un onglet Slate ; une primitive et un conteneur custom écrits « comme un utilisateur » ; tests verts ; compile Win64 Editor + Shipping (Mac si possible) |
+| **2** — Colora + Anima | thèmes/tokens/schémas, `FVekaPaint` complet dont **mesh gradient**, OkLCH, ajustements ; **symboles** runtime (masters, graisses, échelles, modes de rendu, animations) ; **typographie** (styles sémantiques, animations de texte, spike texte vectoriel / polices variables) ; **morph** (`matchedGeometry`, `ShapeGroup` fusion SDF) ; Styles de composants ; Anima complet (courbes, ressorts, implicite, transitions, layout, timelines) ; contrôles Alpha 13 (Button, Toggle, Slider, Stepper, Picker, Menu, ContextMenu, TextField, ColorPicker, Gauge, Progress, Label, Divider, Media) ; `UVekaView` + interpréteur | parité fonctionnelle Alpha 13 en C++ ; démo de toutes les animations |
+| **3** — Veka Editor | VekaLang (parse/print/analyse/complétion) ; Asset Editor : outliner, inspecteur, viewport, code, state, timeline ; Mode Test ; import SVG + **Symbol Library / Symbol Editor** avec aperçus ; éditeur de mesh gradient ; composants composés en asset (`@Param`/`@Slot`) ; migration des thèmes Alpha 13 | aller-retour Simple ⇄ Avancé sans perte sur la suite de tests ; une vue complète faite à 100 % en Mode Simple et une à 100 % en code |
+| **4** — Rendu + Hub | backdrop, blur, glass (y compris **glass fusionné / goutte** via `ShapeGroup`), réfraction, aberration, distorsion, blend modes ; Hub : DesignLab, Exemples, Doc, Changelog | Liquid Glass in-game sur scène 3D ; Hub complet ; budgets perf §13 tenus |
 
-### 12.3 Validation de la compilation ⚠️
+### 16.3 Validation de la compilation
 
-**Je n'ai pas Unreal Engine dans mon environnement** (conteneur Linux sans moteur) : je ne peux
-pas compiler ni lancer le code UE moi-même. Options (question §13) :
+Je n'ai pas Unreal Engine dans mon conteneur. **Décision** : ton PC (Windows, UE 5.8) est
+**rattaché à cette session** (Claude desktop › Remote Control, dossier du projet hôte) :
 
-1. Tu compiles sur ta machine à chaque étape et tu me renvoies les erreurs (`Build.log`).
-2. Un runner GitHub Actions **self-hosted** sur ta machine (avec UE 5.8) lance `RunUAT BuildPlugin`
-   + les tests automation à chaque push → je lis les résultats via la PR.
-3. La partie **sans moteur** (parser VekaLang, maths couleur/ressorts/SDF) est écrite pour pouvoir
-   aussi être testée ici avec un compilateur standard, via une fine couche d'adaptation — ça
-   attrape une partie des erreurs avant toi.
+- je lance UBT / `RunUAT BuildPlugin` et les tests automation **directement sur ton PC**, je lis
+  les logs et je corrige, sans aller-retour manuel ;
+- si besoin j'ouvre l'éditeur (commandlets, scripts Python éditeur, captures d'écran) ;
+- la logique sans moteur (parser VekaLang, maths couleur/ressorts/SDF/chemins) est aussi testée
+  ici avec un compilateur standard ;
+- un runner CI self-hosted reste possible plus tard pour un contrôle propre à chaque push.
 
-Proposition : **2 + 3** (sinon 1 + 3).
+À préparer de ton côté au début de la Phase 1 : un **projet hôte** UE 5.8 C++ (ex. `VekaHost`)
+avec ce dépôt cloné dans `Plugins/VekaUI`, et Remote Control activé sur ce dossier.
 
 ---
 
-## 13. Questions ouvertes
+## 17. Questions ouvertes
 
 ### Décidé (2026-11-20)
 
 | # | Question | Réponse |
 |---|---|---|
-| 1 | Compilation | **Runner GitHub Actions self-hosted** sur ta machine (UE 5.8, `RunUAT BuildPlugin` + tests automation à chaque push) + tests de la logique sans moteur ici |
-| 2 | Nom | **Renommer en `VekaUI`** (`VekaUI.uplugin`, modules `VekaUI`, `VekaUIRender`, `VekaLang`, `VekaEditor`, `VekaWeb`) |
+| 1 | Compilation | **PC Windows rattaché à la session** (builds + tests directs), tests sans moteur ici ; runner CI optionnel plus tard |
+| 2 | Nom | **Renommer en `VekaUI`** (`VekaUI.uplugin`, modules `VekaUI`, `VekaUIRender`, `VekaLang`, `VekaImport`, `VekaEditor`, `VekaWeb`) |
 | 3 | Logique DSL / Mode Simple | **(b)** : affichage, bindings, `if`/`else`, `ForEach`, actions simples (affectation, toggle, `withAnimation`, `emit`) — pas de fonctions utilisateur |
+| 4 | Données du jeu | `SetState` depuis Blueprint **et** `UVekaViewModel` observé |
 | 5 | Composants Alpha 13 | **Tous** recréés en Phase 2 |
+| 6 | Blend modes | avec le backdrop en Phase 4 ; Normal et Add avant |
+| 7 | Plateformes | **Windows** en priorité, **Mac** si possible, le reste en option |
+| 8 | Version moteur | **UE 5.8 minimum** |
+| 9 | Éditeur de code | uniquement **dans le Veka Editor** (Unreal), pas d'intégration externe |
+| 10 | Branche `Blueprint` | **lecture seule** : interdiction d'y écrire ; elle sert de référence |
+| 11 | Symboles | refonte complète type **SF Symbols** : SVG, masters et graisses, échelles, alignement auto sur la police, modes de rendu, animations, éditeur et aperçus (§9) ; même logique pour la typo (§10) |
+| 12 | Gradient Matrix | remplacé par un **vrai mesh gradient** (§6.5) |
+| 13 | Personnalisation | tout extensible : thèmes, styles, composants composés, primitives / conteneurs / modifiers / formes / effets custom (§11) |
+| 14 | Morph | `matchedGeometry` + fusion SDF « goutte » (§8.3) |
+| 15 | Traits | **strokes / lignes** complets (§8.2) |
 
-### Encore ouvertes (défaut proposé appliqué si pas de réponse)
+### Reste à confirmer
 
-1. **Compilation** : quelle option du §12.3 ?
-2. **Nom** : le plugin devient-il `VekaUI` (fichier `VekaUI.uplugin`, dossier `VekaUI`) ou garde-t-on
-   le plugin `Veka` avec des modules `VekaUI*` ?
-3. **Logique dans le DSL / Mode Simple** : jusqu'où ? (a) affichage + bindings seulement ;
-   (b) + `if` / `ForEach` / actions simples (affectations, toggle, emit) — **proposé** ;
-   (c) langage complet avec fonctions.
-4. **Données du jeu** : préfères-tu nourrir les vues par `SetState` depuis Blueprint, par un
-   `UVekaViewModel` observé, ou les deux (**proposé**) ?
-5. **Composants Alpha 13** : tous recréés en Phase 2 (**proposé**), ou seulement le cœur
-   (Button, Toggle, Slider, Text, Symbol) et le reste plus tard ?
-6. **Blend modes** : OK pour qu'ils arrivent avec le backdrop en Phase 4 (seuls Normal/Add avant) ?
-7. **Plateformes** : Win64 seul, ou aussi Mac / Linux / consoles / mobile (impact sur les shaders
-   et le backdrop) ?
-8. **Version moteur** : 5.8 confirmé, et pas de support des versions antérieures ?
-9. **Éditeur de code** : un éditeur Slate maison (coloration + complétion, **proposé**) suffit-il,
-   ou veux-tu une intégration externe (VS Code / LSP) en plus ?
-10. **Ancien contenu** : la branche `Blueprint` reste-t-elle la référence figée (on n'y touche
-    plus), et les projets qui utilisent Alpha 13 doivent-ils pouvoir migrer (outil d'import des
-    thèmes/glyphes) ?
+1. **Sources des 19 glyphes Alpha 13** : as-tu les SVG d'origine ? Sinon, on les redessine en SVG
+   (ou on part d'un nouveau jeu de symboles).
+2. **Jeu de symboles de base** : combien de symboles Veka livrer par défaut (ex. ~150 essentiels :
+   flèches, chevrons, check, croix, réglages, recherche, utilisateur, son, wifi, batterie…) ?
+3. **Police par défaut** : on garde LTFlode Neue (licence compatible avec une distribution du
+   plugin ?) ou une police variable libre (ex. Inter, licence OFL) pour profiter de
+   l'interpolation de graisse ?
