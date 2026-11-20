@@ -36,6 +36,8 @@
 #include "Primitives/VekaText.h"
 #include "Primitives/VekaImage.h"
 #include "Primitives/VekaShapeView.h"
+#include "Symbols/VekaSymbol.h"
+#include "Symbols/VekaSymbolView.h"
 #include "Modifiers/VekaLayoutModifiers.h"
 #include "Modifiers/VekaVisualModifiers.h"
 #include "Modifiers/VekaEnvironmentModifiers.h"

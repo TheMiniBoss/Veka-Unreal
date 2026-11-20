@@ -30,6 +30,10 @@ namespace Veka
 	VEKAUI_API FVekaElement Text(const FText& InText);
 	VEKAUI_API FVekaElement Text(const FString& InString);
 	VEKAUI_API FVekaElement Image(UObject* Source, bool bResizable = false);
+	/** Veka symbol by name ("bell", "wifi", "checkmark.circle.fill", or an Alpha 13 name like "Warning"). VariableValue 0..1, -1 = off. */
+	VEKAUI_API FVekaElement Symbol(FName Name, float VariableValue = -1.f);
+	/** Symbol and title side by side (SwiftUI Label). */
+	VEKAUI_API FVekaElement Label(const FText& Title, FName SymbolName);
 	VEKAUI_API FVekaElement Shape(const FVekaShape& InShape);
 	VEKAUI_API FVekaElement Rectangle();
 	VEKAUI_API FVekaElement RoundedRectangle(float Radius, bool bContinuous = false);

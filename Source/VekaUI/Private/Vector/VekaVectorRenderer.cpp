@@ -41,6 +41,6 @@ namespace Veka::VectorRender
 			Dashed = MoveTemp(Trimmed);
 		}
 
-		return Veka::PaintRender::StrokePolylines(Context, Dashed, Style.Paint, Style.Width, Bounds);
+		return Veka::PaintRender::StrokePolylines(Context, Dashed, Style.Paint, Style.Width, Bounds, Style.Cap, Style.Join, Style.MiterLimit);
 	}
 }

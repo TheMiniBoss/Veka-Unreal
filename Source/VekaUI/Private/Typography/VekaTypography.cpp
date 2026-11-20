@@ -122,6 +122,7 @@ namespace Veka::Typography
 		if (T.bCustomFont)
 		{
 			Out.Font = T.CustomFont;
+			Out.Weight = T.bOverrideWeight ? T.Weight : EVekaFontWeight::Regular;
 			Out.Font.Size *= T.Scale;
 			if (T.bOverrideTracking)
 			{
@@ -135,6 +136,7 @@ namespace Veka::Typography
 		const FVekaTextStyleSpec StyleSpec = GetStyleSpec(T.Style, Theme);
 		const float Size = (T.Size > 0.f ? T.Size : StyleSpec.Size) * FMath::Max(T.Scale, 0.1f);
 		const EVekaFontWeight Weight = T.bOverrideWeight ? T.Weight : StyleSpec.Weight;
+		Out.Weight = Weight;
 		const float Tracking = T.bOverrideTracking ? T.Tracking : OpticalTracking(Size);
 		const UVekaFontFamily* Family = T.Family ? T.Family.Get() : (Theme ? Theme->FontFamily.Get() : nullptr);
 		Out.Font = MakeFont(Family, Size, Weight, T.bItalic, Tracking);
