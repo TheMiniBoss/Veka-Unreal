@@ -78,15 +78,30 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **0 terminée** (architecture validée) — Phase 1 pas commencée |
-| Branche active | `C++` |
-| Code C++ | aucun pour l'instant (`Veka.uplugin` sans modules) |
-| Prochaine étape Cloud | créer `cpp/phase-1-core` : renommage en `VekaUI.uplugin`, 6 modules, squelette Core |
-| Bloquant | environnement Local à préparer (demande ci-dessous) |
+| Phase | **1 — Core** : code écrit par Cloud, **pas encore compilé** |
+| Branche active | `cpp/phase-1-core` (à fusionner dans `C++` après D-002 vert) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` complet pour la Phase 1 ; 12 tests automation |
+| Prochaine étape Cloud | corriger selon le retour de D-002, puis Phase 2 (Colora + Anima complets, symboles, typo, contrôles) |
+| Bloquant | D-002 (compilation + tests sur le PC) |
 
 ---
 
 ## Demandes ouvertes pour Claude Local
+
+- [ ] **D-002 — Compiler et tester la Phase 1** (branche `cpp/phase-1-core`)
+  1. `git fetch` puis `git checkout cpp/phase-1-core` dans `VekaHost/Plugins/VekaUI`. Le plugin s'appelle maintenant **`VekaUI.uplugin`**.
+  2. Activer le plugin dans `VekaHost.uproject` : `"Plugins": [{ "Name": "VekaUI", "Enabled": true }]`.
+  3. Fermer tous les éditeurs UE, puis compiler `VekaHostEditor Win64 Development`.
+  4. Corriger les erreurs **d'API Unreal** seulement (cf. Règles §3), une par une, en notant chaque correction.
+     Liste des points dont Cloud n'est pas sûr : voir l'entrée `CLOUD → Phase 1` ci-dessous.
+  5. Lancer `Automation RunTests VekaUI` (commande de référence) et noter le résultat des 12 tests.
+  6. Ouvrir l'éditeur `VekaHost`, menu **Window > Tools > VekaUI Playground** : vérifier l'affichage
+     (formes, texte qui passe à la ligne, grille, scroll à la molette), cliquer « +1 », la piste du ressort,
+     l'anneau (trim animé). Une capture d'écran dans `Docs/Sync/Screens/phase1-playground.png` si possible.
+  7. Optionnel : dans un Widget Blueprint de test, ajouter un widget **Veka Host** avec
+     `ViewClass = Veka Playground` et vérifier qu'il s'affiche dans le Designer.
+  8. `BuildPlugin` Win64 (Development + Shipping) si l'éditeur compile.
+  9. Entrée `LOCAL →`, cocher D-002, commit `[local] D-002 …`, push sur `cpp/phase-1-core`.
 
 - [x] **D-001 — Préparer l'environnement** (avant tout code) — ✅ fait le 2026-11-20 (voir `LOCAL →` ci-dessous)
   1. Vérifier que UE **5.8** est installé et noter sa version exacte.
@@ -101,6 +116,57 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD → Phase 1 (core) écrite, à compiler
+
+- **Branche** : `cpp/phase-1-core` (partie de `C++` @ `95e3356`)
+- **Réponses aux questions de Local (D-001)** : le projet hôte `VekaHost` créé à la main convient. Ne pas
+  utiliser `Documents\Unreal Projects\Veka\`. Le jeton Epic vu dans `Demo.log` : ne jamais le committer.
+- **Codé** :
+  - Plugin renommé `VekaUI.uplugin` ; modules `VekaUI` (Runtime, Default), `VekaUIRender` (PostConfigInit,
+    mappe `/Plugin/VekaUI` → `Shaders/`), `VekaLang` et `VekaImport` (UncookedOnly, vides), `VekaEditor`
+    (onglet Playground), `VekaWeb` (vide).
+  - Cœur déclaratif : `FVekaElement` (description légère, copy-on-write), `FVekaNode` (arbre retenu,
+    état, layout), `FVekaRuntime` (réconciliateur par clé, re-évaluation groupée des vues sales, FGCObject),
+    `FVekaView` + `VEKA_VIEW`, `FVekaContext::State<T>`, `TVekaState` / `TVekaBinding`, `FVekaEnvironment`.
+  - API d'extension : `FVekaPrimitive` et `FVekaModifier` sont des USTRUCT polymorphes (virtuels) stockés
+    dans `FInstancedStruct` ; `FVekaSchema` les découvre par réflexion.
+  - Layout type SwiftUI (proposition → taille) : `FVekaStack` (H/V/Z en un seul type, priorités),
+    `FVekaSpacer`, `FVekaGrid` (fixed / flexible / adaptive), `FVekaScrollView` (molette, indicateurs).
+  - Primitives : `FVekaText` (retour à la ligne, limite de lignes, « … »), `FVekaImage`, `FVekaShapeView`
+    (rect, arrondi, continuous, capsule, cercle, ellipse, path ; hit-test exact par SDF).
+  - Vecteur : `FVekaPath` (Bézier, arcs, parseur SVG `d=`), trim, pointillés, triangulation, rendu
+    (`MakeCustomVerts` + `MakeLines`).
+  - Modifiers : padding, frame (fixe/flexible), layoutPriority, background, border, shadow (approx.),
+    opacity, clip, offset/scale/rotation (render transform), foreground, font, colorScheme, onTap/onHover/onPress.
+  - Anima minimal : `FVekaAnimationSpec` (courbes, Bézier, ressort SwiftUI response/dampingFraction ou
+    masse/raideur/amortissement, delay, repeat, autoreverse), `FVekaAnimaScheduler` (un par runtime, retarget
+    qui garde la vitesse), `TVekaState::Animate`.
+  - Slate : `SVekaNodeWidget` (un seul widget par nœud, modifiers peints niveau par niveau),
+    `SVekaHost` (active timer seulement quand il y a du travail). UMG : `UVekaHostWidget` + `UVekaViewSource`.
+  - Démo : `Veka::Samples::Playground()`, `UVekaPlaygroundViewSource`, onglet éditeur.
+  - Tests : `VekaUI.Anima.{Easing,Spring,Scheduler}`, `VekaUI.Vector.{Svg,PathOps,ShapeHitTest}`,
+    `VekaUI.Layout.{Stack,Modifiers,Grid}`, `VekaUI.Core.{State,ReconcileKeys,Schema}`,
+    `VekaUI.Primitives.TextLayout`.
+- **Fichiers** : `VekaUI.uplugin`, `Shaders/Private/VekaCommon.ush`, `Source/**` (≈ 75 fichiers), `README.md`.
+- **À compiler** : `VekaHostEditor Win64 Development` (puis BuildPlugin Shipping).
+- **À tester** : D-002.
+- **Points d'attention API UE 5.8** (Cloud n'a pas pu vérifier ; corriger si besoin, sans changer le design) :
+  1. `FInstancedStruct` : include `StructUtils/InstancedStruct.h` (CoreUObject) ; `AddStructReferencedObjects`,
+     `GetPtr<T>` / `GetMutablePtr<T>`, `operator==`.
+  2. USTRUCT avec fonctions virtuelles (`FVekaPrimitive`, `FVekaModifier`) dans `FInstancedStruct`
+     (comme `FTableRowBase`). Si UHT refuse quelque chose, le signaler avant de restructurer.
+  3. `FSlateDrawElement::MakeLines` avec `TArray<FVector2f>`, `MakeGradient` (signature + orientation :
+     vérifier qu'un dégradé « horizontal » va bien de gauche à droite), `MakeCustomVerts`, `MakeText`.
+  4. Champs de `FSlateVertex` (`Position`, `TexCoords[4]`, `MaterialTexCoords`, `Color`, `SecondaryColor`,
+     `PixelSize[2]`) et brush `GenericWhiteBox` de `FCoreStyle` pour les custom verts.
+  5. `TSlotlessChildren<SWidget>` (constructeur `Children(this)`, `GetChildAt`, `Add`, `Empty`).
+  6. `FGeometry::ToPaintGeometry(FVector2f, FSlateLayoutTransform)` et `MakeChild(...)`.
+  7. `FSlateFontMeasure::Measure` / `GetMaxCharacterHeight`, `FSlateFontInfo::operator==`.
+  8. `EAutomationTestFlags` combiné en `constexpr` dans les tests.
+  9. `FSlateRenderTransform` : `FScale2f`, `FQuat2f`, `Concatenate`.
+  10. `AddShaderSourceDirectoryMapping` (RenderCore, `ShaderCore.h`) depuis un module PostConfigInit.
+- **Demande** : D-002.
 
 ### 2026-11-20 — LOCAL → D-001 environnement prêt
 

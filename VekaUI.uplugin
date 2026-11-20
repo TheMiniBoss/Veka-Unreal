@@ -1,0 +1,56 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0-phase1",
+	"FriendlyName": "VekaUI",
+	"Description": "Declarative, Slate-first UI framework (SwiftUI-inspired) with Colora, Anima and the Veka Editor.",
+	"Category": "UI",
+	"CreatedBy": "TheMiniBoss",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EngineVersion": "5.8.0",
+	"CanContainContent": true,
+	"IsExperimentalVersion": true,
+	"Installed": false,
+	"IsBetaVersion": false,
+	"Modules": [
+		{
+			"Name": "VekaUI",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VekaUIRender",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		},
+		{
+			"Name": "VekaLang",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VekaImport",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VekaEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VekaWeb",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "WebBrowserWidget",
+			"Enabled": true
+		}
+	]
+}
