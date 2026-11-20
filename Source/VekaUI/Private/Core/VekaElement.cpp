@@ -443,3 +443,14 @@ FVekaElement FVekaElement::Transition(const FVekaTransition& InTransition) &&
 	AddModifierInternal(FInstancedStruct::Make(Modifier));
 	return MoveTemp(*this);
 }
+
+// --- Typography ------------------------------------------------------------------------------------------------
+
+FVekaElement FVekaElement::TypographyField(EVekaTypographyField Field, const FVekaTypography& Value) &&
+{
+	FVekaTypographyModifier Modifier;
+	Modifier.Field = Field;
+	Modifier.Value = Value;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}

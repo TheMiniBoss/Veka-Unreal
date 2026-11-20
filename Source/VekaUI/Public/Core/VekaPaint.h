@@ -222,6 +222,10 @@ struct VEKAUI_API FVekaPaint
 	/** Linear, radial, elliptical, angular or mesh: drawn by the Veka tessellator. */
 	bool IsGradient() const;
 
+	/** Same UPROPERTY values. */
+	bool operator==(const FVekaPaint& Other) const;
+	bool operator!=(const FVekaPaint& Other) const { return !(*this == Other); }
+
 	bool IsVisible() const;
 
 	/** Representative color (for places that cannot draw a gradient yet, like text). */

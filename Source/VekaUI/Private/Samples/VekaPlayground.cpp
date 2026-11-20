@@ -350,6 +350,136 @@ namespace VekaPlaygroundPrivate
 		}
 	};
 
+	/** Rolling counter: NumericText content transition + monospaced digits. */
+	class FCounterRollView : public FVekaView
+	{
+		VEKA_VIEW(FCounterRollView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<int32> Value = Ctx.State<int32>(TEXT("Value"), 1280);
+			return VStack(8, EVekaHAlign::Leading)(
+				Text(FText::AsNumber(Value.Get())).Font(EVekaTextStyle::LargeTitle).MonospacedDigit()
+					.ContentTransition(EVekaContentTransition::NumericText, 0.45f),
+				HStack(8)(
+					Button(INVTEXT("+1"), [Value]() { Value.Set(Value.Get() + 1); }),
+					Button(INVTEXT("+137"), [Value]() { Value.Set(Value.Get() + 137); }),
+					Button(INVTEXT("-58"), [Value]() { Value.Set(Value.Get() - 58); })
+				),
+				Text(INVTEXT("contentTransition(.numericText) + monospacedDigit")).Foreground(Muted).Font(EVekaTextStyle::Caption1)
+			);
+		}
+	};
+
+	/** Effects replay when the text changes. */
+	class FTextEffectsView : public FVekaView
+	{
+		VEKA_VIEW(FTextEffectsView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<int32> Round = Ctx.State<int32>(TEXT("Round"), 0);
+			const FText Line = Round.Get() % 2 == 0 ? INVTEXT("Welcome to VekaUI") : INVTEXT("Glyph by glyph");
+
+			FVekaTextEffect Appear;
+			Appear.Kind = EVekaTextEffectKind::Appear;
+			FVekaTextEffect Typewriter;
+			Typewriter.Kind = EVekaTextEffectKind::Typewriter;
+			Typewriter.Stagger = 0.05f;
+			FVekaTextEffect Wave;
+			Wave.Kind = EVekaTextEffectKind::Wave;
+			Wave.Amplitude = 4.f;
+
+			return VStack(8, EVekaHAlign::Leading)(
+				Button(INVTEXT("Replay"), [Round]() { Round.Set(Round.Get() + 1); }),
+				Text(Line).Font(EVekaTextStyle::Title2).TextEffect(Appear),
+				Text(Line).Font(EVekaTextStyle::Title2).TextEffect(Typewriter),
+				Text(INVTEXT("Wave wave wave")).Font(EVekaTextStyle::Title2).TextEffect(Wave)
+					.Foreground(FVekaPaint::Linear(Hex(TEXT("#FF5CB8FF")), Hex(TEXT("#4C7DFFFF"))))
+			);
+		}
+	};
+
+	/** Global text scale of a subtree (accessibility). */
+	class FTextScaleView : public FVekaView
+	{
+		VEKA_VIEW(FTextScaleView)
+
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<float> Scale = Ctx.State<float>(TEXT("Scale"), 1.f);
+			return VStack(6, EVekaHAlign::Leading)(
+				HStack(8)(
+					Button(INVTEXT("A-"), [Scale]() { Scale.Set(FMath::Max(Scale.Get() - 0.15f, 0.7f)); }),
+					Button(INVTEXT("A+"), [Scale]() { Scale.Set(FMath::Min(Scale.Get() + 0.15f, 1.9f)); }),
+					Text(FText::Format(INVTEXT("Text scale x{0}"), FText::AsNumber(Scale.Get()))).Foreground(Muted).Font(EVekaTextStyle::Caption1)
+				),
+				VStack(2, EVekaHAlign::Leading)(
+					Text(INVTEXT("Headline")).Font(EVekaTextStyle::Headline),
+					Text(INVTEXT("Body text follows the global text size.")),
+					Text(INVTEXT("Footnote")).Font(EVekaTextStyle::Footnote).Foreground(Muted)
+				).TextScale(Scale.Get()).Animation(FVekaAnimationSpec::Smooth(), Scale.Get())
+			);
+		}
+	};
+
+	FVekaElement TypographySection()
+	{
+		using namespace Veka;
+		const TPair<EVekaTextStyle, const TCHAR*> Styles[] = {
+			{ EVekaTextStyle::LargeTitle, TEXT("Large Title") }, { EVekaTextStyle::Title1, TEXT("Title 1") }, { EVekaTextStyle::Title2, TEXT("Title 2") },
+			{ EVekaTextStyle::Title3, TEXT("Title 3") }, { EVekaTextStyle::Headline, TEXT("Headline") }, { EVekaTextStyle::Body, TEXT("Body") },
+			{ EVekaTextStyle::Callout, TEXT("Callout") }, { EVekaTextStyle::Subheadline, TEXT("Subheadline") }, { EVekaTextStyle::Footnote, TEXT("Footnote") },
+			{ EVekaTextStyle::Caption1, TEXT("Caption 1") }, { EVekaTextStyle::Caption2, TEXT("Caption 2") } };
+		TArray<FVekaElement> StyleRows;
+		for (const TPair<EVekaTextStyle, const TCHAR*>& Style : Styles)
+		{
+			StyleRows.Add(Text(Style.Value).Font(Style.Key));
+		}
+
+		const TCHAR* WeightNames[] = { TEXT("Hairline"), TEXT("Thin"), TEXT("ExtraLight"), TEXT("Light"), TEXT("News"), TEXT("Regular"),
+			TEXT("Medium"), TEXT("SemiBold"), TEXT("Bold"), TEXT("ExtraBold"), TEXT("Black"), TEXT("ExtraBlack") };
+		TArray<FVekaElement> Weights;
+		TArray<FVekaElement> Italics;
+		for (int32 Index = 0; Index < 12; ++Index)
+		{
+			Weights.Add(VStack(2)(
+				Text(TEXT("Ag")).Font(EVekaTextStyle::Title1).FontWeight(static_cast<EVekaFontWeight>(Index)),
+				Text(WeightNames[Index]).Font(EVekaTextStyle::Caption2).Foreground(Muted)));
+			Italics.Add(Text(TEXT("Ag")).Font(EVekaTextStyle::Title3).FontWeight(static_cast<EVekaFontWeight>(Index)).Italic());
+		}
+
+		const FString Long = TEXT("The quick brown fox jumps over the lazy dog near the riverbank");
+		return VStack(18, EVekaHAlign::Leading)(
+			HStack(40, EVekaVAlign::Top)(
+				VStack(4, EVekaHAlign::Leading).Children(MoveTemp(StyleRows)),
+				VStack(14, EVekaHAlign::Leading)(
+					HStack(14).Children(MoveTemp(Weights)),
+					HStack(22).Children(MoveTemp(Italics)),
+					Text(INVTEXT("LT Flode Neue: 12 weights + italics. Default family of Veka.")).Foreground(Muted).Font(EVekaTextStyle::Caption1),
+					Text(INVTEXT("Tracking 0.25 uppercase")).TextCase(EVekaTextCase::Uppercase).Tracking(0.25f).Font(EVekaTextStyle::Footnote).FontWeight(EVekaFontWeight::SemiBold),
+					Text(INVTEXT("Gradient text")).Font(EVekaTextStyle::LargeTitle).FontWeight(EVekaFontWeight::Black)
+						.Foreground(FVekaPaint::Linear(Hex(TEXT("#FF5E57FF")), Hex(TEXT("#8E5CFFFF")))),
+					HStack(12)(
+						Text(Long).LineLimit(1).Truncation(EVekaTextTruncation::Head).Frame(170, 20, FVekaAlignment::Leading()),
+						Text(Long).LineLimit(1).Truncation(EVekaTextTruncation::Middle).Frame(170, 20, FVekaAlignment::Leading()),
+						Text(Long).LineLimit(1).Truncation(EVekaTextTruncation::Tail).Frame(170, 20, FVekaAlignment::Leading())
+					),
+					Text(INVTEXT("Head / middle / tail truncation, then minimumScaleFactor(0.6):")).Foreground(Muted).Font(EVekaTextStyle::Caption1),
+					Text(INVTEXT("This line shrinks to fit before it truncates")).LineLimit(1).MinimumScaleFactor(0.6f).Frame(250, 20, FVekaAlignment::Leading())
+						.Background(FLinearColor(1, 1, 1, 0.05f), 4)
+				)
+			),
+			HStack(40, EVekaVAlign::Top)(View<FCounterRollView>(), View<FTextEffectsView>(), View<FTextScaleView>())
+		);
+	}
+
 	FVekaElement AnimaSection()
 	{
 		using namespace Veka;
@@ -457,10 +587,12 @@ namespace Veka::Samples
 
 		return ScrollView(EVekaAxis::Vertical)(
 			VStack(16, EVekaHAlign::Leading)(
-				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima)")).Font(Fonts::LargeTitle()),
+				Text(INVTEXT("VekaUI - Playground (Phase 1 + Colora + Anima + Typography)")).Font(Fonts::LargeTitle()),
 				Text(INVTEXT("Declarative Slate-first views: one Stack for H/V/Z, modifiers, state, springs, vector shapes and strokes. "
 					"This paragraph wraps to the available width."))
 					.Foreground(Muted),
+
+				Section(INVTEXT("Typography: LT Flode Neue, styles, weights, truncation, numeric text, glyph effects"), TypographySection()),
 
 				Section(INVTEXT("Anima: implicit, WithAnimation, transitions, layout, curves, timeline"), AnimaSection()),
 

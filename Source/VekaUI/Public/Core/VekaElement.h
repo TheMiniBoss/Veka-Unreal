@@ -11,6 +11,7 @@
 #include "Colora/VekaColor.h"
 #include "Anima/VekaAnimationSpec.h"
 #include "Anima/VekaTransition.h"
+#include "Typography/VekaTypography.h"
 
 class FVekaView;
 class UVekaTheme;
@@ -160,6 +161,54 @@ public:
 	FVekaElement Font(const FSlateFontInfo& InFont) &&;
 	FVekaElement ColorScheme(EVekaColorScheme Scheme) const& { return FVekaElement(*this).ColorScheme(Scheme); }
 	FVekaElement ColorScheme(EVekaColorScheme Scheme) &&;
+
+	// --- Typography (applies to every Text of the subtree) -----------------------------------
+
+	FVekaElement TypographyField(EVekaTypographyField Field, const FVekaTypography& Value) const& { return FVekaElement(*this).TypographyField(Field, Value); }
+	FVekaElement TypographyField(EVekaTypographyField Field, const FVekaTypography& Value) &&;
+	/** Semantic text style (size, weight, line height, optical tracking from the theme). */
+	FVekaElement Font(EVekaTextStyle InStyle) const& { return FVekaElement(*this).Font(InStyle); }
+	FVekaElement Font(EVekaTextStyle InStyle) && { FVekaTypography V; V.Style = InStyle; return MoveTemp(*this).TypographyField(EVekaTypographyField::Style, V); }
+	/** One of the 12 weights. */
+	FVekaElement FontWeight(EVekaFontWeight InWeight) const& { return FVekaElement(*this).FontWeight(InWeight); }
+	FVekaElement FontWeight(EVekaFontWeight InWeight) && { FVekaTypography V; V.Weight = InWeight; return MoveTemp(*this).TypographyField(EVekaTypographyField::Weight, V); }
+	FVekaElement Italic(bool bInItalic = true) const& { return FVekaElement(*this).Italic(bInItalic); }
+	FVekaElement Italic(bool bInItalic = true) && { FVekaTypography V; V.bItalic = bInItalic; return MoveTemp(*this).TypographyField(EVekaTypographyField::Italic, V); }
+	/** Size in Slate points (replaces the style size, keeps the weight). */
+	FVekaElement FontSize(float InSize) const& { return FVekaElement(*this).FontSize(InSize); }
+	FVekaElement FontSize(float InSize) && { FVekaTypography V; V.Size = InSize; return MoveTemp(*this).TypographyField(EVekaTypographyField::Size, V); }
+	FVekaElement FontFamily(UVekaFontFamily* InFamily) const& { return FVekaElement(*this).FontFamily(InFamily); }
+	FVekaElement FontFamily(UVekaFontFamily* InFamily) && { FVekaTypography V; V.Family = InFamily; return MoveTemp(*this).TypographyField(EVekaTypographyField::Family, V); }
+	/** Letter spacing in em (0.05 = 5 %); default is the optical tracking of the size. */
+	FVekaElement Tracking(float Em) const& { return FVekaElement(*this).Tracking(Em); }
+	FVekaElement Tracking(float Em) && { FVekaTypography V; V.Tracking = Em; return MoveTemp(*this).TypographyField(EVekaTypographyField::Tracking, V); }
+	/** Line height multiplier. */
+	FVekaElement LineSpacing(float Multiplier) const& { return FVekaElement(*this).LineSpacing(Multiplier); }
+	FVekaElement LineSpacing(float Multiplier) && { FVekaTypography V; V.LineSpacing = Multiplier; return MoveTemp(*this).TypographyField(EVekaTypographyField::LineSpacing, V); }
+	FVekaElement TextCase(EVekaTextCase InCase) const& { return FVekaElement(*this).TextCase(InCase); }
+	FVekaElement TextCase(EVekaTextCase InCase) && { FVekaTypography V; V.Case = InCase; return MoveTemp(*this).TypographyField(EVekaTypographyField::Case, V); }
+	/** Equal-width digits (counters, timers, tables). */
+	FVekaElement MonospacedDigit(bool bOn = true) const& { return FVekaElement(*this).MonospacedDigit(bOn); }
+	FVekaElement MonospacedDigit(bool bOn = true) && { FVekaTypography V; V.bMonospacedDigits = bOn; return MoveTemp(*this).TypographyField(EVekaTypographyField::MonospacedDigits, V); }
+	/** 0 = unlimited. */
+	FVekaElement LineLimit(int32 Lines) const& { return FVekaElement(*this).LineLimit(Lines); }
+	FVekaElement LineLimit(int32 Lines) && { FVekaTypography V; V.LineLimit = Lines; return MoveTemp(*this).TypographyField(EVekaTypographyField::LineLimit, V); }
+	FVekaElement Truncation(EVekaTextTruncation Mode) const& { return FVekaElement(*this).Truncation(Mode); }
+	FVekaElement Truncation(EVekaTextTruncation Mode) && { FVekaTypography V; V.Truncation = Mode; return MoveTemp(*this).TypographyField(EVekaTypographyField::Truncation, V); }
+	FVekaElement MultilineAlignment(EVekaHAlign InAlignment) const& { return FVekaElement(*this).MultilineAlignment(InAlignment); }
+	FVekaElement MultilineAlignment(EVekaHAlign InAlignment) && { FVekaTypography V; V.Alignment = InAlignment; return MoveTemp(*this).TypographyField(EVekaTypographyField::Alignment, V); }
+	/** Text may shrink down to Factor to fit before it is truncated. */
+	FVekaElement MinimumScaleFactor(float Factor) const& { return FVekaElement(*this).MinimumScaleFactor(Factor); }
+	FVekaElement MinimumScaleFactor(float Factor) && { FVekaTypography V; V.MinimumScaleFactor = Factor; return MoveTemp(*this).TypographyField(EVekaTypographyField::MinimumScaleFactor, V); }
+	/** How the text animates when its content changes (NumericText: rolling digits). */
+	FVekaElement ContentTransition(EVekaContentTransition Transition, float Duration = 0.35f) const& { return FVekaElement(*this).ContentTransition(Transition, Duration); }
+	FVekaElement ContentTransition(EVekaContentTransition Transition, float Duration = 0.35f) && { FVekaTypography V; V.ContentTransition = Transition; V.ContentTransitionDuration = Duration; return MoveTemp(*this).TypographyField(EVekaTypographyField::ContentTransition, V); }
+	/** Per-glyph effect (appear, typewriter, wave). */
+	FVekaElement TextEffect(const FVekaTextEffect& Effect) const& { return FVekaElement(*this).TextEffect(Effect); }
+	FVekaElement TextEffect(const FVekaTextEffect& Effect) && { FVekaTypography V; V.Effect = Effect; return MoveTemp(*this).TypographyField(EVekaTypographyField::Effect, V); }
+	/** Global text size multiplier of the subtree (accessibility). */
+	FVekaElement TextScale(float Scale) const& { return FVekaElement(*this).TextScale(Scale); }
+	FVekaElement TextScale(float Scale) && { FVekaTypography V; V.Scale = Scale; return MoveTemp(*this).TypographyField(EVekaTypographyField::Scale, V); }
 
 	// --- Colora ----------------------------------------------------------------------------------
 

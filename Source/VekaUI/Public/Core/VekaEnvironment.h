@@ -81,15 +81,18 @@ namespace VekaEnv
 {
 	/** FLinearColor — default color for text, symbols and strokes. */
 	inline FName ForegroundColor() { static const FName Name(TEXT("Veka.ForegroundColor")); return Name; }
-	/** FSlateFontInfo — default font for Text. */
+	/** FVekaPaint (resolved) — set with the foreground color when `.Foreground` gets a paint; gradients color text per glyph. */
+	inline FName ForegroundPaint() { static const FName Name(TEXT("Veka.ForegroundPaint")); return Name; }
+	/** Deprecated key (Phase 1): fonts now come from the typography (VekaEnv::Typography, `.Font(...)`). */
 	inline FName Font() { static const FName Name(TEXT("Veka.Font")); return Name; }
 	/** EVekaColorScheme — light or dark. */
 	inline FName ColorScheme() { static const FName Name(TEXT("Veka.ColorScheme")); return Name; }
 
 	VEKAUI_API FLinearColor GetForegroundColor(const FVekaEnvironment& Environment);
+	/** Font of Text in this environment (typography resolved: family, style, weight, size, tracking). */
 	VEKAUI_API FSlateFontInfo GetFont(const FVekaEnvironment& Environment);
 	VEKAUI_API EVekaColorScheme GetColorScheme(const FVekaEnvironment& Environment);
 
-	/** Default root environment: dark scheme, white foreground, engine default font 14pt. */
+	/** Default root environment: dark scheme, white foreground, Body text style (LT Flode Neue). */
 	VEKAUI_API FVekaEnvironment MakeDefault();
 }

@@ -195,6 +195,19 @@ const float* UVekaTheme::FindMetric(FName Name) const
 	return nullptr;
 }
 
+const FVekaTextStyleSpec* UVekaTheme::FindTextStyle(EVekaTextStyle Style) const
+{
+	int32 Guard = 0;
+	for (const UVekaTheme* Theme = this; Theme && Guard < 16; Theme = Theme->Parent, ++Guard)
+	{
+		if (const FVekaTextStyleSpec* Found = Theme->TextStyles.Find(Style))
+		{
+			return Found;
+		}
+	}
+	return nullptr;
+}
+
 namespace VekaEnv
 {
 	const UVekaTheme* GetTheme(const FVekaEnvironment& Environment)

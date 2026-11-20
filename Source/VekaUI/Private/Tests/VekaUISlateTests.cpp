@@ -217,7 +217,10 @@ bool FVekaSlateTapTest::RunTest(const FString& Parameters)
 		const FVekaOffscreenPaint Paint(Host, FVector2f(900.f, 700.f));
 	}
 
-	const TSharedPtr<FVekaNode> Button = FindText(Root, [](const FString& S) { return S == TEXT("+1"); });
+	// The "+1" next to "Tapped N times" (other sections have buttons with the same label).
+	const TSharedPtr<FVekaNode> TappedText = FindText(Root, [](const FString& S) { return S.StartsWith(TEXT("Tapped")); });
+	const TSharedPtr<FVekaNode> Button = TappedText.IsValid() && TappedText->GetParent()
+		? FindText(TappedText->GetParent()->AsShared(), [](const FString& S) { return S == TEXT("+1"); }) : nullptr;
 	auto Counter = [&Root]() { return TextOf(FindText(Root, [](const FString& S) { return S.StartsWith(TEXT("Tapped")); })); };
 	if (!TestNotNull(TEXT("+1 button found"), Button.Get()))
 	{

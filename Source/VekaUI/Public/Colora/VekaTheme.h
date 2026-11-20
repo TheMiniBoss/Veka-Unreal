@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Core/VekaPaint.h"
+#include "Typography/VekaTypography.h"
 #include "VekaTheme.generated.h"
 
 class FVekaEnvironment;
@@ -47,6 +48,16 @@ public:
 	/** Design metrics (CornerRadius.Card, Spacing.M...). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Veka|Theme")
 	TMap<FName, float> Metrics;
+
+	/** Font family of the theme (nullptr = parent, then LT Flode Neue). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Veka|Theme")
+	TObjectPtr<UVekaFontFamily> FontFamily;
+
+	/** Overrides of the text styles (size, weight, line height). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Veka|Theme")
+	TMap<EVekaTextStyle, FVekaTextStyleSpec> TextStyles;
+
+	const FVekaTextStyleSpec* FindTextStyle(EVekaTextStyle Style) const;
 
 	/** Looks the token up in this theme and its parents (not in the built-in defaults). */
 	const FVekaThemeColor* FindColor(FName Token) const;

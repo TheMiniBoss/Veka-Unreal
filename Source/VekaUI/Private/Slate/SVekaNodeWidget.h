@@ -56,8 +56,13 @@ private:
 	int32 PaintContent(const FPaintPass& Pass, FVekaNode& Node, int32 LayerId, const FWidgetStyle& Style) const;
 	void SetPressed(bool bInPressed);
 
+	/** Keeps repainting while the primitive animates on its own (text effects, content transitions). */
+	void EnsureAnimationFrames() const;
+	EActiveTimerReturnType HandleAnimationFrame(double InCurrentTime, float InDeltaTime);
+
 	TWeakPtr<FVekaNode> Node;
 	TSlotlessChildren<SWidget> Children;
+	mutable TWeakPtr<FActiveTimerHandle> AnimationFrameTimer;
 	bool bPressed = false;
 	bool bHovered = false;
 };

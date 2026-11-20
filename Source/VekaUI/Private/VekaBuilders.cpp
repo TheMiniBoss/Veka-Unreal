@@ -149,13 +149,14 @@ namespace Veka
 
 	namespace Fonts
 	{
-		FSlateFontInfo Regular(int32 Size) { return FCoreStyle::GetDefaultFontStyle("Regular", Size); }
-		FSlateFontInfo Bold(int32 Size) { return FCoreStyle::GetDefaultFontStyle("Bold", Size); }
-		FSlateFontInfo LargeTitle() { return Bold(30); }
-		FSlateFontInfo Title() { return Bold(22); }
-		FSlateFontInfo Headline() { return Bold(15); }
-		FSlateFontInfo Body() { return Regular(14); }
-		FSlateFontInfo Caption() { return Regular(11); }
+		// LT Flode Neue (default Veka family).
+		FSlateFontInfo Regular(int32 Size) { return Veka::Typography::MakeFont(nullptr, Size, EVekaFontWeight::Regular, false, Veka::Typography::OpticalTracking(Size)); }
+		FSlateFontInfo Bold(int32 Size) { return Veka::Typography::MakeFont(nullptr, Size, EVekaFontWeight::Bold, false, Veka::Typography::OpticalTracking(Size)); }
+		FSlateFontInfo LargeTitle() { return Veka::Typography::StyleFont(EVekaTextStyle::LargeTitle); }
+		FSlateFontInfo Title() { return Veka::Typography::StyleFont(EVekaTextStyle::Title1); }
+		FSlateFontInfo Headline() { return Veka::Typography::StyleFont(EVekaTextStyle::Headline); }
+		FSlateFontInfo Body() { return Veka::Typography::StyleFont(EVekaTextStyle::Body); }
+		FSlateFontInfo Caption() { return Veka::Typography::StyleFont(EVekaTextStyle::Caption1); }
 	}
 
 	FLinearColor Hex(const FString& HexColor)
