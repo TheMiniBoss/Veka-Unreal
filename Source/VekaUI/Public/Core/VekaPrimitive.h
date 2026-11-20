@@ -65,7 +65,7 @@ struct VEKAUI_API FVekaPaintContext
 	/** Paint geometry of a local rect. */
 	FPaintGeometry MakePaintGeometry(const FVekaRect& Rect) const;
 
-	/** Color multiplied by the inherited opacity / tint. */
+	/** Color with the environment's color adjustments, then the inherited opacity / tint. */
 	FLinearColor Tint(const FLinearColor& Color) const;
 };
 

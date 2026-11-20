@@ -150,11 +150,18 @@ void FVekaRuntime::EvaluateNode(FVekaNode& Node, bool bDescriptionChanged)
 	Node.Environment = Node.InheritedEnvironment;
 	Node.Gestures.Reset();
 	FVekaLayoutTraits Traits;
+	// Outermost modifier first: an inner `.Foreground(...)` overrides an outer one, like SwiftUI.
+	for (int32 Index = Node.Modifiers.Num() - 1; Index >= 0; --Index)
+	{
+		if (const FVekaModifier* Typed = Node.Modifiers[Index].GetPtr<FVekaModifier>())
+		{
+			Typed->ModifyEnvironment(Node.Environment);
+		}
+	}
 	for (const FInstancedStruct& Modifier : Node.Modifiers)
 	{
 		if (const FVekaModifier* Typed = Modifier.GetPtr<FVekaModifier>())
 		{
-			Typed->ModifyEnvironment(Node.Environment);
 			Typed->CollectGestures(Node.Gestures);
 			Typed->ModifyLayoutTraits(Traits);
 		}

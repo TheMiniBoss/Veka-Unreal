@@ -4,6 +4,7 @@
 #include "UMG/VekaViewSource.h"
 #include "Slate/SVekaHost.h"
 #include "Core/VekaEnvironment.h"
+#include "Colora/VekaTheme.h"
 
 #define LOCTEXT_NAMESPACE "VekaUI"
 
@@ -55,7 +56,8 @@ void UVekaHostWidget::ApplyEnvironment()
 	}
 	FVekaEnvironment Environment = VekaEnv::MakeDefault();
 	Environment.Set<EVekaColorScheme>(VekaEnv::ColorScheme(), ColorScheme);
-	Environment.Set<FLinearColor>(VekaEnv::ForegroundColor(), ColorScheme == EVekaColorScheme::Dark ? FLinearColor::White : FLinearColor(0.02f, 0.02f, 0.025f));
+	Environment.Set<const UVekaTheme*>(VekaEnv::Theme(), Theme.Get());
+	Environment.Set<FLinearColor>(VekaEnv::ForegroundColor(), Veka::Colora::ResolveColor(TEXT("Foreground"), Environment));
 	MyHost->SetEnvironment(Environment);
 }
 
@@ -64,6 +66,12 @@ void UVekaHostWidget::SetViewClass(TSubclassOf<UVekaViewSource> InViewClass)
 	ViewClass = InViewClass;
 	bHasCppRoot = false;
 	Reload();
+}
+
+void UVekaHostWidget::SetTheme(UVekaTheme* InTheme)
+{
+	Theme = InTheme;
+	ApplyEnvironment();
 }
 
 void UVekaHostWidget::SetColorScheme(EVekaColorScheme InColorScheme)

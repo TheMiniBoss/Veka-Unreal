@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalon **2.0** (dette Phase 1) ✅ fusionné dans `C++` ; prochain jalon **2a Colora** |
-| Branche active | `C++` (2a : `cpp/phase-2a-colora`, pas encore créée) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` Phase 1 ; 16/16 tests automation ✅ (dont 3 tests Slate/UMG) |
-| Prochaine étape | 2a Colora ; police = LTFlode Neue, glyphes redessinés en SVG |
+| Phase | **2** — jalons **2.0** et **2a Colora** ✅ fusionnés dans `C++` ; prochain jalon **2b Anima** |
+| Branche active | `C++` (2b : `cpp/phase-2b-anima`, pas encore créée) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora ; 24/24 tests automation ✅ |
+| Prochaine étape | 2b Anima ; police = LTFlode Neue, glyphes redessinés en SVG |
 | Bloquant | aucun (point à vérifier à la main : clics répétés sur « +1 », voir `LOCAL → D-002`) |
 
 ---
@@ -119,6 +119,52 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD + LOCAL → jalon 2a Colora
+
+- **Branche** : `cpp/phase-2a-colora` (partie de `C++` @ `9654c0d`), fusionnée dans `C++`.
+- **Codé** :
+  - **Maths couleur** (`Colora/VekaColor.h`) : sRGB ↔ linéaire, **Oklab / OkLCH**, interpolation par espace
+    (`EVekaColorSpace` : SRGB, Linear, OkLab par défaut, OkLCH avec teinte au plus court), alpha prémultiplié (pas de
+    frange sombre vers le transparent). `FVekaColorMatrix` 4×5 (luminosité, contraste, saturation, rotation de teinte,
+    niveaux de gris), composable.
+  - **Thèmes et tokens** (`Colora/VekaTheme.h`) : `UVekaTheme` (data asset : `Parent`, `Colors` token → paint Light/Dark,
+    `Metrics`), 26 tokens intégrés (noms des presets Colora Alpha 13, valeurs de la palette système — les valeurs exactes
+    d'Alpha 13 sont dans l'asset `Colora_System` de la branche `Blueprint`, à recaler si besoin), hiérarchie
+    primary/secondary/tertiary/quaternary/transparent. Un token peut valoir un dégradé ou un autre token ; les stops et
+    les points de mesh acceptent aussi des tokens. Résolution par l'Environment (thème + schéma) au moment du paint.
+  - **`FVekaPaint` complet** : linéaire 2D (vrai, plus seulement horizontal/vertical), radial, elliptique, angulaire,
+    **mesh gradient** (grille W×H, positions animables, interpolation bilinéaire ou bicubique Catmull-Rom, inversion des
+    grilles déformées par Newton), image (étirée / tuilée / 9-slice, coins arrondis), matériau, token.
+  - **Tessellateur Colora** (`Colora/VekaPaintRenderer.h`) : formes convexes couvertes par une grille découpée
+    (Sutherland-Hodgman), non convexes triangulées puis grillées ; couleur par sommet calculée dans l'espace du paint ;
+    **frange antialiasée de 1 px** ; traits en dégradé (couleur par point). Remplace la ligne d'1 px de la Phase 1.
+  - **Modifiers** : `.Theme(...)`, `.Brightness/.Contrast/.Saturation/.HueRotation/.Grayscale` (via `.ColorAdjust`),
+    `.BlendMode(Normal | Add)`, `.Foreground(...)` accepte un token. `UVekaHostWidget::Theme` + `SetTheme`.
+  - **Additif** : couleurs prémultipliées avec alpha 0 + `ESlateDrawEffect::PreMultipliedAlpha` (vérifié à l'écran :
+    R+V+B = blanc).
+- **Correction de comportement (Phase 1)** : les modifiers d'environnement d'un même nœud s'appliquaient de l'intérieur
+  vers l'extérieur, donc `.Foreground(Rouge).Foreground(Bleu)` donnait bleu. Ils s'appliquent maintenant de l'extérieur
+  vers l'intérieur (le plus intérieur gagne, comme SwiftUI). Fichier : `Private/Core/VekaRuntime.cpp` (`EvaluateNode`).
+- **Bugs trouvés en route** : ajout d'un élément d'un tableau à lui-même dans `StrokePolylines` (crash attrapé par le test
+  UMG du Playground avant l'éditeur) ; encoches sur les traits fermés (points doublons aux jonctions de Bézier + point de
+  fermeture non raccordé par `MakeLines`).
+- **Tests** : 24/24 ✅ — 8 nouveaux `VekaUI.Colora.*` : OkLab (valeurs de référence d'Ottosson), Interpolation,
+  ColorMatrix, Tokens (chaîne de thèmes, token → dégradé → token, métriques, token inconnu), GradientSampling,
+  MeshGradient (grille déformée), Modifiers (ordre, composition), Render (sommets d'un dégradé, frange, additif,
+  saturation 0).
+- **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérif visuelle** : section Colora du Playground (`Docs/Sync/Screens/phase2a-colora.png`) — dégradés, comparaison
+  sRGB / Oklab / OkLCH, ajustements, cercles additifs, anneau angulaire, mesh animé (tap), carte de tokens qui bascule
+  clair / sombre.
+- **Limites connues (pour plus tard)** :
+  - La tessellation des dégradés est refaite à chaque frame (pas de cache) : à mettre en cache par forme + taille.
+  - Dégradé angulaire : la couture de départ peut montrer une transition de ≤ 6 px si la première et la dernière couleur
+    diffèrent.
+  - Images et matériaux : les ajustements de couleur ne s'appliquent qu'à la teinte ; matériaux et textures sur un
+    chemin quelconque sont dessinés dans le rectangle (masques = module de rendu, Phase 4).
+  - Mesh gradient : pas encore de poignées de Bézier par point (éditeur de mesh, Phase 3).
+  - Texte en dégradé : couleur moyenne pour l'instant (2c).
 
 ### 2026-11-20 — LOCAL → jalon 2.0 : tests du chemin Slate et du bridge UMG
 

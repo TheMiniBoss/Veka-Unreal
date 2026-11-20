@@ -2,6 +2,7 @@
 
 #include "Core/VekaPrimitive.h"
 #include "Core/VekaNode.h"
+#include "Colora/VekaPaintRenderer.h"
 
 FVector2D FVekaLayoutChild::SizeThatFits(const FVekaProposal& Proposal) const
 {
@@ -25,7 +26,7 @@ FPaintGeometry FVekaPaintContext::MakePaintGeometry(const FVekaRect& Rect) const
 
 FLinearColor FVekaPaintContext::Tint(const FLinearColor& Color) const
 {
-	return Color * WidgetStyle.GetColorAndOpacityTint();
+	return Veka::PaintRender::ApplyTint(*this, Color);
 }
 
 FVector2D FVekaPrimitive::SizeThatFits(const FVekaProposal& Proposal, FVekaLayoutContext& Context, TConstArrayView<FVekaLayoutChild> Children) const

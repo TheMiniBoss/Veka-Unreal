@@ -3,6 +3,8 @@
 #include "Primitives/VekaShapeView.h"
 #include "Core/VekaEnvironment.h"
 #include "Vector/VekaVectorRenderer.h"
+#include "Colora/VekaTheme.h"
+#include "Colora/VekaPaintRenderer.h"
 
 namespace
 {
@@ -56,13 +58,15 @@ int32 FVekaShapeView::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds)
 	}
 	FVekaShapeState& State = static_cast<FVekaShapeState&>(*Context.State);
 
-	const FVekaPaint FillPaint = bFillWithForeground ? FVekaPaint(VekaEnv::GetForegroundColor(Context.Environment)) : Fill;
+	const FVekaPaint FillPaint = Veka::Colora::Resolve(bFillWithForeground ? FVekaPaint(VekaEnv::GetForegroundColor(Context.Environment)) : Fill, Context.Environment);
+	FVekaStrokeStyle StrokeStyle = Stroke;
+	StrokeStyle.Paint = Veka::Colora::Resolve(Stroke.Paint, Context.Environment);
 	const bool bDrawFill = bFill && FillPaint.IsVisible();
-	const bool bDrawStroke = bStroke && Stroke.IsVisible();
+	const bool bDrawStroke = bStroke && StrokeStyle.IsVisible();
 
-	if (Shape.CanUseRoundedBox() && (!bDrawStroke || (Stroke.IsSimple() && Stroke.Paint.Type == EVekaPaintType::Solid)))
+	if (Shape.CanUseRoundedBox() && (!bDrawStroke || StrokeStyle.IsSimple()))
 	{
-		// Fast path: Slate's rounded box (batched, antialiased, per-corner radii, outline).
+		// Rect-like shapes: FVekaPaint::Draw (Slate rounded box for solid colors, tessellator for gradients).
 		const FVekaRect ShapeRect = Shape.GetShapeRect(Bounds);
 		const FVekaCornerRadii Radii = Shape.ResolveRadii(ShapeRect);
 		if (bDrawFill)
@@ -71,7 +75,7 @@ int32 FVekaShapeView::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds)
 		}
 		if (bDrawStroke)
 		{
-			Stroke.Paint.DrawOutline(Context, ShapeRect, Radii, Stroke.Width, State.StrokeBrush);
+			StrokeStyle.Paint.DrawOutline(Context, ShapeRect, Radii, StrokeStyle.Width, State.StrokeBrush);
 		}
 		return Context.LayerId;
 	}
@@ -80,11 +84,19 @@ int32 FVekaShapeView::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds)
 	const TArray<FVekaPolyline>& Polylines = GetPolylines(State, Shape, Bounds);
 	if (bDrawFill)
 	{
-		Veka::VectorRender::Fill(Context, Polylines, FillPaint.GetAverageColor());
+		if (FillPaint.Type == EVekaPaintType::Image || FillPaint.Type == EVekaPaintType::Material)
+		{
+			// Textures on arbitrary paths need a mask (render module): drawn in the bounds for now.
+			FillPaint.Draw(Context, Bounds, FVekaCornerRadii(), State.FillBrush);
+		}
+		else
+		{
+			Veka::PaintRender::FillPolylines(Context, Polylines, FillPaint, Bounds);
+		}
 	}
 	if (bDrawStroke)
 	{
-		Veka::VectorRender::Stroke(Context, Polylines, Stroke);
+		Veka::VectorRender::Stroke(Context, Polylines, StrokeStyle, Bounds);
 	}
 	return Context.LayerId;
 }

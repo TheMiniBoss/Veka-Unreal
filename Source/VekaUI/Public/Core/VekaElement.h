@@ -8,8 +8,10 @@
 #include "Core/VekaTypes.h"
 #include "Core/VekaPrimitive.h"
 #include "Core/VekaModifier.h"
+#include "Colora/VekaColor.h"
 
 class FVekaView;
+class UVekaTheme;
 struct FVekaElementData;
 struct FVekaPaint;
 struct FVekaStrokeStyle;
@@ -149,12 +151,35 @@ public:
 
 	// --- Environment -----------------------------------------------------------------------------
 
-	FVekaElement Foreground(const FLinearColor& Color) const& { return FVekaElement(*this).Foreground(Color); }
-	FVekaElement Foreground(const FLinearColor& Color) &&;
+	/** Color or theme token for text, symbols and foreground-filled shapes. */
+	FVekaElement Foreground(const FVekaPaint& Paint) const& { return FVekaElement(*this).Foreground(Paint); }
+	FVekaElement Foreground(const FVekaPaint& Paint) &&;
 	FVekaElement Font(const FSlateFontInfo& InFont) const& { return FVekaElement(*this).Font(InFont); }
 	FVekaElement Font(const FSlateFontInfo& InFont) &&;
 	FVekaElement ColorScheme(EVekaColorScheme Scheme) const& { return FVekaElement(*this).ColorScheme(Scheme); }
 	FVekaElement ColorScheme(EVekaColorScheme Scheme) &&;
+
+	// --- Colora ----------------------------------------------------------------------------------
+
+	/** Theme of the subtree (tokens and metrics). nullptr = built-in defaults. */
+	FVekaElement Theme(UVekaTheme* InTheme) const& { return FVekaElement(*this).Theme(InTheme); }
+	FVekaElement Theme(UVekaTheme* InTheme) &&;
+	/** Color adjustments of everything drawn in the subtree (colors, gradients, text; textures get a tint only). */
+	FVekaElement ColorAdjust(EVekaColorAdjust Adjust, float Amount) const& { return FVekaElement(*this).ColorAdjust(Adjust, Amount); }
+	FVekaElement ColorAdjust(EVekaColorAdjust Adjust, float Amount) &&;
+	FVekaElement Brightness(float Amount) const& { return ColorAdjust(EVekaColorAdjust::Brightness, Amount); }
+	FVekaElement Brightness(float Amount) && { return MoveTemp(*this).ColorAdjust(EVekaColorAdjust::Brightness, Amount); }
+	FVekaElement Contrast(float Amount) const& { return ColorAdjust(EVekaColorAdjust::Contrast, Amount); }
+	FVekaElement Contrast(float Amount) && { return MoveTemp(*this).ColorAdjust(EVekaColorAdjust::Contrast, Amount); }
+	FVekaElement Saturation(float Amount) const& { return ColorAdjust(EVekaColorAdjust::Saturation, Amount); }
+	FVekaElement Saturation(float Amount) && { return MoveTemp(*this).ColorAdjust(EVekaColorAdjust::Saturation, Amount); }
+	FVekaElement HueRotation(float Degrees) const& { return ColorAdjust(EVekaColorAdjust::HueRotation, Degrees); }
+	FVekaElement HueRotation(float Degrees) && { return MoveTemp(*this).ColorAdjust(EVekaColorAdjust::HueRotation, Degrees); }
+	FVekaElement Grayscale(float Amount) const& { return ColorAdjust(EVekaColorAdjust::Grayscale, Amount); }
+	FVekaElement Grayscale(float Amount) && { return MoveTemp(*this).ColorAdjust(EVekaColorAdjust::Grayscale, Amount); }
+	/** Normal or Add (additive, light-like) for the shapes and gradients of the subtree. */
+	FVekaElement BlendMode(EVekaBlendMode Mode) const& { return FVekaElement(*this).BlendMode(Mode); }
+	FVekaElement BlendMode(EVekaBlendMode Mode) &&;
 
 	// --- Interaction -----------------------------------------------------------------------------
 
