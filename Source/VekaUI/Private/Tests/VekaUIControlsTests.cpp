@@ -637,3 +637,58 @@ bool FVekaControlHueKeptTest::RunTest(const FString& Parameters)
 	return true;
 }
 #endif
+
+#if WITH_DEV_AUTOMATION_TESTS
+namespace
+{
+	/** A label that grows on tap, next to a sibling, and a color that changes without changing any size. */
+	class FLocalInvalidationView : public FVekaView
+	{
+		VEKA_VIEW(FLocalInvalidationView)
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			using namespace Veka;
+			const TVekaState<bool> Long = Ctx.State<bool>(TEXT("Long"), false);
+			const TVekaState<bool> Red = Ctx.State<bool>(TEXT("Red"), false);
+			return HStack(8.f)(
+				Text(Long.Get() ? TEXT("A much longer label") : TEXT("Short")).OnTap([Long]() { Long.Set(!Long.Get()); }),
+				Text(TEXT("Sibling")).Foreground(Red.Get() ? FLinearColor::Red : FLinearColor::White).OnTap([Red]() { Red.Set(!Red.Get()); })
+			);
+		}
+	};
+}
+
+// Regression (2e perf): a layout invalidation stops at the first node whose size did not change (a hover used to
+// re-measure the whole tree). The dangerous direction is checked: a size change must still move the siblings.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaLocalInvalidationTest, "VekaUI.Layout.LocalInvalidation", VekaControlsTestFlags)
+bool FVekaLocalInvalidationTest::RunTest(const FString& Parameters)
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		AddInfo(TEXT("Slate not initialized: skipped."));
+		return true;
+	}
+	TSharedRef<SVekaHost> Host = SNew(SVekaHost).Root(Veka::View<FLocalInvalidationView>());
+	FVekaRuntime& Runtime = *Host->GetRuntime();
+	auto Repaint = [&Host]() { const FControlsPaint Paint(Host, FVector2f(500.f, 100.f)); };
+	Repaint();
+	const FDriver Driver{ Runtime };
+	auto SiblingX = [&Runtime]() { return FindText(Runtime.GetRootNode(), TEXT("Sibling"))->GetArrangedRect().Position.X; };
+	const double Before = SiblingX();
+
+	Driver.Tap(Interactive(FindText(Runtime.GetRootNode(), TEXT("Sibling"))));
+	Repaint();
+	TestEqual(TEXT("A color change does not move anything"), SiblingX(), Before);
+
+	Driver.Tap(Interactive(FindText(Runtime.GetRootNode(), TEXT("Short"))));
+	Repaint();
+	const double After = SiblingX();
+	TestTrue(FString::Printf(TEXT("A longer label pushes its sibling (%.1f -> %.1f)"), Before, After), After > Before + 20.0);
+
+	Driver.Tap(Interactive(FindText(Runtime.GetRootNode(), TEXT("A much longer label"))));
+	Repaint();
+	TestEqual(TEXT("And back"), SiblingX(), Before);
+	return true;
+}
+#endif
