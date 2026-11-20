@@ -1,6 +1,7 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Colora/VekaPaintRenderer.h"
+#include "Hash/CityHash.h"
 #include "Colora/VekaTheme.h"
 #include "Core/VekaPrimitive.h"
 #include "Core/VekaEnvironment.h"
@@ -597,10 +598,12 @@ namespace Veka::PaintRender
 		return Out * Context.WidgetStyle.GetColorAndOpacityTint();
 	}
 
+
 	/** Colors (sampled in the paint's space, tinted, coverage in alpha) and draws a mesh as Slate custom vertices. */
-	static int32 EmitMesh(FVekaPaintContext& Context, const FMesh& Mesh, const Veka::Colora::FPaintSampler& Sampler, const FVekaPaint& Paint)
+	static int32 EmitArrays(FVekaPaintContext& Context, const TArray<FVector2D>& Positions, const TArray<float>& Coverage, const TArray<int32>& MeshIndices,
+		const Veka::Colora::FPaintSampler& Sampler, const FVekaPaint& Paint)
 	{
-		if (Mesh.Indices.IsEmpty())
+		if (MeshIndices.IsEmpty())
 		{
 			return Context.LayerId;
 		}
@@ -610,7 +613,15 @@ namespace Veka::PaintRender
 		{
 			return Context.LayerId;
 		}
-		const FSlateResourceHandle Handle = Renderer->GetResourceHandle(*WhiteBrush);
+		// The white brush's handle never changes for a renderer: look it up once (it was a lookup per mesh).
+		static FSlateRenderer* CachedRenderer = nullptr;
+		static FSlateResourceHandle CachedHandle;
+		if (CachedRenderer != Renderer || !CachedHandle.IsValid())
+		{
+			CachedHandle = Renderer->GetResourceHandle(*WhiteBrush);
+			CachedRenderer = Renderer;
+		}
+		const FSlateResourceHandle& Handle = CachedHandle;
 
 		const bool bAdditive = VekaEnv::GetBlendMode(Context.Environment) == EVekaBlendMode::Add;
 		const ESlateDrawEffect Effects = bAdditive ? (Context.DrawEffects | ESlateDrawEffect::PreMultipliedAlpha) : Context.DrawEffects;
@@ -619,41 +630,121 @@ namespace Veka::PaintRender
 		const FLinearColor ConstantColor = bConstant ? ApplyTint(Context, Sampler.Sample(FVector2D::ZeroVector)) : FLinearColor::Transparent;
 
 		TArray<FSlateVertex> Vertices;
-		Vertices.Reserve(Mesh.Positions.Num());
-		for (int32 Index = 0; Index < Mesh.Positions.Num(); ++Index)
+		Vertices.Reserve(Positions.Num());
+		if (bConstant && !bAdditive)
 		{
-			FLinearColor Color = bConstant ? ConstantColor : ApplyTint(Context, Sampler.Sample(Mesh.Positions[Index]));
-			Color.A *= Mesh.Coverage[Index];
-			if (bAdditive)
+			// Uniform color: one sRGB conversion, then only the alpha follows the coverage.
+			FColor Base = ConstantColor.ToFColor(true);
+			const float Alpha = FMath::Clamp(ConstantColor.A, 0.f, 1.f) * 255.f;
+			for (int32 Index = 0; Index < Positions.Num(); ++Index)
 			{
-				Color = FLinearColor(Color.R * Color.A, Color.G * Color.A, Color.B * Color.A, 0.f);
+				Base.A = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt32(Alpha * Coverage[Index]), 0, 255));
+				Vertices.Add(MakeVertex(Transform, Positions[Index], Base));
 			}
-			Vertices.Add(MakeVertex(Transform, Mesh.Positions[Index], Color.ToFColor(true)));
+		}
+		else
+		{
+			for (int32 Index = 0; Index < Positions.Num(); ++Index)
+			{
+				FLinearColor Color = bConstant ? ConstantColor : ApplyTint(Context, Sampler.Sample(Positions[Index]));
+				Color.A *= Coverage[Index];
+				if (bAdditive)
+				{
+					Color = FLinearColor(Color.R * Color.A, Color.G * Color.A, Color.B * Color.A, 0.f);
+				}
+				Vertices.Add(MakeVertex(Transform, Positions[Index], Color.ToFColor(true)));
+			}
 		}
 
 		TArray<SlateIndex> Indices;
-		Indices.Reserve(Mesh.Indices.Num());
-		for (int32 Index : Mesh.Indices)
+		Indices.SetNumUninitialized(MeshIndices.Num());
+		for (int32 Index = 0; Index < MeshIndices.Num(); ++Index)
 		{
-			Indices.Add(static_cast<SlateIndex>(Index));
+			Indices[Index] = static_cast<SlateIndex>(MeshIndices[Index]);
 		}
 		FSlateDrawElement::MakeCustomVerts(Context.DrawElements, Context.LayerId, Handle, Vertices, Indices, nullptr, 0, 0, Effects);
 		return Context.LayerId;
 	}
 
-	int32 FillPolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, const FVekaRect& Bounds)
+	static int32 EmitMesh(FVekaPaintContext& Context, const FMesh& Mesh, const Veka::Colora::FPaintSampler& Sampler, const FVekaPaint& Paint)
 	{
-		if (!Paint.IsVisible() || Polylines.IsEmpty() || !FSlateApplication::IsInitialized())
+		return EmitArrays(Context, Mesh.Positions, Mesh.Coverage, Mesh.Indices, Sampler, Paint);
+	}
+
+	/**
+	 * Tessellation memo: the same polylines with the same parameters give the same mesh, so a static UI tessellates
+	 * once instead of every frame. Keyed by a hash of the points and parameters; unused entries are dropped.
+	 */
+	namespace TessellationCache
+	{
+		struct FEntry
 		{
-			return Context.LayerId;
+			FVekaTessellation Mesh;
+			uint64 LastFrame = 0;
+		};
+
+		TMap<uint64, FEntry>& Get()
+		{
+			static TMap<uint64, FEntry> Cache;
+			return Cache;
 		}
 
-		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
+		uint64 Key(const TArray<FVekaPolyline>& Polylines, std::initializer_list<double> Parameters)
+		{
+			uint64 Hash = 0x9E3779B97F4A7C15ull;
+			for (const FVekaPolyline& Polyline : Polylines)
+			{
+				Hash = CityHash64WithSeed(reinterpret_cast<const char*>(Polyline.Points.GetData()), Polyline.Points.Num() * sizeof(FVector2D), Hash);
+				Hash = CityHash128to64(Uint128_64(Hash, Polyline.bClosed ? 0x5bd1e995ull : 0x2127599bull));
+			}
+			for (const double Value : Parameters)
+			{
+				Hash = CityHash64WithSeed(reinterpret_cast<const char*>(&Value), sizeof(double), Hash);
+			}
+			return Hash;
+		}
+
+		const FVekaTessellation* Find(uint64 InKey)
+		{
+			if (FEntry* Entry = Get().Find(InKey))
+			{
+				Entry->LastFrame = GFrameCounter;
+				return &Entry->Mesh;
+			}
+			return nullptr;
+		}
+
+		const FVekaTessellation& Add(uint64 InKey, FVekaTessellation&& Mesh)
+		{
+			TMap<uint64, FEntry>& Cache = Get();
+			if (Cache.Num() > 8192)
+			{
+				// Drop what was not drawn for a few seconds.
+				for (auto It = Cache.CreateIterator(); It; ++It)
+				{
+					if (GFrameCounter - It.Value().LastFrame > 240)
+					{
+						It.RemoveCurrent();
+					}
+				}
+				if (Cache.Num() > 8192)
+				{
+					Cache.Reset();
+				}
+			}
+			FEntry& Entry = Cache.Add(InKey);
+			Entry.Mesh = MoveTemp(Mesh);
+			Entry.LastFrame = GFrameCounter;
+			return Entry.Mesh;
+		}
+	}
+
+	static void BuildFill(const FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const Veka::Colora::FPaintSampler& Sampler, FMesh& Mesh)
+	{
 		const double PixelsPerUnit = GetPixelsPerUnit(Context);
 		const double Spacing = Sampler.GetSampleSpacingPixels() / PixelsPerUnit;
 		const double FringeWidth = 1.0 / PixelsPerUnit;
 
-		FMesh Mesh;
 		for (const FVekaPolyline& Polyline : Polylines)
 		{
 			if (!Polyline.bClosed)
@@ -719,8 +810,54 @@ namespace Veka::PaintRender
 			}
 			AddFringe(Mesh, Polygon, FringeWidth);
 		}
+	}
 
-		return EmitMesh(Context, Mesh, Sampler, Paint);
+	int32 FillPolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, const FVekaRect& Bounds)
+	{
+		if (!Paint.IsVisible() || Polylines.IsEmpty() || !FSlateApplication::IsInitialized())
+		{
+			return Context.LayerId;
+		}
+		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
+		const double PixelsPerUnit = GetPixelsPerUnit(Context);
+		const uint64 Key = TessellationCache::Key(Polylines, { 1.0, Paint.IsGradient() ? Sampler.GetSampleSpacingPixels() : 0.0, PixelsPerUnit });
+		const FVekaTessellation* Cached = TessellationCache::Find(Key);
+		if (!Cached)
+		{
+			FMesh Mesh;
+			BuildFill(Context, Polylines, Sampler, Mesh);
+			FVekaTessellation Built;
+			Built.Positions = MoveTemp(Mesh.Positions);
+			Built.Coverage = MoveTemp(Mesh.Coverage);
+			Built.Indices = MoveTemp(Mesh.Indices);
+			Cached = &TessellationCache::Add(Key, MoveTemp(Built));
+		}
+		return EmitArrays(Context, Cached->Positions, Cached->Coverage, Cached->Indices, Sampler, Paint);
+	}
+
+	void TessellateFill(const FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, const FVekaRect& Bounds, FVekaTessellation& Out)
+	{
+		Out.Reset();
+		if (!Paint.IsVisible() || Polylines.IsEmpty())
+		{
+			return;
+		}
+		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
+		FMesh Mesh;
+		BuildFill(Context, Polylines, Sampler, Mesh);
+		Out.Positions = MoveTemp(Mesh.Positions);
+		Out.Coverage = MoveTemp(Mesh.Coverage);
+		Out.Indices = MoveTemp(Mesh.Indices);
+	}
+
+	int32 DrawTessellation(FVekaPaintContext& Context, const FVekaTessellation& Mesh, const FVekaPaint& Paint, const FVekaRect& Bounds)
+	{
+		if (Mesh.IsEmpty() || !Paint.IsVisible() || !FSlateApplication::IsInitialized())
+		{
+			return Context.LayerId;
+		}
+		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
+		return EmitArrays(Context, Mesh.Positions, Mesh.Coverage, Mesh.Indices, Sampler, Paint);
 	}
 
 	namespace
@@ -798,6 +935,8 @@ namespace Veka::PaintRender
 			{
 				Directions.Add((Points[Index + 1] - Points[Index]).GetSafeNormal());
 			}
+			const int32 NumDirections = Directions.Num();
+			auto Normal = [](const FVector2D& Direction) { return FVector2D(-Direction.Y, Direction.X); };
 
 			// Square caps extend the first / last segment; round caps add half discs; butt ends fade over the fringe.
 			FVector2D Start = Points[0];
@@ -810,30 +949,33 @@ namespace Veka::PaintRender
 				End += D1 * HalfWidth;
 			}
 
-			for (int32 Index = 0; Index + 1 < Num; ++Index)
+			// One strip of 4 rows (fringe, core, core, fringe): consecutive segments share their rows at gentle turns
+			// (curves: 4 vertices per point instead of a segment and a join each); sharp turns get a real join.
+			const double Offsets[4] = { -(HalfWidth + Fringe), -HalfWidth, HalfWidth, HalfWidth + Fringe };
+			const float Coverage[4] = { 0.f, 1.f, 1.f, 0.f };
+			struct FRows { int32 Index[4]; };
+			auto AddRows = [&](const FVector2D& P, const FVector2D& Across, double Scale)
 			{
-				const FVector2D A = Index == 0 ? Start : Points[Index];
-				const FVector2D B = Index + 2 == Num ? End : Points[Index + 1];
-				AddSegment(Mesh, A, B, FVector2D(-Directions[Index].Y, Directions[Index].X), HalfWidth, Fringe);
-			}
-
-			// Joins fill the gap on the outer side of each turn.
-			const int32 NumDirections = Directions.Num();
-			const int32 FirstJoin = bClosed ? 0 : 1;
-			const int32 LastJoin = bClosed ? NumDirections - 1 : Num - 2;
-			for (int32 Index = FirstJoin; Index <= LastJoin; ++Index)
-			{
-				const FVector2D In = Directions[(Index - 1 + NumDirections) % NumDirections];
-				const FVector2D Out = Directions[Index % NumDirections];
-				const double Turn = SignedAngle(In, Out);
-				if (FMath::Abs(Turn) < 1.0e-3)
+				FRows Rows;
+				for (int32 Row = 0; Row < 4; ++Row)
 				{
-					continue;
+					Rows.Index[Row] = Mesh.AddVertex(P + Across * (Offsets[Row] * Scale), Coverage[Row]);
 				}
-				const FVector2D P = Points[Index];
+				return Rows;
+			};
+			auto Connect = [&](const FRows& A, const FRows& B)
+			{
+				for (int32 Row = 0; Row < 3; ++Row)
+				{
+					Mesh.Indices.Append({ A.Index[Row], B.Index[Row], B.Index[Row + 1], A.Index[Row], B.Index[Row + 1], A.Index[Row + 1] });
+				}
+			};
+			auto AddJoin = [&](const FVector2D& P, const FVector2D& In, const FVector2D& Out, double Turn)
+			{
+				// Joins fill the gap on the outer side of the turn.
 				const double Side = Turn > 0.0 ? -1.0 : 1.0;
-				const FVector2D N0 = FVector2D(-In.Y, In.X) * Side;
-				const FVector2D N1 = FVector2D(-Out.Y, Out.X) * Side;
+				const FVector2D N0 = Normal(In) * Side;
+				const FVector2D N1 = Normal(Out) * Side;
 				const double Span = SignedAngle(N0, N1);
 
 				EVekaLineJoin Effective = Join;
@@ -841,11 +983,10 @@ namespace Veka::PaintRender
 				{
 					Effective = EVekaLineJoin::Bevel;
 				}
-
 				if (Effective == EVekaLineJoin::Round)
 				{
 					AddRoundFan(Mesh, P, N0, Span, HalfWidth, Fringe, PixelsPerUnit);
-					continue;
+					return;
 				}
 				const int32 C = Mesh.AddVertex(P, 1.f);
 				const int32 A = Mesh.AddVertex(P + N0 * HalfWidth, 1.f);
@@ -863,6 +1004,68 @@ namespace Veka::PaintRender
 				else
 				{
 					Mesh.Indices.Append({ C, A, B, A, AO, BO, A, BO, B });
+				}
+			};
+
+			const double SmoothLimit = FMath::DegreesToRadians(25.0);
+			FRows Previous;
+			FRows FirstRows;
+			for (int32 Index = 0; Index < Num; ++Index)
+			{
+				const bool bFirst = Index == 0;
+				const bool bLast = Index == Num - 1;
+				if (!bClosed && (bFirst || bLast))
+				{
+					const FRows Rows = AddRows(bFirst ? Start : End, Normal(bFirst ? D0 : D1), 1.0);
+					if (!bFirst)
+					{
+						Connect(Previous, Rows);
+					}
+					Previous = Rows;
+					continue;
+				}
+
+				// Interior point (for a closed outline, the first and last points are the same corner).
+				const FVector2D P = Points[Index];
+				const FVector2D In = Directions[(Index - 1 + NumDirections) % NumDirections];
+				const FVector2D Out = Directions[Index % NumDirections];
+				const double Turn = SignedAngle(In, Out);
+				if (FMath::Abs(Turn) < SmoothLimit)
+				{
+					if (bClosed && bLast)
+					{
+						Connect(Previous, FirstRows);
+						continue;
+					}
+					const FVector2D Bisector = (Normal(In) + Normal(Out)).GetSafeNormal();
+					const double Scale = 1.0 / FMath::Max(FVector2D::DotProduct(Bisector, Normal(In)), 0.5);
+					const FRows Rows = AddRows(P, Bisector, Scale);
+					if (bClosed && bFirst)
+					{
+						FirstRows = Rows;
+					}
+					else
+					{
+						Connect(Previous, Rows);
+					}
+					Previous = Rows;
+					continue;
+				}
+
+				// Sharp turn: the strip ends square on the incoming side, a join fills the outside, a new strip starts.
+				if (!(bClosed && bFirst))
+				{
+					Connect(Previous, AddRows(P, Normal(In), 1.0));
+					AddJoin(P, In, Out, Turn);
+				}
+				if (!(bClosed && bLast))
+				{
+					const FRows Rows = AddRows(P, Normal(Out), 1.0);
+					if (bClosed && bFirst)
+					{
+						FirstRows = Rows;
+					}
+					Previous = Rows;
 				}
 			}
 
@@ -883,15 +1086,9 @@ namespace Veka::PaintRender
 		}
 	}
 
-	int32 StrokePolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds,
-		EVekaLineCap Cap, EVekaLineJoin Join, float MiterLimit)
+	static void BuildStroke(const FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, const Veka::Colora::FPaintSampler& Sampler,
+		float Width, EVekaLineCap Cap, EVekaLineJoin Join, float MiterLimit, FMesh& Mesh)
 	{
-		if (!Paint.IsVisible() || Width <= 0.f || Polylines.IsEmpty() || !FSlateApplication::IsInitialized())
-		{
-			return Context.LayerId;
-		}
-
-		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
 		const double PixelsPerUnit = GetPixelsPerUnit(Context);
 		const double Fringe = 1.0 / PixelsPerUnit;
 		double HalfWidth = Width * 0.5;
@@ -904,7 +1101,6 @@ namespace Veka::PaintRender
 		}
 		const double Spacing = Paint.IsGradient() ? Sampler.GetSampleSpacingPixels() / PixelsPerUnit : 0.0;
 
-		FMesh Mesh;
 		for (const FVekaPolyline& Polyline : Polylines)
 		{
 			// Repeated points (joints of Bezier segments) make zero-length segments.
@@ -960,6 +1156,46 @@ namespace Veka::PaintRender
 				Coverage *= Thin;
 			}
 		}
-		return EmitMesh(Context, Mesh, Sampler, Paint);
+	}
+
+	int32 StrokePolylines(FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds,
+		EVekaLineCap Cap, EVekaLineJoin Join, float MiterLimit)
+	{
+		if (!Paint.IsVisible() || Width <= 0.f || Polylines.IsEmpty() || !FSlateApplication::IsInitialized())
+		{
+			return Context.LayerId;
+		}
+		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
+		const double PixelsPerUnit = GetPixelsPerUnit(Context);
+		const uint64 Key = TessellationCache::Key(Polylines, { 2.0, Paint.IsGradient() ? Sampler.GetSampleSpacingPixels() : 0.0, PixelsPerUnit, Width,
+			static_cast<double>(Cap), static_cast<double>(Join), MiterLimit });
+		const FVekaTessellation* Cached = TessellationCache::Find(Key);
+		if (!Cached)
+		{
+			FMesh Mesh;
+			BuildStroke(Context, Polylines, Paint, Sampler, Width, Cap, Join, MiterLimit, Mesh);
+			FVekaTessellation Built;
+			Built.Positions = MoveTemp(Mesh.Positions);
+			Built.Coverage = MoveTemp(Mesh.Coverage);
+			Built.Indices = MoveTemp(Mesh.Indices);
+			Cached = &TessellationCache::Add(Key, MoveTemp(Built));
+		}
+		return EmitArrays(Context, Cached->Positions, Cached->Coverage, Cached->Indices, Sampler, Paint);
+	}
+
+	void TessellateStroke(const FVekaPaintContext& Context, const TArray<FVekaPolyline>& Polylines, const FVekaPaint& Paint, float Width, const FVekaRect& Bounds,
+		EVekaLineCap Cap, EVekaLineJoin Join, float MiterLimit, FVekaTessellation& Out)
+	{
+		Out.Reset();
+		if (!Paint.IsVisible() || Width <= 0.f || Polylines.IsEmpty())
+		{
+			return;
+		}
+		const Veka::Colora::FPaintSampler Sampler(Paint, Bounds);
+		FMesh Mesh;
+		BuildStroke(Context, Polylines, Paint, Sampler, Width, Cap, Join, MiterLimit, Mesh);
+		Out.Positions = MoveTemp(Mesh.Positions);
+		Out.Coverage = MoveTemp(Mesh.Coverage);
+		Out.Indices = MoveTemp(Mesh.Indices);
 	}
 }

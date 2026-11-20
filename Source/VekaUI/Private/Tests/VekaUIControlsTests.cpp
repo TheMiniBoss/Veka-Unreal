@@ -571,9 +571,69 @@ bool FVekaControlLabelsOneLineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Button with a label"), Lines(HStack(10.f)(Button(INVTEXT("Prominent"), TEXT("paperplane"), []() {})), TEXT("Prominent")), 1);
 	TestEqual(TEXT("Label in a stack at its ideal width"), Lines(HStack(6.f)(Symbol(TEXT("paperplane")), Text(TEXT("Prominent"))).Frame(109.f, 30.f), TEXT("Prominent")), 1);
 	TestEqual(TEXT("Switch toggle"), Lines(Toggle(Label(INVTEXT("Bluetooth"), TEXT("bluetooth")), TVekaBinding<bool>::Constant(false)).Frame(240.f, -1.f), TEXT("Bluetooth")), 1);
+	TestEqual(TEXT("Color panel mode picker (Grayscale)"), Lines(ColorPanel(TVekaBinding<FLinearColor>::Constant(FLinearColor::Red), EVekaColorPickerMode::Grayscale), TEXT("Grayscale")), 1);
 	TestEqual(TEXT("Menu picker"), Lines(Picker(INVTEXT("Size"), TVekaBinding<int32>::Constant(0), { FVekaPickerOption(INVTEXT("Small")) }).Frame(200.f, -1.f), TEXT("Small")), 1);
 	const int32 Narrow = Lines(VStack()(Text(TEXT("Two words"))).Frame(50.f, 200.f), TEXT("Two words"));
 	TestTrue(FString::Printf(TEXT("Counter-check: a narrow frame still wraps (%d lines)"), Narrow), Narrow > 1);
+	return true;
+}
+#endif
+
+#if WITH_DEV_AUTOMATION_TESTS
+namespace
+{
+	/** Owns the color in a @State so the panel re-evaluates like in an app. */
+	class FHuePanelTestView : public FVekaView
+	{
+		VEKA_VIEW(FHuePanelTestView)
+	public:
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			const TVekaState<FLinearColor> Color = Ctx.State<FLinearColor>(TEXT("Color"), FLinearColor(FColor(255, 94, 87)));
+			return Veka::ColorPanel(Color, EVekaColorPickerMode::HSV, false);
+		}
+	};
+}
+
+// Regression (2e): the hue slider dragged to 360 jumped back to 0 (360 and 0 are the same color, and the slider value
+// was re-read from the color). Counter-check: decomposing the color alone gives 0.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaControlHueKeptTest, "VekaUI.Controls.HueKeptAt360", VekaControlsTestFlags)
+bool FVekaControlHueKeptTest::RunTest(const FString& Parameters)
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		AddInfo(TEXT("Slate not initialized: skipped."));
+		return true;
+	}
+	TSharedRef<SVekaHost> Host = SNew(SVekaHost).Root(Veka::View<FHuePanelTestView>());
+	FVekaRuntime& Runtime = *Host->GetRuntime();
+	auto Repaint = [&Host]() { const FControlsPaint Paint(Host, FVector2f(400.f, 300.f)); };
+	Repaint();
+	auto HueTrack = [&Runtime]() { return Find(Runtime.GetRootNode(), [](const FVekaNode& Node) { return Node.GetPrimitiveAs<FVekaTrack>() != nullptr; }); };
+	const TSharedPtr<FVekaNode> Track = HueTrack();
+	if (!TestNotNull(TEXT("Hue track"), Track.Get()))
+	{
+		return false;
+	}
+	const FDriver Driver{ Runtime };
+	Driver.Drag(Interactive(Track), 0.5f, 1.2f);
+	Repaint();
+	const FVekaTrack* After = HueTrack()->GetPrimitiveAs<FVekaTrack>();
+	TestTrue(FString::Printf(TEXT("Knob stays at the end (fraction %.3f)"), After->Fraction), After->Fraction > 0.99f);
+
+	// Counter-check: the color alone says hue 0.
+	const FVekaText* HueLabel = nullptr;
+	Find(Runtime.GetRootNode(), [&HueLabel](const FVekaNode& Node)
+	{
+		const FVekaText* Text = Node.GetPrimitiveAs<FVekaText>();
+		if (Text && Text->Text.ToString().EndsWith(TEXT("°")) && !HueLabel)
+		{
+			HueLabel = Text;
+		}
+		return false;
+	});
+	TestTrue(TEXT("Label shows 360°"), HueLabel && HueLabel->Text.ToString() == TEXT("360°"));
+	TestTrue(TEXT("Counter-check: decomposing pure red gives hue 0"), FMath::IsNearlyZero(Veka::ColorMath::Decompose(FLinearColor::Red, EVekaColorPickerMode::HSV)[0], 0.5f));
 	return true;
 }
 #endif

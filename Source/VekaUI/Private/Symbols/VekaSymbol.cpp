@@ -250,7 +250,8 @@ namespace Veka::Symbols
 			Shapes.SetNum(Definition.Shapes.Num());
 			for (int32 Index = 0; Index < Definition.Shapes.Num(); ++Index)
 			{
-				Definition.Shapes[Index].Path.Flatten(Shapes[Index], 0.04);
+				// 0.12 grid units: a tenth of a pixel at body size, far fewer vertices than a finer flattening.
+				Definition.Shapes[Index].Path.Flatten(Shapes[Index], 0.12);
 			}
 		}
 		return Shapes[ShapeIndex];

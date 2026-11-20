@@ -83,7 +83,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 |---|---|
 | Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles**, **2e Contrôles** ✅ fusionnés dans `C++` ; prochain jalon **2f Morph** |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles + Contrôles ; 50/50 tests automation ✅ |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles + Contrôles ; 51/51 tests automation ✅ |
 | Prochaine étape | 2f Morph (sur demande de TheMiniBoss) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
@@ -119,6 +119,40 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — LOCAL → correctifs 2e : lenteur, champs qui clignotent, teinte à 360°, picker sur 2 lignes
+
+- **Signalé par TheMiniBoss** dans le Playground : ça rame beaucoup ; le texte des champs clignote dès qu'un autre
+  widget change ; le curseur H revient à 0 (tout à gauche) quand on le met au max (360°) ; le picker « Grayscale » du
+  panneau couleur passe sur 2 lignes.
+- **Lenteur — cause mesurée** (test de diagnostic temporaire, rendu réel) : un rendu complet du Playground coûtait
+  **31 ms** et, depuis 2e, des éléments animés en continu (progressions indéterminées, spinner Lazy) le font repeindre à
+  chaque image. Tout était re-tessellé à chaque image, et la conversion sRGB était faite pour chaque sommet.
+  - `EmitMesh` : chemin rapide pour les couleurs unies (une conversion sRGB, puis seulement l'alpha) ; handle du pinceau
+    blanc mis en cache.
+  - **Cache de tessellation** dans le renderer (`FillPolylines` / `StrokePolylines` mémorisés par hash des points et des
+    paramètres, purge des entrées inutilisées) et API `FVekaTessellation` / `TessellateFill` / `TessellateStroke` /
+    `DrawTessellation` ; les symboles gardent leurs maillages tant que rien ne change.
+  - Traits : aux virages doux (< 25°) les segments partagent leurs rangées (courbes : 4 sommets par point au lieu d'un
+    segment + une jointure) ; aplatissement des symboles à 0,12 unité. Sommets du Playground : 252 000 → 109 000.
+  - Résultat : **31 → ~10 ms** par rendu complet du Playground (205 symboles : 11,4 → 2,1 ms).
+- **Champs qui clignotent — cause** : chaque ré-évaluation crée un nouveau `FText` (INVTEXT) ; la comparaison par
+  identité échouait et `SetHintText` réinitialisait la mise en page du `SEditableText`. Mesuré : 2 appels par
+  ré-évaluation avant, 0 après (comparaison par contenu).
+- **Teinte à 360° → 0 — cause** : la valeur du curseur était relue depuis la couleur, et 360° = 0° (même chose pour une
+  teinte à saturation nulle). Le panneau garde les valeurs de canaux qu'il a posées tant qu'elles donnent la couleur
+  actuelle. Test `VekaUI.Controls.HueKeptAt360` (glisser réel jusqu'au bout, libellé « 360° »).
+- **Picker sur 2 lignes — cause** : la pile partageait l'espace à parts égales même quand tout tenait (le picker
+  recevait 89,6 px pour 100,6 nécessaires, le Spacer en gardait 33). Quand tout tient, chaque vue reçoit sa taille
+  idéale et les vues extensibles (Spacer, slider, champ, cadre infini) se partagent le reste ; les parts égales ne
+  servent plus que quand la place manque. Les pistes et champs de texte s'étendent comme dans SwiftUI. Cas ajouté à
+  `VekaUI.Controls.LabelsOnOneLine`.
+- **Tests** : 51/51 ✅ (avec un vrai renderer). **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** : H glissé au-delà du max reste à 360° ; mode Grayscale sur une ligne ; texte saisi
+  inchangé quand on bascule un autre contrôle.
+- **Limite** : l'éditeur repeint toute la fenêtre tant qu'un élément s'anime (pas d'invalidation Slate globale dans
+  l'éditeur) ; le coût par image est réduit, pas supprimé. Piste suivante si besoin : une racine d'invalidation par
+  hôte Veka.
 
 ### 2026-11-20 — CLOUD + LOCAL → jalon 2e Contrôles + Styles
 
