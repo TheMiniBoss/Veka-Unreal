@@ -470,8 +470,8 @@ Déclenchement : discret (`.symbolEffect(.bounce, value: count)`), continu
   guides), édition des calques (rôles, ordre, ancres), génération des variantes, réglages de
   marges, **aperçu d'animation** de chaque effet, comparaison côte à côte avec du texte.
 - Export / ré-import SVG, import en lot d'un dossier.
-- Migration des 19 glyphes Alpha 13 (textures + badges) : ré-import à partir des sources SVG si tu
-  les as, sinon vectorisation à refaire (à confirmer, cf. §17).
+- Glyphes Alpha 13 (textures + badges) : **pas de sources SVG** → ils sont **redessinés en SVG** dans le
+  gabarit Veka (les textures Alpha 13 servent seulement de référence visuelle), cf. §17 n° 16.
 
 ## 10. Typographie (même logique que les symboles)
 
@@ -726,13 +726,17 @@ avec ce dépôt cloné dans `Plugins/VekaUI`, et Remote Control activé sur ce d
 | 13 | Personnalisation | tout extensible : thèmes, styles, composants composés, primitives / conteneurs / modifiers / formes / effets custom (§11) |
 | 14 | Morph | `matchedGeometry` + fusion SDF « goutte » (§8.3) |
 | 15 | Traits | **strokes / lignes** complets (§8.2) |
+| 16 | Glyphes Alpha 13 | **pas de SVG d'origine** : les 19 glyphes sont redessinés en SVG au gabarit Veka (2d), les textures Alpha 13 servent de référence visuelle |
+| 17 | Police par défaut | **LTFlode Neue** (les 12 graisses d'Alpha 13). La licence de distribution avec le plugin est à vérifier par TheMiniBoss avant toute diffusion publique |
+
+Conséquence de 17 : LTFlode Neue est une famille de faces statiques, pas une police variable. Le chemin
+*Slate* utilise les graisses discrètes ; l'**interpolation continue de graisse** du texte n'est possible que
+par le chemin vectoriel, et seulement si les contours des faces sont compatibles (même nombre de points). Le
+spike de 2c le vérifie ; sinon l'animation de graisse du texte se fait par fondu entre faces voisines. Les
+symboles s'alignent sur les métriques de LTFlode Neue (ligne de base, cap height).
 
 ### Reste à confirmer
 
-1. **Sources des 19 glyphes Alpha 13** : as-tu les SVG d'origine ? Sinon, on les redessine en SVG
-   (ou on part d'un nouveau jeu de symboles).
-2. **Jeu de symboles de base** : combien de symboles Veka livrer par défaut (ex. ~150 essentiels :
-   flèches, chevrons, check, croix, réglages, recherche, utilisateur, son, wifi, batterie…) ?
-3. **Police par défaut** : on garde LTFlode Neue (licence compatible avec une distribution du
-   plugin ?) ou une police variable libre (ex. Inter, licence OFL) pour profiter de
-   l'interpolation de graisse ?
+1. **Jeu de symboles de base** : combien de symboles Veka livrer par défaut (ex. ~150 essentiels :
+   flèches, chevrons, check, croix, réglages, recherche, utilisateur, son, wifi, batterie…) ? Bloque
+   seulement la fin de 2d.

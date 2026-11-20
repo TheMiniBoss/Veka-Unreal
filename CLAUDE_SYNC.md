@@ -84,7 +84,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 | Phase | **1 — Core** : ✅ compilée et testée (D-002), fusionnée dans `C++` |
 | Branche active | `C++` (Phase 2 : `cpp/phase-2-colora-anima`, pas encore créée) |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` Phase 1 ; 13/13 tests automation ✅ |
-| Prochaine étape | plan de la Phase 2 à valider par TheMiniBoss (découpage 2a → 2f, voir journal) |
+| Prochaine étape | Phase 2, jalon 2.0 (dette Phase 1) puis 2a ; police = LTFlode Neue, glyphes redessinés en SVG |
 | Bloquant | aucun (point à vérifier à la main : clics répétés sur « +1 », voir `LOCAL → D-002`) |
 
 ---
@@ -119,6 +119,18 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD → décisions police et glyphes (réponses de TheMiniBoss)
+
+- **Police par défaut : LTFlode Neue** (12 graisses Alpha 13). Licence de distribution à vérifier par
+  TheMiniBoss avant une diffusion publique du plugin.
+  → 2c : chemin Slate en graisses discrètes ; le spike texte vectoriel vérifie si les faces de LTFlode ont des
+  contours compatibles pour interpoler la graisse (sinon fondu entre faces voisines). Les symboles (2d)
+  s'alignent sur les métriques de LTFlode.
+- **Pas de SVG d'origine pour les 19 glyphes** : ils sont redessinés en SVG au gabarit Veka en 2d (textures
+  Alpha 13 de la branche `Blueprint`, en lecture seule, comme référence visuelle).
+- Reste ouvert : nombre de symboles de base (proposition ~150) — ne bloque que la fin de 2d.
+- Détail : `Docs/VEKAUI_PHASE0.md` §17 (décisions 16 et 17).
 
 ### 2026-11-20 — CLOUD → plan de la Phase 2 (proposition, à valider)
 
