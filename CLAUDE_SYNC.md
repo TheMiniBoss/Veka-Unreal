@@ -120,6 +120,17 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
 
+### 2026-11-20 — LOCAL → correctif 2c : la graisse s'appliquait mal sur un style
+
+- **Signalé par TheMiniBoss** : dans le Playground, les 12 aperçus « Ag » (Hairline → ExtraBlack) étaient identiques.
+- **Cause** : `.Font(style)` placé à l'intérieur de `.FontWeight(...)` réinitialisait la graisse (choix de conception
+  de 2c). Le Playground écrit `.Font(Title1).FontWeight(w)` → toutes les colonnes prenaient la graisse de Title1 (Bold).
+- **Correctif** (`Private/Typography/VekaTypography.cpp`) : comme dans SwiftUI, la graisse et l'italique sont des valeurs
+  indépendantes appliquées par-dessus le style, quel que soit l'ordre des modifiers ; un style remplace seulement la
+  taille et une police Slate explicite. Test `VekaUI.Typography.Resolve` mis à jour (graisse extérieure sur style
+  intérieur, avec italique).
+- **Vérifié à l'écran** : les 12 graisses et leurs italiques sont distinctes. Tests 39/39 ✅.
+
 ### 2026-11-20 — CLOUD + LOCAL → jalon 2c Typographie
 
 - **Branche** : `cpp/phase-2c-typo` (partie de `C++` @ `411c7d7`), fusionnée dans `C++`.

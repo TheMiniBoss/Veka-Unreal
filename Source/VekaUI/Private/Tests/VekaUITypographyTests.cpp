@@ -78,9 +78,13 @@ bool FVekaTypographyResolveTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Inner weight wins"), Light.Font.TypefaceFontName, FName(TEXT("Light")));
 	TestEqual(TEXT("Style size kept"), Light.Font.Size, Typography::GetStyleSpec(EVekaTextStyle::Title1).Size);
 
-	// A style set inside resets an outer weight.
-	const Typography::FResolvedText Reset = Resolve(EnvOf(Text(TEXT("x")).Font(EVekaTextStyle::Body).FontWeight(EVekaFontWeight::Black)));
-	TestEqual(TEXT("Inner style resets outer weight"), Reset.Font.TypefaceFontName, FName(TEXT("Regular")));
+	// Weight applies on top of the style in both orders (the Playground's `.Font(Title1).FontWeight(w)` showed Bold
+	// for every weight when an inner style reset the outer weight).
+	const Typography::FResolvedText Outer = Resolve(EnvOf(Text(TEXT("x")).Font(EVekaTextStyle::Title1).FontWeight(EVekaFontWeight::Hairline)));
+	TestEqual(TEXT("Outer weight on an inner style"), Outer.Font.TypefaceFontName, FName(TEXT("Hairline")));
+	TestEqual(TEXT("Style size kept"), Outer.Font.Size, Typography::GetStyleSpec(EVekaTextStyle::Title1).Size);
+	const Typography::FResolvedText OuterItalic = Resolve(EnvOf(Text(TEXT("x")).Font(EVekaTextStyle::Title3).FontWeight(EVekaFontWeight::Black).Italic()));
+	TestEqual(TEXT("Outer weight + italic on an inner style"), OuterItalic.Font.TypefaceFontName, FName(TEXT("BlackItalic")));
 
 	const Typography::FResolvedText Scaled = Resolve(EnvOf(Text(TEXT("x")).FontSize(20.f).TextScale(1.5f)));
 	TestEqual(TEXT("Size override x text scale"), Scaled.Font.Size, 30.f, 1.0e-4f);
