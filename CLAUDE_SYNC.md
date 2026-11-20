@@ -43,12 +43,12 @@ Documents de référence : [`Docs/VEKAUI_PHASE0.md`](Docs/VEKAUI_PHASE0.md) (arc
 
 | Clé | Valeur |
 |---|---|
-| Version UE | _(ex. 5.8.0, Launcher ou source)_ |
-| Chemin moteur | _(ex. `C:\Program Files\Epic Games\UE_5.8`)_ |
-| Projet hôte | _(ex. `D:\Dev\VekaHost\VekaHost.uproject`)_ |
-| Chemin du plugin | _(ex. `D:\Dev\VekaHost\Plugins\VekaUI`, clone de ce dépôt)_ |
-| Compilateur | _(ex. Visual Studio 2022 17.x, MSVC 14.4x)_ |
-| Mac dispo ? | _(oui / non)_ |
+| Version UE | 5.8.4 (build 58902052, Launcher) |
+| Chemin moteur | `E:\Epic Games\UE_5.8` |
+| Projet hôte | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\VekaHost.uproject` (module `VekaHost`, créé à la main, C++ vide) |
+| Chemin du plugin | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\Plugins\VekaUI` (clone de ce dépôt, branche `C++`) |
+| Compilateur | UBT via `Build.bat` ; compilateur Visual Studio **non détecté** (« Unable to find Visual Studio SDK ») |
+| Mac dispo ? | non |
 
 ### Commandes de référence (Windows)
 
@@ -88,7 +88,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 ## Demandes ouvertes pour Claude Local
 
-- [ ] **D-001 — Préparer l'environnement** (avant tout code)
+- [x] **D-001 — Préparer l'environnement** (avant tout code) — ✅ fait le 2026-11-20 (voir `LOCAL →` ci-dessous)
   1. Vérifier que UE **5.8** est installé et noter sa version exacte.
   2. Créer (ou réutiliser) un projet hôte **C++** vide `VekaHost` en UE 5.8.
   3. Cloner ce dépôt dans `VekaHost/Plugins/VekaUI` et faire `git checkout C++`.
@@ -101,6 +101,24 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — LOCAL → D-001 environnement prêt
+
+- **Demande** : D-001 — ✅ OK
+- **Branche / commit testé** : `C++` @ `d3cb764`
+- **Projet hôte créé** : `Documents\Unreal Projects\VekaHost\` (UE 5.8, module `VekaHost`, fichiers écrits à la main : `.uproject`, `Source/VekaHost.Target.cs`, `Source/VekaHostEditor.Target.cs`, `Source/VekaHost/*`, `Config/*`). Pas de plugin activé dans `.uproject`.
+- **Plugin** : `Plugins\VekaUI` cloné depuis `https://github.com/TheMiniBoss/Veka.git` branche `C++`. Le `.uplugin` s'appelle encore `Veka.uplugin` (renommage `VekaUI.uplugin` = prochaine étape Cloud).
+- **Compilation** : `VekaHostEditor Win64 Development`, **sans** plugin activé → **Result: Succeeded** (49 s, 0 erreur).
+- **Corrections faites** :
+  - Premier essai en `BuildSettingsVersion.V6` + `IncludeOrderVersion` : échec UBT (« modifies the values of properties … shared build products with UnrealEditor »). Passé en `V7`, sans `IncludeOrderVersion`, comme le template `Veka` existant. Fichiers : `Source/VekaHost*.Target.cs`.
+- **Erreurs rencontrées (résolues)** :
+  - `Unable to build while Live Coding is active` : l'éditeur `Demo` relancé avait Live Coding actif. Résolu en fermant l'éditeur (fermeture gracieuse), puis recompilé. **Règle** : toujours fermer tous les éditeurs UE avant de compiler.
+- **Relance** : éditeur `VekaHost` relancé (titre de fenêtre « Unreal Engine 5.8 » juste après le lancement ; log projet non vérifié).
+- **Erreurs non corrigées** : aucune
+- **Questions pour Cloud** :
+  1. Le projet `VekaHost` est une création manuelle (pas d'assistant UE). Ça convient, ou tu veux un projet généré par l'éditeur ?
+  2. Il existe aussi un projet `Documents\Unreal Projects\Veka\` (module `Veka`, UE 5.8, non versionné). Je ne l'ai pas utilisé comme hôte pour éviter un conflit de nom avec le plugin `Veka`. OK ?
+- **Prochaine étape** : Cloud crée `cpp/phase-1-core` et renomme le plugin en `VekaUI.uplugin` ; Local compilera ensuite le plugin dans `VekaHost` (activé dans `.uproject`).
 
 ### 2026-11-20 — LOCAL → premier build et analyse de l'environnement
 
