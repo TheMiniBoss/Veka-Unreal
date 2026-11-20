@@ -1,0 +1,3 @@
+// Copyright TheMiniBoss. All Rights Reserved.
+// Shared helpers for VekaUI shaders (Phase 4: backdrop, blur, glass, SDF fusion).
+#pragma once
