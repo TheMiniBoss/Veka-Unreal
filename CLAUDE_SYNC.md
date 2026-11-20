@@ -7,6 +7,9 @@ Ce fichier relie deux sessions Claude qui travaillent sur VekaUI :
 | **Claude Cloud** | conteneur Linux, **sans Unreal** | conçoit et code le C++, écrit ici ce qu'il a codé, les fichiers créés et **ce qu'il faut compiler / tester** |
 | **Claude Local** | PC Windows de TheMiniBoss, **avec UE 5.8** | lit ce fichier, compile (UnrealBuildTool / RunUAT), lance les tests, inspecte les `.uasset`, corrige les erreurs de compilation liées à l'API Unreal, met à jour ce fichier, `git push` |
 
+> **Depuis le 2026-11-20 (D-002)** : une seule session Claude, sur le PC, tient **les deux rôles** (elle code
+> et elle compile). Le journal et les préfixes `[cloud]` / `[local]` restent utilisés pour garder l'historique lisible.
+
 Documents de référence : [`Docs/VEKAUI_PHASE0.md`](Docs/VEKAUI_PHASE0.md) (architecture validée),
 [`Docs/CAHIER_DES_CHARGES.md`](Docs/CAHIER_DES_CHARGES.md) (inventaire Alpha 13).
 
@@ -46,7 +49,7 @@ Documents de référence : [`Docs/VEKAUI_PHASE0.md`](Docs/VEKAUI_PHASE0.md) (arc
 | Version UE | 5.8.4 (build 58902052, Launcher) |
 | Chemin moteur | `E:\Epic Games\UE_5.8` |
 | Projet hôte | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\VekaHost.uproject` (module `VekaHost`, créé à la main, C++ vide) |
-| Chemin du plugin | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\Plugins\VekaUI` (clone de ce dépôt, branche `C++`) |
+| Chemin du plugin | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\Plugins\VekaUI` (clone de ce dépôt ; plugin activé dans `VekaHost.uproject` depuis D-002) |
 | Compilateur | UBT via `Build.bat` ; compilateur Visual Studio **non détecté** (« Unable to find Visual Studio SDK ») |
 | Mac dispo ? | non |
 
@@ -78,17 +81,17 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **1 — Core** : code écrit par Cloud, **pas encore compilé** |
-| Branche active | `cpp/phase-1-core` (à fusionner dans `C++` après D-002 vert) |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` complet pour la Phase 1 ; 13 tests automation |
-| Prochaine étape Cloud | corriger selon le retour de D-002, puis Phase 2 (Colora + Anima complets, symboles, typo, contrôles) |
-| Bloquant | D-002 (compilation + tests sur le PC) |
+| Phase | **1 — Core** : ✅ compilée et testée (D-002), fusionnée dans `C++` |
+| Branche active | `C++` (Phase 2 : `cpp/phase-2-colora-anima`, pas encore créée) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime `VekaUI` Phase 1 ; 13/13 tests automation ✅ |
+| Prochaine étape | plan de la Phase 2 à valider par TheMiniBoss (découpage 2a → 2f, voir journal) |
+| Bloquant | aucun (point à vérifier à la main : clics répétés sur « +1 », voir `LOCAL → D-002`) |
 
 ---
 
 ## Demandes ouvertes pour Claude Local
 
-- [ ] **D-002 — Compiler et tester la Phase 1** (branche `cpp/phase-1-core`)
+- [x] **D-002 — Compiler et tester la Phase 1** (branche `cpp/phase-1-core`) — ✅ fait le 2026-11-20 (voir `LOCAL → D-002` ; étape 7 optionnelle non faite)
   1. `git fetch` puis `git checkout cpp/phase-1-core` dans `VekaHost/Plugins/VekaUI`. Le plugin s'appelle maintenant **`VekaUI.uplugin`**.
   2. Activer le plugin dans `VekaHost.uproject` : `"Plugins": [{ "Name": "VekaUI", "Enabled": true }]`.
   3. Fermer tous les éditeurs UE, puis compiler `VekaHostEditor Win64 Development`.
@@ -116,6 +119,75 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-20 — CLOUD → plan de la Phase 2 (proposition, à valider)
+
+La Phase 2 de `VEKAUI_PHASE0.md` §16.2 est trop grosse pour une seule branche. Découpage proposé en 7 jalons,
+**une branche par jalon** (`cpp/phase-2a-colora`, …), chacun fusionné dans `C++` quand il est vert
+(compile Editor + Shipping, tests, vérif visuelle dans le Playground).
+
+| Jalon | Contenu | Dépend de | Critère « vert » |
+|---|---|---|---|
+| **2.0 Dette Phase 1** | test automatisé du chemin Slate (fenêtre virtuelle, paint + clics synthétiques), test du Widget Blueprint `Veka Host`, vérif « +1 » à la souris | — | les bugs 2 et 4 de D-002 couverts par des tests |
+| **2a Colora** | `UVekaTheme` (tokens sémantiques, schémas Light/Dark/custom, héritage), tokens dans l'Environment ; `FVekaPaint` complet (linéaire 2D vrai, radial, elliptique, angulaire, image/9-slice, material) ; OkLab/OkLCH ; ajustements par primitive ; **shader Veka partagé** (`VekaUIRender`, `MakeCustomVerts`, AA analytique, coins continus) ; **mesh gradient** (patchs de Coons, cache) ; blend Normal + Add | — | démo Colora dans le Playground ; tests maths couleur |
+| **2b Anima** | `TVekaAnimatable<T>` (float, vec2, couleur, marges, rayons, paint, rect) ; implicite `.animation(spec, value)` + `WithAnimation` ; transitions d'insertion/suppression (enums Alpha 13, combinées, asymétriques) ; transitions de layout ; `UVekaTimeline` (pistes, keyframes, événements) ; `UCurve*` ; speed/repeat | 2a (paint animable) | démo de toutes les animations ; tests scheduler/interpolation |
+| **2c Typographie** | styles sémantiques + `UVekaFontFamily` ; modifiers texte (weight, tracking, lineSpacing, textCase, truncation, minimumScaleFactor…) ; `.contentTransition(.numericText)` ; effets par glyphe ; **spike** texte vectoriel FreeType / polices variables | 2b | démo texte ; rapport du spike |
+| **2d Symboles** | `UVekaSymbol` / `UVekaSymbolLibrary` ; masters interpolés (9 graisses), 3 échelles, alignement sur la police ; modes de rendu ; valeur variable ; effets (appear, bounce, pulse, replace / magic replace, wiggle…) ; import SVG minimal (l'éditeur = Phase 3) | 2c, réponses aux questions ci-dessous | jeu de symboles de base affiché dans toutes les graisses |
+| **2e Contrôles + Styles** | `Button`, `Toggle`, `Slider`, `Stepper`, `Picker`, `Menu`, `ContextMenu`, `TextField`, `ColorPicker`, `Gauge`, `ProgressView`, `Label`, `Divider`, `MediaView` ; styles de composants (configuration `isPressed`/`isOn`/…) ; focus et clavier | 2b, 2c, 2d | parité Alpha 13 des contrôles |
+| **2f Morph** | `matchedGeometry(id, namespace)` ; `ShapeGroup` / `.morphGroup` (fusion SDF smooth-min) avec hit-test fusionné | 2a (shader), 2b | démo bouton → carte et « goutte » |
+| **2g UVekaView + bridge** | asset `UVekaView`, `FVekaValue`, interpréteur d'AST minimal (préparation de VekaLang en Phase 3) ; `SetState` Blueprint, `UVekaViewModel`, `OnVekaEvent` | 2e | une vue asset affichée dans un Widget Blueprint et pilotée depuis Blueprint |
+
+Ordre conseillé : **2.0 → 2a → 2b → 2c → 2d → 2e → 2f → 2g** (2f peut passer avant 2e si on veut le « wow » plus tôt).
+
+**Questions pour TheMiniBoss** (bloquent 2c / 2d, cf. Phase 0 §17 « Reste à confirmer ») :
+1. As-tu les **SVG d'origine des 19 glyphes Alpha 13** ? Sinon on les redessine, ou on part d'un nouveau jeu.
+2. Combien de **symboles de base** livrer (proposition : ~150 essentiels) ?
+3. **Police par défaut** : LTFlode Neue (licence compatible avec la distribution du plugin ?) ou une police variable
+   libre (ex. Inter, OFL) pour l'interpolation de graisse ?
+
+### 2026-11-20 — LOCAL → D-002 Phase 1 compilée, testée, vérifiée dans l'éditeur
+
+- **Demande** : D-002 — ✅ OK (étape 7 optionnelle « Widget Blueprint » non faite)
+- **Branche / commit testé** : `cpp/phase-1-core` @ `873ba1f` → corrigé en `1f6e3ff`
+- **Plugin** : activé dans `VekaHost.uproject` (`{ "Name": "VekaUI", "Enabled": true }`).
+- **Compilation** : `VekaHostEditor Win64 Development` ✅ du premier coup — 6 modules, **0 erreur, 0 warning de code**.
+  Aucun des 10 « points d'attention API UE 5.8 » de Cloud n'a posé problème (FInstancedStruct, USTRUCT virtuels,
+  MakeGradient/MakeCustomVerts, FSlateVertex, TSlotlessChildren, ToPaintGeometry, FontMeasure, EAutomationTestFlags
+  constexpr, FSlateRenderTransform, AddShaderSourceDirectoryMapping). Seul message : `[Upgrade] IncludeOrderVersion`
+  sur la cible du **projet hôte** (pas le plugin).
+- **BuildPlugin** Win64 (Development + Shipping) : ✅ `BUILD SUCCESSFUL` — UnrealEditor Development + UnrealGame Shipping, **0 warning**
+  (fait sur le commit des corrections ci-dessous).
+- **Tests** : 13/13 ✅ (`Automation RunTests VekaUI`). Les deux `LogAutomationTest: Error: Condition failed` du log
+  viennent des auto-tests internes du moteur au démarrage, avant le chargement de VekaUI.
+- **Corrections faites** (ce sont des bugs, pas de l'API UE — la session tient maintenant les deux rôles) :
+  1. `Private/Vector/VekaPath.cpp` (`OpenPoints`) : `Points.Add(Points[0])` → crash
+     `Attempting to use a container element which already comes from the container being modified` dans le test
+     `VekaUI.Vector.PathOps`. Remplacé par `Points.Add(Polyline.Points[0])`.
+  2. `Private/Slate/SVekaNodeWidget.cpp` : **crash de l'éditeur à l'ouverture du Playground**
+     (`GetModifierRect` hors bornes). `Arrange()` (qui remplit `ModifierRects`) n'était appelé que par
+     `OnArrangeChildren`, lui-même appelé **après** la peinture des modifiers, et jamais pour une feuille.
+     → `OnPaint` appelle `Arrange()` en premier ; nouvelle fonction `ArrangeChildWidgets()` (sans ré-arranger) utilisée
+     par `PaintContent` et `OnArrangeChildren`.
+  3. `Private/Core/VekaPaint.cpp` (`DrawOutline`) : `.Border(...)` peignait un **rectangle blanc plein** qui cachait le
+     contenu. Un élément RoundedBox Slate est rempli avec la teinte passée à `MakeBox` (la `TintColor` de la brush est
+     ignorée) → teinte `FLinearColor::Transparent`.
+  4. `Private/Slate/SVekaNodeWidget.{h,cpp}` : ajout de `OnMouseButtonDoubleClick` → `OnMouseButtonDown`. Slate envoie le
+     2ᵉ clic d'une paire rapide en double-clic : sans ça, un tap sur deux était perdu (comme `SButton`).
+- **Vérification visuelle** (onglet Playground, capture `Docs/Sync/Screens/phase1-playground.png`) :
+  - ✅ formes, texte qui passe à la ligne, grille adaptative (passe à la ligne quand la fenêtre rétrécit), scroll molette,
+    ressort sur la piste, trim animé de l'anneau (bascule plein ↔ vide : voulu), bordures Spacer/alignement (après fix 3).
+  - ✅ « +1 » incrémente (logs : down → up → OnTap → état → re-évaluation).
+  - ⚠️ **À vérifier à la main** : avec l'outil de clic automatique, certains clics répétés sur « +1 » n'atteignent
+    **aucun** widget de la fenêtre (même pas la ScrollView racine, qui recevrait l'événement par bubbling si seul le
+    hit-test de « +1 » ratait). L'événement semble perdu avant Slate → probablement un artefact de l'outil, pas de VekaUI.
+    Cliquer 5-6 fois sur « +1 » à la vraie souris pour confirmer.
+  - Note : en UE 5.8 l'onglet est dans le menu principal **Tools** (catégorie Tools), pas dans Window > Tools.
+- **Erreurs non corrigées** : aucune.
+- **Dette relevée pour la suite** :
+  - Pas de test automatisé du chemin Slate (paint + entrée souris) : le crash 2 et le bug 4 n'étaient pas couverts.
+    À ajouter (fenêtre virtuelle + `FSlateApplication::Process*Event` synthétiques).
+  - `.Border(..., 8)` : rayon peu visible sur la capture, à revérifier avec la refonte du rendu des formes (2a).
+- **Prochaine étape** : fusion dans `C++`, puis plan de la Phase 2 (entrée suivante).
 
 ### 2026-11-20 — CLOUD → Phase 1 (core) écrite, à compiler
 
