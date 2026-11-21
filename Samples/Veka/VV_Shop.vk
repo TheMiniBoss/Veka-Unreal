@@ -1,0 +1,58 @@
+// Sample shop: model data, components, slots, events.
+view VV_Shop {
+    @State var gift: Bool = false
+    @State var lastBought: String = #""
+    @Event Buy(Int)
+
+    VStack(spacing: 12, alignment: .Leading) {
+        HStack(spacing: 10) {
+            Symbol(#"person.circle.fill")
+                .font(.Title1)
+                .symbolRenderingMode(.Hierarchical)
+            VStack(spacing: 2, alignment: .Leading) {
+                Text(model.PlayerName)
+                    .font(.Headline)
+                Text("\(model.Gold) gold")
+                    .font(.Footnote)
+                    .opacity(0.6)
+            }
+            Spacer
+        }
+        ProgressView(model.Health, label: "Health \(model.Health * 100) %")
+        Divider
+        // One component per article of the model.
+        ForEach(model.Items) { item, index in
+            VV_ShopItem(title: item.Name, price: item.Price, symbol: item.Symbol) {
+                if item.bNew {
+                    Text("NEW")
+                        .font(.Caption2)
+                        .fontWeight(.Bold)
+                        .foreground(.Orange)
+                }
+                .inSlot(badge)
+            }
+            .on(buy) {
+                lastBought = item.Name
+                emit Buy(payload)
+            }
+            .disabled(item.Price > model.Gold)
+        }
+        Divider
+        Toggle("Gift wrap", isOn: gift)
+        if gift {
+            Text("A ribbon will be added.")
+                .font(.Footnote)
+                .foreground(.Pink)
+                .transition(.scale)
+        }
+        if lastBought != #"" {
+            Text("Last bought: \(lastBought)")
+                .font(.Caption1)
+                .opacity(0.7)
+        }
+    }
+    .padding(20)
+    .frame(width: 360)
+    .background(#24242BFF, radius: 18)
+    .animation(gift)
+}

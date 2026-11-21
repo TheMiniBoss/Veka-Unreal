@@ -1,0 +1,29 @@
+view VV_ShopItem {
+    @Param var title: Text = "Item"
+    @Param var price: Int = 10
+    @Param var symbol: String = .cube
+    @Slot badge
+    @Event buy(Int)
+
+    // One article: the caller gives title, price and symbol, and handles buy.
+    HStack(spacing: 10) {
+        Symbol(symbol)
+            .font(.Title2)
+            .symbolRenderingMode(.Hierarchical)
+        VStack(spacing: 2, alignment: .Leading) {
+            Text(title)
+                .font(.Headline)
+            Text("\(price) gold")
+                .font(.Footnote)
+                .opacity(0.6)
+        }
+        Slot(badge)
+        Spacer
+        Button("Buy") {
+            emit buy(price)
+        }
+        .controlSize(.Small)
+    }
+    .padding(horizontal: 10, vertical: 8)
+    .background(.Fill, radius: 10)
+}

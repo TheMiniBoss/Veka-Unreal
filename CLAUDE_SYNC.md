@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** ✅ terminée — jalons 2.0, 2a Colora, 2b Anima, 2c Typographie, 2d Symboles, 2e Contrôles, 2f Morph, **2g UVekaView + bridge** fusionnés dans `C++` |
+| Phase | **3** en cours — 3.0 Document v2 et **3a VekaLang** (langage `.vk`) fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 (paramètres, slots, composants, tableaux / structs, textes localisables) ; 64/64 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3a VekaLang (parser / printer du langage Veka `.vk`) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) ; 71 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3b Asset Editor (coque) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,52 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 3a VekaLang (langage Veka `.vk`)
+
+- **Branche** : `cpp/phase-3a-lang` (partie de `C++` @ `93ad476`), fusionnée dans `C++`.
+- **Catalogue** (`View/VekaCatalog.h`, module VekaUI) : les composants et modificateurs que l'interpréteur connaît par
+  nom, avec pour chaque argument son genre (nombre, booléen, texte, nom, peinture, enum + `UEnum`, **binding** = doit
+  être un état), l'argument **principal** (écrit sans nom : `Text("Hi")`, `.padding(16)`), conteneur / actions. Sert au
+  parser, au printer, à l'analyse, et plus tard à la complétion (3c).
+- **Module `VekaLang`** (UncookedOnly) — `VekaLanguage.h` : `Veka::Lang::Parse`, `Print`, `Analyze`,
+  `StructurallyEqual`, `MakeAssetResolver`.
+  - **Lexer** : identifiants, nombres, `"texte"` (Text localisable), `#"chaîne"` (String), `#RRGGBB[AA]`, échappements
+    `\n` `\t` `\"` `\\`, interpolation `\( expr )`, commentaires `//` attachés au jeton suivant.
+  - **Parser** récursif descendant → `FVekaDocument` : `view Nom { … }`, `@State var`, `@Param var`, `@Slot`,
+    `@Event nom(Type)`, éléments + arguments (principal sans nom ; un composant à un seul paramètre aussi), blocs
+    d'enfants ou d'actions, `} action { … }`, `if / else if / else`, `ForEach(expr) { item, index in … }`,
+    `Slot(nom)`, modificateurs `.nom(args) { actions }`, `.inSlot(x)`, `.on(evt) { … payload … }` ; actions `=`, `+=`,
+    `-=`, `.toggle()`, `emit E(expr)`, `withAnimation { }` ; expressions avec priorités, ternaire, `!`, `-`, `.champ`,
+    `[i]`, `min / max`, `format("{1} {0}", …)`, `rgba()`, `vec2()`, tableaux / structs constants, `model.X`. Noms
+    résolus local → param → état ; composants par nom d'asset (registre d'assets). Positions ligne / colonne sur nœuds
+    et expressions. **Récupération d'erreurs** : une erreur abandonne la vue fautive et reprend à la ligne suivante, donc
+    toutes les erreurs du fichier sont rapportées et le reste du document est gardé.
+  - **Textes localisables** : namespace `Veka.<vue>` (ou `FVekaParseOptions::TextNamespace`), clé = MD5 du texte
+    source (stable d'un parse à l'autre). Messages d'erreur en `LOCTEXT` (suivent la langue de l'éditeur).
+  - **Printer canonique** : indentation 4 espaces, argument principal sans nom, un modificateur par ligne (sous une vue
+    d'une ligne : indenté ; après `}` : aligné), `else if`, interpolation quand le motif est `{0} {1}…` dans l'ordre,
+    sinon `format(…)`, flottants au plus court qui relit la même valeur.
+  - **Analyse** : composant / modificateur / argument inconnu (catalogue puis schéma par réflexion), valeur d'enum (avec
+    la liste des valeurs), jeton Colora, nombre attendu, binding qui n'est pas un état (warning), enfants ou actions là
+    où il n'en faut pas, + `FVekaDocument::Validate`.
+- **Import** : `UVekaViewImportFactory` (VekaEditor) — glisser un `.vk` dans le Content Browser crée une Veka View ;
+  erreurs et warnings dans le log d'import avec `fichier:ligne:colonne` ; un fichier en erreur ne crée / ne remplace rien.
+- **Exemples** : `Samples/Veka/VV_Starter.vk`, `VV_ShopItem.vk`, `VV_Shop.vk` = `Print` des documents d'exemple
+  (fichiers de référence des tests).
+- **Tests** : 71 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.Lang.{RoundTrip.Samples,
+  RoundTrip.Corpus, Golden, Errors, Analyze, Localization, Import}` : `Parse(Print(doc)) == doc` et `Print` point fixe
+  sur les 3 exemples et un corpus (toutes les formes de déclaration, d'action, d'opérateur et de littéral, commentaires,
+  positions) ; texte imprimé == fichiers `.vk` (sinon `.actual` écrit à côté) ; 12 erreurs avec message, ligne et
+  colonne + récupération (3 erreurs dans un fichier) ; 10 diagnostics d'analyse exacts ; clés de traduction ; import.
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3a-import.jpg`) : Import de `Samples/Veka/VV_Shop.vk` dans
+  `/Game/VekaSamples` (remplace `VV_Shop`) ; le Designer de `WBP_VekaShop` affiche la boutique issue du texte
+  (composant `VV_ShopItem` résolu par nom, badge NEW, article trop cher désactivé). L'asset importé n'est pas
+  enregistré (contenu identique ; `Veka.CreateSampleAssets` le recrée).
+- **Limites** : pas de réimport automatique (le chemin du fichier source n'est pas stocké, prévu avec l'onglet Code) ;
+  le type déclaré d'un `@State` n'est pas vérifié contre sa valeur initiale ; les diagnostics des modificateurs
+  pointent la ligne de la vue (pas de position par modificateur).
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 3.0 Document v2
 

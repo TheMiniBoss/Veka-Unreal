@@ -25,6 +25,8 @@ public class VekaEditor : ModuleRules
 			"AssetRegistry",
 			"BlueprintGraph",
 			"Kismet",
+			// 3a: .vk import (tests read the plugin samples).
+			"Projects",
 		});
 	}
 }

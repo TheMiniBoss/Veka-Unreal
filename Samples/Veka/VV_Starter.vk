@@ -1,0 +1,14 @@
+view VV_Starter {
+    @State var count: Int = 0
+
+    VStack(spacing: 12) {
+        Text("Hello Veka")
+            .font(.Title2)
+        Button("Tapped \(count) times") {
+            withAnimation {
+                count += 1
+            }
+        }
+    }
+    .padding(24)
+}
