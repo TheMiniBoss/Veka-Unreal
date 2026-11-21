@@ -120,6 +120,21 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
 
+### 2026-11-22 — LOCAL → correctif 3f : plantage en dessinant un symbole `.fill` modifié
+
+- **Branche** : `cpp/fix-symbol-knockouts` (partie de `C++` @ `1af47aa`), fusionnée dans `C++`.
+- **Symptôme** (signalé par TheMiniBoss) : `Array index out of bounds: 1 into an array of size 1` dans
+  `FSymbolPainter::Draw` (`VekaSymbolView.cpp:432`), en peignant un symbole.
+- **Cause** : `FVekaSymbolState::Knockouts` (formes dessinées dans un contour rempli, variante `.fill`) était mis en
+  cache par définition **sans** la révision : un symbole qui gagne une couche (Details, annulation, réimport, éditeur de
+  symbole) gardait l'ancien tableau, plus court.
+- **Correctif** : le cache retient la révision `Veka::Symbols::GetRevision()` et le nombre de couches, et se recalcule
+  sinon ; la lecture vérifie l'index par sécurité.
+- **Test** : `VekaUI.Editor.Symbols.Editor` dessine `<logo>.fill`, ajoute deux couches, redessine, puis n'en garde
+  qu'une. Sans le correctif, le test reproduit l'assertion (`index 4 into an array of size 4`) ; avec, il passe.
+- **Validé** : build éditeur, **91 tests** (90 verts + 1 avec l'avertissement attendu), BuildPlugin non-unity
+  Editor + Shipping, 0 warning.
+
 ### 2026-11-22 — CLOUD + LOCAL → jalon 3f Symboles et peintures
 
 - **Branche** : `cpp/phase-3f-symbols` (partie de `C++` @ `e19eb3f`), fusionnée dans `C++`.

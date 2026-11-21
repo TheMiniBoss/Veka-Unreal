@@ -17,6 +17,7 @@
 #include "VekaLanguage.h"
 #include "View/VekaViewAsset.h"
 #include "Slate/SVekaHost.h"
+#include "VekaBuilders.h"
 #include "Core/VekaRuntime.h"
 #include "Core/VekaNode.h"
 #include "Editor.h"
@@ -194,6 +195,23 @@ bool FVekaSymbolEditorTest::RunTest(const FString& Parameters)
 	TestTrue(FString::Printf(TEXT("geometry follows the edit (%f -> %f)"), Before, After), FMath::IsNearlyEqual(After - Before, 2.0, 0.01));
 	Editor->Edit(INVTEXT("Delete"), [](FVekaSymbolDefinition& D) { D.Shapes.RemoveAt(4); });
 	TestEqual(TEXT("layer deleted"), Symbol->Definition.Shapes.Num(), 4);
+
+	// Regression: a .fill symbol drawn, then given more layers, draws again (its knockouts were cached per layer count).
+	const TSharedRef<SVekaHost> Filled = SNew(SVekaHost);
+	Filled->SetRoot(Veka::Symbol(FName(*(Name.ToString() + TEXT(".fill")))).FontSize(48.f));
+	PaintOnce(Filled);
+	Editor->Edit(INVTEXT("Add"), [](FVekaSymbolDefinition& D)
+	{
+		FVekaSymbolShape Dot;
+		Dot.Path.AddCircle(FVector2D(12.0, 12.0), 2.0);
+		D.Shapes.Add(Dot);
+		D.Shapes.Add(Dot);
+	});
+	TestEqual(TEXT("layers added"), Symbol->Definition.Shapes.Num(), 6);
+	PaintOnce(Filled);
+	Editor->Edit(INVTEXT("Remove"), [](FVekaSymbolDefinition& D) { D.Shapes.SetNum(1); });
+	PaintOnce(Filled);
+	TestEqual(TEXT("one layer left, still drawn"), Symbol->Definition.Shapes.Num(), 1);
 
 	// Library search.
 	TestTrue(TEXT("library finds it by name"), Veka::Editor::SymbolLibrary::Filter(Name.ToString(), NAME_None).Contains(Name));
