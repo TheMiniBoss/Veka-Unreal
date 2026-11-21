@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **2** — jalons **2.0**, **2a Colora**, **2b Anima**, **2c Typographie**, **2d Symboles**, **2e Contrôles**, **2f Morph** ✅ fusionnés dans `C++` ; prochain jalon **2g UVekaView + bridge** |
+| Phase | **2** ✅ terminée — jalons 2.0, 2a Colora, 2b Anima, 2c Typographie, 2d Symboles, 2e Contrôles, 2f Morph, **2g UVekaView + bridge** fusionnés dans `C++` |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime Phase 1 + Colora + Anima + Typographie + Symboles + Contrôles + Morph ; 56/56 tests automation ✅ |
-| Prochaine étape | 2g UVekaView + bridge Blueprint (sur demande de TheMiniBoss) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 (Colora, Anima, typo, symboles, contrôles, morph, vues asset interprétées, bridge Blueprint) ; 60/60 tests automation ✅ |
+| Prochaine étape | Phase 3 — Veka Editor (VekaLang : parse / print du DSL vers `FVekaDocument`, éditeur d'asset) — plan à proposer |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,59 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 2g UVekaView + bridge Blueprint (fin de la Phase 2)
+
+- **Branche** : `cpp/phase-2g-view` (partie de `C++` @ `d42cfc5`), fusionnée dans `C++`.
+- **`FVekaValue`** (`View/VekaValue.h`) : variant typé (bool, int, float, string, couleur, vector2) avec conversions
+  souples (1 == 1.0, nombre « vrai » si non nul, affichage court : `72` et non `72.000003`), lecture / écriture de
+  propriétés par réflexion (nombres, chaînes, noms, textes, enums par nom, couleurs, vecteurs, marges).
+  `UVekaValueLibrary` : nœuds Blueprint (Make / To, autocast, égalité).
+- **`FVekaDocument`** (`View/VekaDocument.h`) : l'AST d'une vue, en tableaux plats sérialisables (nœuds, expressions,
+  arguments nommés, modificateurs, actions, déclarations d'état et d'événements) + `Validate()` (indices, états et
+  événements inconnus). Expressions : littéral, état, propriété du modèle, variable de boucle, unaires, binaires
+  (arithmétique, comparaisons, et / ou, min / max), ternaire, format `{0}`. Actions : Set, Toggle, Increment, Emit
+  (option animée). Contrôle : `If` / else, `ForEach`. **`FVekaDocumentBuilder`** pour écrire un document en C++
+  (le parser du DSL arrive avec VekaLang en Phase 3).
+- **Interpréteur** (`Veka::Interpreter::MakeView`) : la vue est une `FVekaView` comme les vues C++ (ré-évaluée
+  seulement quand son état change). Composants nommés (piles, Text, Symbol, Label, Button, Toggle, Slider, Stepper,
+  TextField, ProgressView, Gauge, Divider, Spacer, formes), modificateurs nommés (padding, frame, background,
+  foreground, border, opacity, clip, offset, scale, rotation, font, fontWeight, fontSize, disabled, buttonStyle,
+  toggleStyle, controlSize, symbolRenderingMode, animation, transition, onTap) ; **tout autre composant ou modificateur
+  du schéma** est créé par réflexion (arguments → propriétés, peintures depuis une couleur, un hex ou un jeton). Un
+  argument lié à un état (`isOn: gift`) devient un `TVekaBinding`. Composant inconnu : texte rouge « Unknown 'X' » +
+  warning.
+- **Asset `UVekaView`** (un `UVekaViewSource`) + **`FVekaViewStore`** (états, modèle, événements d'une vue montée).
+  **`UVekaViewModel`** (Blueprintable, EditInlineNew) : la vue lit ses propriétés par nom (`model.Gold`) ;
+  `NotifyChanged`, `GetValue` / `SetValue` par nom ; les changements faits par de simples nœuds « Set » sont vus seuls
+  (contrôle 10 fois par seconde).
+- **Veka Host (UMG)** : propriétés `View`, `InitialState`, `ViewModel` (instancié : on choisit la classe et on édite
+  ses valeurs dans les Details), fonctions Blueprint `SetState`, `GetState`, `SetView`, `SetViewModel`, événement
+  **`OnVekaEvent(EventName, Payload)`**.
+- **Éditeur** : factory « Veka View » (Content Browser, catégorie UI) ; commande console **`Veka.CreateSampleAssets`**
+  qui crée `/Game/VekaSamples/VV_Shop` (la vue d'exemple) et `WBP_VekaShop` (Widget Blueprint avec un Veka Host qui
+  l'affiche, modèle `Veka Sample Shop Model`). Ces assets sont dans le projet hôte, pas dans le dépôt : relancer la
+  commande pour les recréer (en ligne de commande : `-ExecCmds="Veka.CreateSampleAssets,QUIT_EDITOR"`, virgule et non
+  point-virgule).
+- **Vue d'exemple « boutique »** (`Veka::Samples::MakeShopDocument`) : nom et or du joueur (modèle), barre de vie,
+  stepper « Potions » et toggle « Gift wrap » (état), ligne qui apparaît avec le toggle, bouton « Buy N for M gold »
+  qui émet `Buy` et se désactive quand l'or manque (« Not enough gold »).
+- **Tests** : 60/60 ✅ — nouveaux `VekaUI.View.{Value, Document, Interpreter, HostBridge}` : conversions et réflexion
+  (enum inconnu refusé sans modifier la valeur) ; validation (contre-épreuves : état inconnu lu / écrit, événement non
+  déclaré, mauvais indice) ; interpréteur (tap qui incrémente, If / else, ForEach et variable de boucle, changement
+  externe, emit évalué avant l'action suivante, primitive du schéma par réflexion, composant inconnu) ; bridge : la vue
+  dans un `UVekaHostWidget`, `SetState` / `GetState` appelés par réflexion comme un nœud Blueprint, `OnVekaEvent` reçu
+  par un `UFUNCTION` via délégué dynamique, bouton désactivé qui n'émet rien (contre-épreuve), modèle changé par
+  `NotifyChanged`, par `SetValue` et silencieusement (polling).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning (une première tentative a trouvé un include manquant, `FMargin`, invisible en build unity : corrigé).
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase2g-*.jpg`) : `WBP_VekaShop` ouvert, le Designer affiche la vue
+  asset avec les valeurs du modèle ; changer Gold à 20 et le nom à « Nova » dans les Details met à jour l'aperçu
+  (bouton désactivé, « Not enough gold »).
+- **Limites connues** :
+  - Pas de parser : les documents s'écrivent en C++ ou dans les Details (tableaux plats, peu pratique) jusqu'à VekaLang.
+  - Pas encore de `@Param` / `@Slot` (composants composés) ni de tableaux / structs dans `FVekaValue`.
+  - Le graphe Blueprint de `WBP_VekaShop` est vide : `SetState` / `OnVekaEvent` sont testés par réflexion, pas câblés
+    dans un graphe d'exemple.
 
 ### 2026-11-20 — CLOUD + LOCAL → jalon 2f Morph
 
