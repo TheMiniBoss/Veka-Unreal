@@ -29,6 +29,11 @@ bool FVekaDocument::Upgrade()
 	return bChanged;
 }
 
+const FVekaDocumentTimeline* FVekaDocument::FindTimeline(FName Name) const
+{
+	return Timelines.FindByPredicate([Name](const FVekaDocumentTimeline& Timeline) { return Timeline.Name == Name; });
+}
+
 bool FVekaDocument::HasEvent(FName Name) const
 {
 	return EventDeclarations.ContainsByPredicate([Name](const FVekaEventDeclaration& Event) { return Event.Name == Name; }) || Events.Contains(Name);
@@ -81,6 +86,10 @@ TArray<FString> FVekaDocument::Validate() const
 		{
 			Problems.Add(FString::Printf(TEXT("Expression %d reads unknown param '%s'"), Index, *Expr.Name.ToString()));
 		}
+		if (Expr.Kind == EVekaExprKind::Timeline && !FindTimeline(Expr.Name))
+		{
+			Problems.Add(FString::Printf(TEXT("Expression %d reads unknown timeline '%s'"), Index, *Expr.Name.ToString()));
+		}
 	}
 	auto CheckActions = [&](const TArray<FVekaAstAction>& Actions, int32 Node)
 	{
@@ -94,12 +103,26 @@ TArray<FString> FVekaDocument::Validate() const
 					Problems.Add(FString::Printf(TEXT("Node %d emits undeclared event '%s'"), Node, *Action.Target.ToString()));
 				}
 			}
+			else if (Action.Kind >= EVekaActionKind::Play)
+			{
+				if (!FindTimeline(Action.Target))
+				{
+					Problems.Add(FString::Printf(TEXT("Node %d controls unknown timeline '%s'"), Node, *Action.Target.ToString()));
+				}
+			}
 			else if (!StateNames.Contains(Action.Target))
 			{
 				Problems.Add(FString::Printf(TEXT("Node %d changes unknown state '%s'"), Node, *Action.Target.ToString()));
 			}
 		}
 	};
+	for (const FVekaDocumentTimeline& Timeline : Timelines)
+	{
+		for (const FVekaTimelineCue& Cue : Timeline.Cues)
+		{
+			CheckActions(Cue.Actions, INDEX_NONE);
+		}
+	}
 	if (!Nodes.IsValidIndex(Root))
 	{
 		Problems.Add(TEXT("No root node"));

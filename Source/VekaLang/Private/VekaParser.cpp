@@ -350,6 +350,7 @@ namespace
 		TSet<FName> States;
 		TSet<FName> Params;
 		TSet<FName> Events;
+		TSet<FName> Timelines;
 		TArray<TSet<FName>> Locals;
 
 		bool IsLocal(FName Name) const
@@ -655,6 +656,10 @@ namespace
 				const FToken Name = Expect(ETok::Ident, LOCTEXT("ExpectSlotName", "Expected a slot name ('default' for the default slot)"));
 				Document.Slots.AddDefaulted_GetRef().Name = Name.Text == TEXT("default") ? NAME_None : FName(*Name.Text);
 			}
+			else if (Kind.Text == TEXT("Timeline"))
+			{
+				ParseTimeline();
+			}
 			else if (Kind.Text == TEXT("Event"))
 			{
 				const FToken Name = Expect(ETok::Ident, LOCTEXT("ExpectEventName", "Expected an event name"));
@@ -675,8 +680,136 @@ namespace
 			}
 			else
 			{
-				Fail(Kind, FText::Format(LOCTEXT("UnknownDecl", "Unknown declaration '@{0}' (State, Param, Slot or Event)"), FText::FromString(Kind.Text)));
+				Fail(Kind, FText::Format(LOCTEXT("UnknownDecl", "Unknown declaration '@{0}' (State, Param, Slot, Event or Timeline)"), FText::FromString(Kind.Text)));
 			}
+		}
+
+		static EVekaActionKind TimelineControl(const FString& Word)
+		{
+			return Word == TEXT("play") ? EVekaActionKind::Play : Word == TEXT("pause") ? EVekaActionKind::Pause : Word == TEXT("stop") ? EVekaActionKind::Stop
+				: Word == TEXT("reverse") ? EVekaActionKind::Reverse : Word == TEXT("seek") ? EVekaActionKind::Seek : EVekaActionKind::Set;
+		}
+
+		/** A plain number token, optionally negative (`.EaseOut` after a key must not read as a member access). */
+		float ParseNumber()
+		{
+			const bool bNegative = Accept(TEXT("-"));
+			const FToken& Token = Peek();
+			if (Token.Kind != ETok::Int && Token.Kind != ETok::Float)
+			{
+				Fail(Token, LOCTEXT("ExpectNumber", "Expected a number"));
+			}
+			Next();
+			const float Value = static_cast<float>(FCString::Atod(*Token.Text));
+			return bNegative ? -Value : Value;
+		}
+
+		/**
+		 * @Timeline Intro(length: 1.2, loop: true, speed: 1.5, autoplay: true) {
+		 *     track fade { 0: 0, 0.4: 1 .EaseOut }
+		 *     at 0.5 { done = true }
+		 * }
+		 */
+		void ParseTimeline()
+		{
+			const FToken Name = Expect(ETok::Ident, LOCTEXT("ExpectTimelineName", "Expected the timeline name"));
+			const FName TimelineName(*Name.Text);
+			if (Scope.Timelines.Contains(TimelineName))
+			{
+				Error(Name, FText::Format(LOCTEXT("DuplicateTimeline", "Timeline '{0}' declared twice"), FText::FromName(TimelineName)));
+			}
+			Scope.Timelines.Add(TimelineName);
+			FVekaDocumentTimeline Timeline;
+			Timeline.Name = TimelineName;
+			if (Accept(TEXT("(")))
+			{
+				while (!Peek().Is(TEXT(")")) && Peek().Kind != ETok::End)
+				{
+					const FToken Setting = Expect(ETok::Ident, LOCTEXT("ExpectSetting", "Expected length, loop, speed or autoplay"));
+					ExpectPunct(TEXT(":"));
+					const FVekaValue Value = ParseConstant();
+					if (Setting.Text == TEXT("length"))
+					{
+						Timeline.Data.Length = static_cast<float>(Value.AsFloat());
+					}
+					else if (Setting.Text == TEXT("loop"))
+					{
+						Timeline.Data.bLoop = Value.AsBool();
+					}
+					else if (Setting.Text == TEXT("speed"))
+					{
+						Timeline.Data.Speed = static_cast<float>(Value.AsFloat());
+					}
+					else if (Setting.Text == TEXT("autoplay"))
+					{
+						Timeline.bAutoPlay = Value.AsBool();
+					}
+					else
+					{
+						Error(Setting, FText::Format(LOCTEXT("UnknownSetting", "Unknown timeline setting '{0}' (length, loop, speed, autoplay)"), FText::FromString(Setting.Text)));
+					}
+					if (!Accept(TEXT(",")))
+					{
+						break;
+					}
+				}
+				ExpectPunct(TEXT(")"));
+			}
+			ExpectPunct(TEXT("{"));
+			const UEnum* Curves = StaticEnum<EVekaAnimationCurve>();
+			while (!Peek().Is(TEXT("}")) && Peek().Kind != ETok::End)
+			{
+				if (Peek().IsWord(TEXT("track")))
+				{
+					Next();
+					const FToken TrackName = Expect(ETok::Ident, LOCTEXT("ExpectTrackName", "Expected the track name"));
+					FVekaTimelineTrack& Track = Timeline.Data.Tracks.AddDefaulted_GetRef();
+					Track.Name = FName(*TrackName.Text);
+					ExpectPunct(TEXT("{"));
+					while (!Peek().Is(TEXT("}")) && Peek().Kind != ETok::End)
+					{
+						FVekaTimelineKey Key;
+						Key.Time = ParseNumber();
+						ExpectPunct(TEXT(":"));
+						Key.Value = ParseNumber();
+						if (Peek().Is(TEXT(".")) && Peek(1).Kind == ETok::Ident)
+						{
+							Next();
+							const FToken Curve = Next();
+							const int64 CurveValue = Curves->GetValueByNameString(Curve.Text);
+							if (CurveValue == INDEX_NONE)
+							{
+								Error(Curve, FText::Format(LOCTEXT("UnknownCurve", "Unknown curve '.{0}'"), FText::FromString(Curve.Text)));
+							}
+							else
+							{
+								Key.Curve = static_cast<EVekaAnimationCurve>(CurveValue);
+							}
+						}
+						Track.Keys.Add(Key);
+						if (!Accept(TEXT(",")))
+						{
+							break;
+						}
+					}
+					ExpectPunct(TEXT("}"));
+					Track.Keys.StableSort([](const FVekaTimelineKey& A, const FVekaTimelineKey& B) { return A.Time < B.Time; });
+				}
+				else if (Peek().IsWord(TEXT("at")))
+				{
+					Next();
+					FVekaTimelineCue& Cue = Timeline.Cues.AddDefaulted_GetRef();
+					Cue.Time = ParseNumber();
+					ExpectPunct(TEXT("{"));
+					Cue.Actions = ParseActionsUntilBrace(false);
+				}
+				else
+				{
+					Fail(Peek(), LOCTEXT("ExpectTrack", "Expected 'track name { time: value, ... }' or 'at time { actions }'"));
+				}
+			}
+			ExpectPunct(TEXT("}"));
+			Document.Timelines.Add(MoveTemp(Timeline));
 		}
 
 		FVekaValue ParseConstant()
@@ -831,7 +964,7 @@ namespace
 				return true;
 			}
 			return Token.Kind == ETok::Ident && (Peek(1).Is(TEXT("=")) || Peek(1).Is(TEXT("+=")) || Peek(1).Is(TEXT("-="))
-				|| (Peek(1).Is(TEXT(".")) && Peek(2).IsWord(TEXT("toggle"))));
+				|| (Peek(1).Is(TEXT(".")) && (Peek(2).IsWord(TEXT("toggle")) || TimelineControl(Peek(2).Text) != EVekaActionKind::Set)));
 		}
 
 		int32 ParseElement()
@@ -1031,7 +1164,28 @@ namespace
 				Actions.Add(Action);
 				return;
 			}
-			const FToken Target = Expect(ETok::Ident, LOCTEXT("ExpectAction", "Expected an action (state = value, state += value, state.toggle(), emit, withAnimation)"));
+			if (Head.Kind == ETok::Ident && Scope.Timelines.Contains(FName(*Head.Text)) && Peek(1).Is(TEXT(".")))
+			{
+				// Intro.play() / pause() / stop() / reverse() / seek(time)
+				const FToken Timeline = Next();
+				Next();
+				const FToken Control = Expect(ETok::Ident, LOCTEXT("ExpectControl", "Expected play, pause, stop, reverse or seek"));
+				Action.Kind = TimelineControl(Control.Text);
+				Action.Target = FName(*Timeline.Text);
+				if (Action.Kind == EVekaActionKind::Set)
+				{
+					Fail(Control, LOCTEXT("UnknownControl", "A timeline can play(), pause(), stop(), reverse() or seek(time)"));
+				}
+				ExpectPunct(TEXT("("));
+				if (Action.Kind == EVekaActionKind::Seek)
+				{
+					Action.Expr = ParseExpression();
+				}
+				ExpectPunct(TEXT(")"));
+				Actions.Add(Action);
+				return;
+			}
+			const FToken Target = Expect(ETok::Ident, LOCTEXT("ExpectAction", "Expected an action (state = value, state += value, state.toggle(), emit, withAnimation, timeline.play())"));
 			Action.Target = StateTarget(Target);
 			if (Accept(TEXT("=")))
 			{
@@ -1416,6 +1570,10 @@ namespace
 			{
 				Kind = EVekaExprKind::State;
 			}
+			else if (Scope.Timelines.Contains(Name))
+			{
+				Kind = EVekaExprKind::Timeline;
+			}
 			else
 			{
 				Fail(Token, FText::Format(LOCTEXT("UnknownName", "Unknown name '{0}' (not a state, param or loop variable)"), FText::FromName(Name)));
@@ -1456,6 +1614,10 @@ namespace Veka::Lang
 		for (const FVekaEventDeclaration& Event : Document.EventDeclarations)
 		{
 			Scope.Events.Add(Event.Name);
+		}
+		for (const FVekaDocumentTimeline& Timeline : Document.Timelines)
+		{
+			Scope.Timelines.Add(Timeline.Name);
 		}
 		Scope.Locals.Add(TSet<FName>(Locals));
 		const FVekaParseOptions Options;

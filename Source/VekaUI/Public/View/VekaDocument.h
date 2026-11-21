@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "View/VekaValue.h"
+#include "Anima/VekaTimeline.h"
 #include "VekaDocument.generated.h"
 
 class UVekaView;
@@ -50,7 +51,9 @@ enum class EVekaExprKind : uint8
 	/** Parameter of the view (`@Param var title`). */
 	Param,
 	/** Field Name of operand 0 (`item.name`). */
-	Member
+	Member,
+	/** Track values of the timeline Name now, as a struct (`Intro.fade` = Member of it). */
+	Timeline
 };
 
 UENUM(BlueprintType)
@@ -126,7 +129,17 @@ enum class EVekaActionKind : uint8
 	/** Target += Expr. */
 	Increment,
 	/** Sends Target (event name) with Expr as payload to the host (OnVekaEvent). */
-	Emit
+	Emit,
+	/** Timeline Target: play from where it is (`Intro.play()`). */
+	Play,
+	/** Timeline Target: pause. */
+	Pause,
+	/** Timeline Target: pause and go back to the start. */
+	Stop,
+	/** Timeline Target: play the other way. */
+	Reverse,
+	/** Timeline Target: jump to Expr seconds. */
+	Seek
 };
 
 USTRUCT(BlueprintType)
@@ -137,7 +150,7 @@ struct VEKAUI_API FVekaAstAction
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	EVekaActionKind Kind = EVekaActionKind::Set;
 
-	/** State name (Set / Toggle / Increment) or event name (Emit). */
+	/** State name (Set / Toggle / Increment), event name (Emit) or timeline name (Play / Pause / Stop / Reverse / Seek). */
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	FName Target;
 
@@ -284,6 +297,43 @@ struct VEKAUI_API FVekaEventDeclaration
 	EVekaValueType PayloadType = EVekaValueType::None;
 };
 
+/** Actions run when a timeline's playhead crosses Time (`at 0.3 { isOpen = true }`). */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaTimelineCue
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	float Time = 0.f;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FVekaAstAction> Actions;
+};
+
+/**
+ * Timeline of a view (`@Timeline Intro { track fade { 0: 0, 0.4: 1 } }`): keyframed tracks read as `Intro.fade`, cues
+ * that run actions at a time, controlled by actions (`Intro.play()`) or played on appear (bAutoPlay).
+ */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaDocumentTimeline
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FName Name;
+
+	/** Tracks, length, loop, speed (Data.Events is filled from the cues at runtime). */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FVekaTimelineData Data;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FVekaTimelineCue> Cues;
+
+	/** Plays when the view appears. */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	bool bAutoPlay = false;
+};
+
 USTRUCT(BlueprintType)
 struct VEKAUI_API FVekaDocument
 {
@@ -306,6 +356,10 @@ struct VEKAUI_API FVekaDocument
 
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	TArray<FVekaEventDeclaration> EventDeclarations;
+
+	/** Keyframe animations of the view (3e). */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FVekaDocumentTimeline> Timelines;
 
 	/** Format 1 only (event names); moved to EventDeclarations by Upgrade(). */
 	UPROPERTY()
@@ -333,6 +387,7 @@ struct VEKAUI_API FVekaDocument
 	bool HasEvent(FName Name) const;
 	const FVekaParamDeclaration* FindParam(FName Name) const;
 	bool HasSlot(FName Name) const;
+	const FVekaDocumentTimeline* FindTimeline(FName Name) const;
 };
 
 /**

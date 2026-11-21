@@ -13,6 +13,7 @@
 
 class FVekaNode;
 class UVekaViewModel;
+class FVekaTimelinePlayer;
 
 /**
  * Data the game gives to an asset view, observed by it: subclass in Blueprint, add variables, assign it to a Veka Host
@@ -67,6 +68,13 @@ public:
 
 	void Emit(FName Event, const FVekaValue& Payload) const;
 	TFunction<void(FName, const FVekaValue&)> OnEvent;
+	/** Called after a state changed value (the editor's Test mode logs it). */
+	TFunction<void(FName, const FVekaValue&)> OnValueChanged;
+
+	/** Timelines of the mounted view by name (the editor's Timeline tab plays and scrubs them). */
+	TMap<FName, TSharedPtr<FVekaTimelinePlayer>> Timelines;
+	/** Timelines already auto-played for this store. */
+	TSet<FName> StartedTimelines;
 
 	/** The interpreted view registers its node here (re-evaluated on changes). */
 	void Attach(FVekaNode& Node);

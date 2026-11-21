@@ -784,8 +784,10 @@ TSharedRef<SWidget> SVekaInspector::MakeActionsEditor(int32 Node, int32 Modifier
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 	const FVekaAstNode& N = Document->Nodes[Node];
 	const TArray<FVekaAstAction>& InActions = Modifier == INDEX_NONE ? N.Actions : N.Modifiers[Modifier].Actions;
-	const TArray<FText> KindLabels = { LOCTEXT("ActionSet", "set"), LOCTEXT("ActionToggle", "toggle"), LOCTEXT("ActionIncrement", "add"), LOCTEXT("ActionEmit", "emit") };
-	const TArray<EVekaActionKind> Kinds = { EVekaActionKind::Set, EVekaActionKind::Toggle, EVekaActionKind::Increment, EVekaActionKind::Emit };
+	const TArray<FText> KindLabels = { LOCTEXT("ActionSet", "set"), LOCTEXT("ActionToggle", "toggle"), LOCTEXT("ActionIncrement", "add"), LOCTEXT("ActionEmit", "emit"),
+		LOCTEXT("ActionPlay", "play"), LOCTEXT("ActionPause", "pause"), LOCTEXT("ActionStop", "stop"), LOCTEXT("ActionReverse", "reverse"), LOCTEXT("ActionSeek", "seek") };
+	const TArray<EVekaActionKind> Kinds = { EVekaActionKind::Set, EVekaActionKind::Toggle, EVekaActionKind::Increment, EVekaActionKind::Emit, EVekaActionKind::Play,
+		EVekaActionKind::Pause, EVekaActionKind::Stop, EVekaActionKind::Reverse, EVekaActionKind::Seek };
 	auto EditActions = [this, Node, Modifier](const FText& Description, TFunction<void(TArray<FVekaAstAction>&)> Change)
 	{
 		Context->Edit(Description, [Node, Modifier, &Change](FVekaDocument& Doc) -> TArray<int32>
@@ -810,6 +812,14 @@ TSharedRef<SWidget> SVekaInspector::MakeActionsEditor(int32 Node, int32 Modifier
 				TargetNames.Add(Event.Name);
 			}
 		}
+		else if (Action.Kind >= EVekaActionKind::Play)
+		{
+			for (const FVekaDocumentTimeline& Timeline : Document->Timelines)
+			{
+				Targets.Add(FText::FromName(Timeline.Name));
+				TargetNames.Add(Timeline.Name);
+			}
+		}
 		else
 		{
 			for (const FVekaStateDeclaration& State : Document->States)
@@ -819,7 +829,8 @@ TSharedRef<SWidget> SVekaInspector::MakeActionsEditor(int32 Node, int32 Modifier
 			}
 		}
 		const FString Key = RowKey(Node, Modifier, FName(*FString::Printf(TEXT("action%d"), Index)));
-		const bool bValue = Action.Kind != EVekaActionKind::Toggle;
+		const bool bValue = Action.Kind == EVekaActionKind::Set || Action.Kind == EVekaActionKind::Increment || Action.Kind == EVekaActionKind::Emit
+			|| Action.Kind == EVekaActionKind::Seek;
 		Box->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))
 		[
 			SNew(SHorizontalBox)

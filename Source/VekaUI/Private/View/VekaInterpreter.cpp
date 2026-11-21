@@ -7,6 +7,7 @@
 #include "Core/VekaSchema.h"
 #include "Core/VekaPaint.h"
 #include "Anima/VekaImplicit.h"
+#include "Anima/VekaTimeline.h"
 #include "Anima/VekaTransition.h"
 #include "Controls/VekaControls.h"
 #include "Symbols/VekaSymbolView.h"
@@ -84,6 +85,10 @@ void FVekaViewStore::Set(FName Name, const FVekaValue& Value)
 	}
 	Slot = Value;
 	Invalidate();
+	if (OnValueChanged)
+	{
+		OnValueChanged(Name, Value);
+	}
 }
 
 void FVekaViewStore::Declare(FName Name, const FVekaValue& Initial)
@@ -272,6 +277,51 @@ namespace
 		int32 ComponentDepth = 0;
 		/** Asset document the elements are tagged with (the editor maps viewport clicks back to its nodes). */
 		const void* Origin = nullptr;
+		/** Players of the document's timelines (SetupTimelines). */
+		TMap<FName, FVekaTimelineHandle> Timelines;
+
+		/**
+		 * Players of the document's timelines, kept by the view node: cues become events that run their actions, autoplay
+		 * starts once per store, and the store lists them (the editor's Timeline tab).
+		 */
+		void SetupTimelines(FVekaContext& Ctx)
+		{
+			for (const FVekaDocumentTimeline& Timeline : Document.Timelines)
+			{
+				FVekaTimelineData Data = Timeline.Data;
+				Data.Events.Reset();
+				for (int32 Index = 0; Index < Timeline.Cues.Num(); ++Index)
+				{
+					Data.AddEvent(Timeline.Cues[Index].Time, FName(*FString::Printf(TEXT("cue%d"), Index)));
+				}
+				const FVekaTimelineHandle Handle = Ctx.Timeline(FName(*(TEXT("__timeline.") + Timeline.Name.ToString())), Data);
+				Timelines.Add(Timeline.Name, Handle);
+				Store->Timelines.Add(Timeline.Name, Handle.GetPlayer());
+			}
+			for (const FVekaDocumentTimeline& Timeline : Document.Timelines)
+			{
+				TArray<TFunction<void()>> Cues;
+				for (const FVekaTimelineCue& Cue : Timeline.Cues)
+				{
+					Cues.Add(MakeActions(Cue.Actions));
+				}
+				const FVekaTimelineHandle& Handle = Timelines[Timeline.Name];
+				Handle.OnEvent([Cues](FName Event)
+				{
+					const int32 Index = FCString::Atoi(*Event.ToString().Mid(3));
+					if (Cues.IsValidIndex(Index) && Cues[Index])
+					{
+						Cues[Index]();
+					}
+				});
+				if (Timeline.bAutoPlay && !Store->StartedTimelines.Contains(Timeline.Name))
+				{
+					Store->StartedTimelines.Add(Timeline.Name);
+					Handle.Stop();
+					Handle.Play();
+				}
+			}
+		}
 
 		FVekaValue Eval(int32 Index) const
 		{
@@ -305,6 +355,20 @@ namespace
 				return Declaration ? Declaration->Default : FVekaValue();
 			}
 			case EVekaExprKind::Member: return Operand(0).GetField(Expr.Name);
+			case EVekaExprKind::Timeline:
+			{
+				// Every track now, as a struct (`Intro.fade` takes a field).
+				TMap<FName, FVekaValue> Fields;
+				const FVekaTimelineHandle* Handle = Timelines.Find(Expr.Name);
+				if (const FVekaDocumentTimeline* Timeline = Document.FindTimeline(Expr.Name))
+				{
+					for (const FVekaTimelineTrack& Track : Timeline->Data.Tracks)
+					{
+						Fields.Add(Track.Name, FVekaValue::Float(Handle ? Handle->Value(Track.Name) : Track.Evaluate(0.f)));
+					}
+				}
+				return FVekaValue::Struct(MoveTemp(Fields));
+			}
 			case EVekaExprKind::Unary:
 			{
 				const FVekaValue A = Operand(0);
@@ -511,11 +575,13 @@ namespace
 			const TSharedRef<FVekaViewStore> InStore = Store;
 			const TMap<FName, FVekaValue> CapturedLocals = Locals;
 			const TMap<FName, FVekaValue> CapturedParams = Params;
-			return [Doc, InStore, CapturedLocals, CapturedParams, Actions]()
+			const TMap<FName, FVekaTimelineHandle> CapturedTimelines = Timelines;
+			return [Doc, InStore, CapturedLocals, CapturedParams, CapturedTimelines, Actions]()
 			{
 				FInterpreter Runner(Doc, InStore);
 				Runner.Locals = CapturedLocals;
 				Runner.Params = CapturedParams;
+				Runner.Timelines = CapturedTimelines;
 				for (const FVekaAstAction& Action : Actions)
 				{
 					auto Run = [&]()
@@ -528,6 +594,20 @@ namespace
 							InStore->Set(Action.Target, Binary(EVekaExprOp::Add, InStore->Get(Action.Target), Action.Expr == INDEX_NONE ? FVekaValue::Int(1) : Runner.Eval(Action.Expr)));
 							break;
 						case EVekaActionKind::Emit: InStore->Emit(Action.Target, Runner.Eval(Action.Expr)); break;
+						default:
+							if (const FVekaTimelineHandle* Timeline = Runner.Timelines.Find(Action.Target))
+							{
+								switch (Action.Kind)
+								{
+								case EVekaActionKind::Play: Timeline->Play(); break;
+								case EVekaActionKind::Pause: Timeline->Pause(); break;
+								case EVekaActionKind::Stop: Timeline->Stop(); break;
+								case EVekaActionKind::Reverse: Timeline->Reverse(); break;
+								case EVekaActionKind::Seek: Timeline->Seek(static_cast<float>(Runner.Eval(Action.Expr).AsFloat())); break;
+								default: break;
+								}
+							}
+							break;
 						}
 					};
 					if (Action.bAnimated)
@@ -880,6 +960,7 @@ namespace
 			Interpreter.Params = Params;
 			Interpreter.SlotContents = SlotContents;
 			Interpreter.ComponentDepth = Depth;
+			Interpreter.SetupTimelines(Ctx);
 			return Interpreter.Build(Document->Root);
 		}
 	};
@@ -890,12 +971,14 @@ namespace
 		const TSharedRef<FVekaViewStore> InStore = Store;
 		const TMap<FName, FVekaValue> CapturedLocals = Locals;
 		const TMap<FName, FVekaValue> CapturedParams = Params;
-		return [Doc, InStore, CapturedLocals, CapturedParams, Actions](const FVekaValue& Payload)
+		const TMap<FName, FVekaTimelineHandle> CapturedTimelines = Timelines;
+		return [Doc, InStore, CapturedLocals, CapturedParams, CapturedTimelines, Actions](const FVekaValue& Payload)
 		{
 			FInterpreter Runner(Doc, InStore);
 			Runner.Locals = CapturedLocals;
 			Runner.Locals.Add(TEXT("payload"), Payload);
 			Runner.Params = CapturedParams;
+			Runner.Timelines = CapturedTimelines;
 			if (TFunction<void()> Run = Runner.MakeActions(Actions))
 			{
 				Run();
@@ -958,6 +1041,7 @@ namespace
 			Store->Attach(Ctx.GetNode());
 			FInterpreter Interpreter(Document, Store);
 			Interpreter.Origin = Origin;
+			Interpreter.SetupTimelines(Ctx);
 			return Interpreter.Build(Document->Root);
 		}
 

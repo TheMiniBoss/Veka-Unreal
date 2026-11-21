@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code et **3d Mode Simple** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple et **3e Mode Test + Timeline** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, onglet Code, viewport, undo, vignettes) ; 84 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3e Mode Test + Timeline |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) ; 88 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3f Symboles et peintures |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,57 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 3e Mode Test + Timeline
+
+- **Branche** : `cpp/phase-3e-test` (partie de `C++` @ `583e598`), fusionnée dans `C++`.
+- **Timelines dans le document** (`FVekaDocumentTimeline` : nom, `FVekaTimelineData` — pistes, clés, longueur,
+  boucle, vitesse —, **cues** `FVekaTimelineCue` = actions à un instant, `bAutoPlay`) ; expression `Timeline`
+  (`Intro.fade` lit la piste maintenant) ; actions `Play` / `Pause` / `Stop` / `Reverse` / `Seek`. `Validate` vérifie
+  timelines lues / pilotées et actions des cues.
+- **Langage** :
+  ```
+  @Timeline Intro(length: 1.0, autoplay: true) {
+      track fade { 0.0: 0.0, 0.4: 1.0 .EaseOut }
+      at 0.5 {
+          done = true
+      }
+  }
+  ...  .opacity(Intro.fade)   Button("Replay") { Intro.stop()  Intro.play()  Pulse.seek(0.25) }
+  ```
+  Parser (réglages, clés avec courbe optionnelle, nombres négatifs, cues), printer canonique (flottants au plus court
+  en simple précision), comparaison structurelle, analyse (« Timeline X has no track 'y' »), complétion (`@Timeline`,
+  pistes et contrôles après `Intro.`), coloration (`track`).
+- **Interpréteur** : chaque timeline est un joueur gardé par le nœud de la vue (`Ctx.Timeline`) ; les cues deviennent
+  des événements qui exécutent leurs actions ; autoplay une fois par store ; le store expose `Timelines` (l'onglet
+  Timeline les pilote) et `OnValueChanged` (journal du Mode Test). Composants aussi.
+- **Mode Test** (onglet **Test**) : **Play** (les clics, survol et focus vont à la vue, sans PIE), états **en direct**
+  (lecture et écriture), **journal** horodaté des `emit` et des changements d'état (Clear log, Reset state), **modèle
+  mock** éditable (Details de l'instance de prévisualisation, non sauvegardée).
+- **Onglet Timeline** (à côté de Code) : choisir / ajouter / renommer (partout) / retirer une timeline, longueur,
+  vitesse, boucle, autoplay ; transport Play / Pause / Stop / Reverse avec temps courant ; pistes (ajouter, renommer —
+  les lectures `Intro.piste` suivent —, retirer) ; **voies** : règle (clic / glisser = **scrub**), courbe de chaque
+  piste, clés (double-clic = ajouter à la valeur courante, glisser = déplacer, Suppr), marqueurs de cues, tête de
+  lecture rouge ; éditeur de la clé sélectionnée (temps, valeur, courbe). Temps arrondis au centième. Chaque édition
+  = un undo, la tête de lecture est gardée.
+- **Disposition** v4 : Outliner + Palette | Viewport + (Code, Timeline) | Inspector / State / **Test** / Details.
+- **Tests** : 88 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.Lang.Timeline` (parse, valeurs,
+  courbes, cues, contrôles, impression identique au source, aller-retour, 4 erreurs, piste inconnue),
+  `VekaUI.View.Timeline` (autoplay, tête à 0,3 s, piste entre ses clés, cue exécutée à 0,5 s, bouton qui relance et
+  `seek`), **`VekaUI.Editor.Test.Shop`** (la boutique en Play avec un modèle mock à 30 or : affichage, Buy de la potion
+  journalisé `emit Buy(25)` + `lastBought = …`, lanterne trop chère muette, journal vidé), **`VekaUI.Editor.Timeline.Panel`**
+  (une animation faite à l'onglet Timeline : timeline, piste, clés ajoutée / déplacée / modifiée / supprimée, lue par
+  `.opacity(Intro.value)`, scrub à 0,25 s → valeur 0,2, tête gardée après édition, undo).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3e-timeline.jpg`, `phase3e-test-log.jpg`, `phase3e-shop-play.jpg`) :
+  vue neuve `VV_TimelineDemo` (non sauvegardée) — timeline et piste ajoutées, clé double-cliquée à 0,5 s, valeur 1,
+  `.opacity(Intro.value)` en code (le curseur sélectionne le Text), Play (tête 0,40 → 1,00 s), scrub à 0,20 s (texte à
+  moitié transparent) ; Test : deux taps → `count = 1`, `count = 2` ; **`VV_Shop` en Play avec l'or mock à 30** :
+  « Aria 30 gold », Oak shield et Lantern désactivés, Buy de la potion → `lastBought = "Health potion"`,
+  `emit Buy(25)`, Lantern muette. `VV_Shop` non modifié (le modèle mock est une instance de prévisualisation).
+- **Limites** : les actions des cues s'écrivent en code (l'onglet Timeline les montre en marqueurs) ; pistes de nombres
+  uniquement (les couleurs / vecteurs passent par des expressions sur plusieurs pistes) ; pas d'asset `UVekaTimeline`
+  partagé dans le langage (timelines intégrées à la vue).
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 3d Mode Simple
 

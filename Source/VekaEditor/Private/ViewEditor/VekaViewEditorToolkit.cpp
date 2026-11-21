@@ -6,6 +6,7 @@
 #include "SimpleMode/VekaViewEditorContext.h"
 #include "SimpleMode/SVekaOutliner.h"
 #include "SimpleMode/SVekaInspector.h"
+#include "TestMode/SVekaTestPanels.h"
 #include "View/VekaViewAsset.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
@@ -26,6 +27,8 @@ const FName FVekaViewEditorToolkit::OutlinerTabId(TEXT("VekaViewEditor_Outliner"
 const FName FVekaViewEditorToolkit::PaletteTabId(TEXT("VekaViewEditor_Palette"));
 const FName FVekaViewEditorToolkit::InspectorTabId(TEXT("VekaViewEditor_Inspector"));
 const FName FVekaViewEditorToolkit::StateTabId(TEXT("VekaViewEditor_State"));
+const FName FVekaViewEditorToolkit::TestTabId(TEXT("VekaViewEditor_Test"));
+const FName FVekaViewEditorToolkit::TimelineTabId(TEXT("VekaViewEditor_Timeline"));
 
 namespace Veka::Editor
 {
@@ -88,7 +91,10 @@ void FVekaViewEditorToolkit::InitEditor(EToolkitMode::Type Mode, const TSharedPt
 		return Pinned.IsValid() ? Pinned->GetModel() : nullptr;
 	});
 
-	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout(TEXT("Standalone_VekaViewEditor_Layout_v3"))
+	TestPanel = SNew(SVekaTestPanel, Context.ToSharedRef(), Preview.ToSharedRef());
+	TimelinePanel = SNew(SVekaTimelinePanel, Context.ToSharedRef(), Preview.ToSharedRef());
+
+	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout(TEXT("Standalone_VekaViewEditor_Layout_v4"))
 		->AddArea(
 			FTabManager::NewPrimaryArea()
 			->SetOrientation(Orient_Horizontal)
@@ -97,10 +103,12 @@ void FVekaViewEditorToolkit::InitEditor(EToolkitMode::Type Mode, const TSharedPt
 				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.4f)->AddTab(PaletteTabId, ETabState::OpenedTab)))
 			->Split(FTabManager::NewSplitter()->SetOrientation(Orient_Vertical)->SetSizeCoefficient(0.55f)
 				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.6f)->AddTab(ViewportTabId, ETabState::OpenedTab)->SetHideTabWell(true))
-				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.4f)->AddTab(CodeTabId, ETabState::OpenedTab)))
+				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.4f)->AddTab(CodeTabId, ETabState::OpenedTab)->AddTab(TimelineTabId, ETabState::OpenedTab)
+					->SetForegroundTab(CodeTabId)))
 			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.25f)
 				->AddTab(InspectorTabId, ETabState::OpenedTab)
 				->AddTab(StateTabId, ETabState::OpenedTab)
+				->AddTab(TestTabId, ETabState::OpenedTab)
 				->AddTab(DetailsTabId, ETabState::OpenedTab)
 				->SetForegroundTab(InspectorTabId)));
 
@@ -161,6 +169,8 @@ void FVekaViewEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& 
 	Panel(PaletteTabId, LOCTEXT("PaletteTab", "Palette"), Palette, "Kismet.Tabs.Palette");
 	Panel(InspectorTabId, LOCTEXT("InspectorTab", "Inspector"), Inspector, "LevelEditor.Tabs.Details");
 	Panel(StateTabId, LOCTEXT("StateTab", "State"), StatePanel, "Kismet.Tabs.Variables");
+	Panel(TestTabId, LOCTEXT("TestTab", "Test"), TestPanel, "Icons.Play");
+	Panel(TimelineTabId, LOCTEXT("TimelineTab", "Timeline"), TimelinePanel, "Sequencer.Tabs.SequencerMain");
 }
 
 void FVekaViewEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -173,6 +183,8 @@ void FVekaViewEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>
 	InTabManager->UnregisterTabSpawner(PaletteTabId);
 	InTabManager->UnregisterTabSpawner(InspectorTabId);
 	InTabManager->UnregisterTabSpawner(StateTabId);
+	InTabManager->UnregisterTabSpawner(TestTabId);
+	InTabManager->UnregisterTabSpawner(TimelineTabId);
 }
 
 TSharedRef<SDockTab> FVekaViewEditorToolkit::SpawnPanelTab(const FSpawnTabArgs& Args, FText Label, TSharedPtr<SWidget> Content)
