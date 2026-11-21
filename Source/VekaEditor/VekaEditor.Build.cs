@@ -18,6 +18,11 @@ public class VekaEditor : ModuleRules
 			"WorkspaceMenuStructure",
 			"VekaUI",
 			"VekaLang",
+			// 2g: UVekaView factory and the sample Widget Blueprint.
+			"UMG",
+			"UMGEditor",
+			"AssetTools",
+			"AssetRegistry",
 		});
 	}
 }
