@@ -15,6 +15,7 @@ class SScrollBar;
 class SVerticalBox;
 class FVekaCodeMarshaller;
 class FActiveTimerHandle;
+class FVekaViewEditorContext;
 
 /**
  * Code tab of the Veka View editor (Advanced mode): the view as Veka code. Typing re-parses after a 150 ms pause; valid
@@ -60,6 +61,13 @@ public:
 	bool IsCompletionOpen() const { return !CompletionItems.IsEmpty(); }
 	const FVekaCompletion& GetCompletion() const { return Completion; }
 	void AcceptCompletion(int32 Index);
+	/** Selection shared with the Simple mode: the cursor selects the view under it, a selection moves the cursor. */
+	void SetContext(const TSharedPtr<FVekaViewEditorContext>& InContext);
+	/** Puts the cursor on the first selected view. */
+	void RevealSelection();
+	/** The code as last parsed without errors (source positions of the nodes). */
+	const FVekaDocument& GetLastParsed() const { return LastParsed; }
+
 	/** Moves the cursor (0-based line and column). */
 	void GoTo(int32 Line, int32 Column);
 
@@ -76,6 +84,8 @@ private:
 	FMargin GetCompletionPadding() const;
 	TSharedRef<ITableRow> MakeCompletionRow(TSharedPtr<FVekaCompletionItem> Item, const TSharedRef<STableViewBase>& Owner);
 	FVekaCompletionSources MakeSources() const;
+	void HandleCursorMoved(const FTextLocation& Location);
+	void UpdateLastParsed(const FString& Text);
 
 	TWeakObjectPtr<UVekaView> View;
 	TSharedPtr<SMultiLineEditableText> Editor;
@@ -90,6 +100,10 @@ private:
 	TArray<FVekaDiagnostic> Diagnostics;
 	TFunction<UVekaView*(FName)> Resolver;
 	FSlateFontInfo Font;
+	FVekaDocument LastParsed;
+	TSharedPtr<FVekaViewEditorContext> Context;
+	FDelegateHandle SelectionHandle;
+	bool bRevealing = false;
 
 	bool bSettingText = false;
 	bool bApplying = false;

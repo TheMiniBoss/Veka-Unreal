@@ -15,6 +15,7 @@ class FVekaViewStore;
 class UVekaView;
 class UVekaViewModel;
 class UVekaTheme;
+class FVekaViewEditorContext;
 
 /** A screen the view is previewed on. */
 struct FVekaDevicePreset
@@ -34,6 +35,8 @@ struct FVekaPreviewSettings
 	TWeakObjectPtr<UVekaTheme> Theme;
 	bool bShowBounds = false;
 	bool bShowPadding = false;
+	/** Clicks select views (Simple mode) instead of using them. */
+	bool bSelectMode = true;
 };
 
 namespace Veka::Editor
@@ -72,6 +75,11 @@ public:
 	void SetTheme(UVekaTheme* Theme);
 	void SetShowBounds(bool bShow);
 	void SetShowPadding(bool bShow);
+	void SetSelectMode(bool bSelect);
+	/** Selection shared with the outliner and the code (3d). */
+	void SetContext(const TSharedPtr<FVekaViewEditorContext>& InContext);
+	/** Document node under a point of the screen (host space), or INDEX_NONE. */
+	int32 PickNode(const FVector2D& HostPosition) const;
 	void ZoomToFit();
 
 	const FVekaPreviewSettings& GetSettings() const { return Settings; }
@@ -109,6 +117,8 @@ private:
 	TSharedPtr<SVekaHost> Host;
 	TSharedPtr<SVekaPreviewCanvas> Canvas;
 	TSharedPtr<class SVekaPreviewOverlay> Overlay;
+	TSharedPtr<FVekaViewEditorContext> Context;
+	FDelegateHandle SelectionHandle;
 	FVekaPreviewSettings Settings;
 	bool bPersistSettings = true;
 	int32 RefreshCount = 0;

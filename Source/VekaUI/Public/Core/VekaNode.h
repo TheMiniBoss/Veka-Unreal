@@ -47,6 +47,8 @@ public:
 	const TArray<FInstancedStruct>& GetModifiers() const { return Modifiers; }
 	const TArray<TSharedRef<FVekaNode>>& GetChildren() const { return Children; }
 	FVekaNode* GetParent() const { return Parent; }
+	/** The element this node was last built from. */
+	const FVekaElement& GetSourceElement() const { return SourceElement; }
 	FVekaRuntime& GetRuntime() const { return Runtime; }
 	/** Environment seen by this node's content and children (after its own modifiers). */
 	const FVekaEnvironment& GetEnvironment() const { return Environment; }

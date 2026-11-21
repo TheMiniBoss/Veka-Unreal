@@ -10,7 +10,12 @@
 
 FString FVekaDiagnostic::ToString() const
 {
-	return FString::Printf(TEXT("%d:%d: %s: %s"), Range.Line, Range.Column, Severity == EVekaDiagnosticSeverity::Error ? TEXT("error") : TEXT("warning"), *Message.ToString());
+	const TCHAR* Kind = Severity == EVekaDiagnosticSeverity::Error ? TEXT("error") : TEXT("warning");
+	if (Range.Line <= 0)
+	{
+		return FString::Printf(TEXT("%s: %s"), Kind, *Message.ToString());
+	}
+	return FString::Printf(TEXT("%d:%d: %s: %s"), Range.Line, Range.Column, Kind, *Message.ToString());
 }
 
 bool FVekaParseResult::HasErrors() const
@@ -451,6 +456,16 @@ namespace
 		}
 
 		/** One expression (string interpolations). */
+		FVekaValue ParseStandaloneConstant()
+		{
+			const FVekaValue Value = ParseConstant();
+			if (Peek().Kind != ETok::End)
+			{
+				Error(Peek(), LOCTEXT("ValueEnd", "Unexpected text after the value"));
+			}
+			return Value;
+		}
+
 		int32 ParseStandaloneExpression()
 		{
 			const int32 Expr = ParseExpression();
@@ -1424,6 +1439,75 @@ namespace
 
 namespace Veka::Lang
 {
+	int32 ParseExpression(FVekaDocument& Document, const FString& Source, TConstArrayView<FName> Locals, const FString& TextNamespace, TArray<FVekaDiagnostic>& OutDiagnostics)
+	{
+		const int32 Mark = Document.Expressions.Num();
+		const int32 ErrorsBefore = OutDiagnostics.Num();
+		TArray<FToken> Tokens = FLexer(Source, 1, 1, OutDiagnostics).Run();
+		FScope Scope;
+		for (const FVekaStateDeclaration& State : Document.States)
+		{
+			Scope.States.Add(State.Name);
+		}
+		for (const FVekaParamDeclaration& Param : Document.Params)
+		{
+			Scope.Params.Add(Param.Name);
+		}
+		for (const FVekaEventDeclaration& Event : Document.EventDeclarations)
+		{
+			Scope.Events.Add(Event.Name);
+		}
+		Scope.Locals.Add(TSet<FName>(Locals));
+		const FVekaParseOptions Options;
+		FParser Parser(MoveTemp(Tokens), Document, Scope, OutDiagnostics, Options, TextNamespace);
+		int32 Expression = INDEX_NONE;
+		try
+		{
+			Expression = Parser.ParseStandaloneExpression();
+		}
+		catch (const FParseFailed&)
+		{
+			Expression = INDEX_NONE;
+		}
+		bool bErrors = Expression == INDEX_NONE;
+		for (int32 Index = ErrorsBefore; Index < OutDiagnostics.Num(); ++Index)
+		{
+			bErrors |= OutDiagnostics[Index].Severity == EVekaDiagnosticSeverity::Error;
+		}
+		if (bErrors)
+		{
+			Document.Expressions.SetNum(Mark);
+			return INDEX_NONE;
+		}
+		return Expression;
+	}
+
+	bool ParseValue(const FString& Source, const FString& TextNamespace, FVekaValue& OutValue, TArray<FVekaDiagnostic>& OutDiagnostics)
+	{
+		const int32 ErrorsBefore = OutDiagnostics.Num();
+		FVekaDocument Scratch;
+		TArray<FToken> Tokens = FLexer(Source, 1, 1, OutDiagnostics).Run();
+		FScope Scope;
+		const FVekaParseOptions Options;
+		FParser Parser(MoveTemp(Tokens), Scratch, Scope, OutDiagnostics, Options, TextNamespace);
+		try
+		{
+			OutValue = Parser.ParseStandaloneConstant();
+		}
+		catch (const FParseFailed&)
+		{
+			return false;
+		}
+		for (int32 Index = ErrorsBefore; Index < OutDiagnostics.Num(); ++Index)
+		{
+			if (OutDiagnostics[Index].Severity == EVekaDiagnosticSeverity::Error)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	FVekaParseResult Parse(const FString& Source, const FVekaParseOptions& Options)
 	{
 		FVekaParseResult Result;

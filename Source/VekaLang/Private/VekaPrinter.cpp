@@ -143,6 +143,9 @@ namespace
 	public:
 		explicit FPrinter(const FVekaDocument& InDocument) : Document(InDocument) {}
 
+		/** One expression (Veka::Lang::PrintExpression). */
+		FString PrintOne(int32 Index) const { return Expression(Index); }
+
 		FString Run(FName ViewName)
 		{
 			for (const FString& Comment : Document.Comments)
@@ -1018,6 +1021,16 @@ namespace Veka::Lang
 	FString Print(const FVekaDocument& Document, FName ViewName)
 	{
 		return FPrinter(Document).Run(ViewName);
+	}
+
+	FString PrintExpression(const FVekaDocument& Document, int32 Expression)
+	{
+		return FPrinter(Document).PrintOne(Expression);
+	}
+
+	FString PrintValue(const FVekaValue& Value)
+	{
+		return ::PrintValue(Value);
 	}
 
 	bool StructurallyEqual(const FVekaDocument& A, const FVekaDocument& B, FString* OutDifference)

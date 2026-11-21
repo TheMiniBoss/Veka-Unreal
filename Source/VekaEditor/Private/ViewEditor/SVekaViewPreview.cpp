@@ -8,6 +8,7 @@
 #include "Colora/VekaTheme.h"
 #include "Modifiers/VekaLayoutModifiers.h"
 #include "View/VekaViewAsset.h"
+#include "SimpleMode/VekaViewEditorContext.h"
 #include "Engine/UserInterfaceSettings.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "PropertyCustomizationHelpers.h"
@@ -216,10 +217,73 @@ public:
 	{
 		Host = InHost;
 		Settings = InSettings;
-		SetVisibility(EVisibility::HitTestInvisible);
+		// Hit-testable only in select mode: clicks pick views instead of reaching them.
+		SetVisibility(TAttribute<EVisibility>::CreateLambda([this]() { return Settings->bSelectMode && TargetDocument ? EVisibility::Visible : EVisibility::HitTestInvisible; }));
 	}
 
 	mutable int32 LastRectCount = 0;
+	/** Document whose nodes are picked and outlined (the edited view, not its components). */
+	const void* TargetDocument = nullptr;
+	TFunction<bool(int32)> IsSelected;
+	TFunction<void(int32, bool)> OnPicked;
+	int32 Hovered = INDEX_NONE;
+
+	/** Deepest node of the target document containing the point (host space). */
+	int32 Pick(const FVector2D& Point) const
+	{
+		const TSharedPtr<SVekaHost> PinnedHost = Host.Pin();
+		const TSharedPtr<FVekaNode> Root = PinnedHost ? PinnedHost->GetRuntime()->GetRootNode() : nullptr;
+		int32 Found = INDEX_NONE;
+		TFunction<void(const FVekaNode&)> Visit = [&](const FVekaNode& Node)
+		{
+			const FVekaElement& Source = Node.GetSourceElement();
+			if (Source.GetSourceDocument() == TargetDocument && Source.GetSourceNode() != INDEX_NONE)
+			{
+				const FVector2D Origin = Node.GetRootPosition();
+				const FVector2D Size = Node.GetArrangedRect().Size;
+				if (Point.X >= Origin.X && Point.Y >= Origin.Y && Point.X <= Origin.X + Size.X && Point.Y <= Origin.Y + Size.Y)
+				{
+					Found = Source.GetSourceNode();
+				}
+			}
+			for (const TSharedRef<FVekaNode>& Child : Node.GetChildren())
+			{
+				Visit(*Child);
+			}
+		};
+		if (Root)
+		{
+			Visit(*Root);
+		}
+		return Found;
+	}
+
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton || !OnPicked)
+		{
+			return FReply::Unhandled();
+		}
+		OnPicked(Pick(FVector2D(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()))), MouseEvent.IsControlDown() || MouseEvent.IsShiftDown());
+		return FReply::Handled();
+	}
+
+	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		const int32 Node = Pick(FVector2D(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition())));
+		if (Node != Hovered)
+		{
+			Hovered = Node;
+			Invalidate(EInvalidateWidgetReason::Paint);
+		}
+		return FReply::Unhandled();
+	}
+
+	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override
+	{
+		Hovered = INDEX_NONE;
+		Invalidate(EInvalidateWidgetReason::Paint);
+	}
 
 	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D::ZeroVector; }
 
@@ -228,15 +292,20 @@ public:
 	{
 		LastRectCount = 0;
 		const TSharedPtr<SVekaHost> PinnedHost = Host.Pin();
-		if (!PinnedHost || (!Settings->bShowBounds && !Settings->bShowPadding))
+		const TSharedPtr<FVekaNode> Root = PinnedHost ? PinnedHost->GetRuntime()->GetRootNode() : nullptr;
+		if (!Root)
 		{
 			return LayerId;
 		}
-		if (const TSharedPtr<FVekaNode> Root = PinnedHost->GetRuntime()->GetRootNode())
+		if (Settings->bShowBounds || Settings->bShowPadding)
 		{
 			PaintNode(*Root, AllottedGeometry, OutDrawElements, LayerId);
 		}
-		return LayerId + 1;
+		if (TargetDocument)
+		{
+			PaintSelection(*Root, AllottedGeometry, OutDrawElements, LayerId + 1);
+		}
+		return LayerId + 2;
 	}
 
 private:
@@ -273,6 +342,29 @@ private:
 		for (const TSharedRef<FVekaNode>& Child : Node.GetChildren())
 		{
 			PaintNode(*Child, Geometry, OutDrawElements, LayerId);
+		}
+	}
+
+	void PaintSelection(const FVekaNode& Node, const FGeometry& Geometry, FSlateWindowElementList& OutDrawElements, int32 LayerId) const
+	{
+		const FVekaElement& Source = Node.GetSourceElement();
+		if (Source.GetSourceDocument() == TargetDocument && Source.GetSourceNode() != INDEX_NONE)
+		{
+			const int32 Index = Source.GetSourceNode();
+			const bool bSelected = IsSelected && IsSelected(Index);
+			if (bSelected || (Index == Hovered && Settings->bSelectMode))
+			{
+				const FVector2D Origin = Node.GetRootPosition();
+				const FVector2D Size = Node.GetArrangedRect().Size;
+				const float Scale = Geometry.Scale > 0.f ? 1.f / Geometry.Scale : 1.f;
+				TArray<FVector2f> Points = { FVector2f(Origin), FVector2f(Origin + FVector2D(Size.X, 0.0)), FVector2f(Origin + Size), FVector2f(Origin + FVector2D(0.0, Size.Y)), FVector2f(Origin) };
+				const FLinearColor Color = bSelected ? FLinearColor(1.f, 0.6f, 0.1f) : FLinearColor(1.f, 0.6f, 0.1f, 0.45f);
+				FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color, true, (bSelected ? 2.f : 1.f) * Scale);
+			}
+		}
+		for (const TSharedRef<FVekaNode>& Child : Node.GetChildren())
+		{
+			PaintSelection(*Child, Geometry, OutDrawElements, LayerId);
 		}
 	}
 
@@ -349,8 +441,65 @@ void SVekaViewPreview::Construct(const FArguments& InArgs)
 	Refresh();
 }
 
+void SVekaViewPreview::SetContext(const TSharedPtr<FVekaViewEditorContext>& InContext)
+{
+	if (Context.IsValid())
+	{
+		Context->OnSelectionChanged.Remove(SelectionHandle);
+	}
+	Context = InContext;
+	Overlay->TargetDocument = Context.IsValid() && View.IsValid() ? &View->Document : nullptr;
+	if (!Context.IsValid())
+	{
+		Overlay->IsSelected = nullptr;
+		Overlay->OnPicked = nullptr;
+		return;
+	}
+	TWeakPtr<FVekaViewEditorContext> WeakContext = Context;
+	Overlay->IsSelected = [WeakContext](int32 Node)
+	{
+		const TSharedPtr<FVekaViewEditorContext> Pinned = WeakContext.Pin();
+		return Pinned && Pinned->IsSelected(Node);
+	};
+	Overlay->OnPicked = [WeakContext](int32 Node, bool bAdd)
+	{
+		if (const TSharedPtr<FVekaViewEditorContext> Pinned = WeakContext.Pin())
+		{
+			TArray<int32> Nodes = bAdd ? Pinned->GetSelectedNodes() : TArray<int32>();
+			if (Node != INDEX_NONE)
+			{
+				if (bAdd && Nodes.Contains(Node))
+				{
+					Nodes.Remove(Node);
+				}
+				else
+				{
+					Nodes.AddUnique(Node);
+				}
+			}
+			Pinned->Select(Nodes, EVekaSelectionSource::Viewport);
+		}
+	};
+	SelectionHandle = Context->OnSelectionChanged.AddLambda([this]() { Overlay->Invalidate(EInvalidateWidgetReason::Paint); });
+}
+
+int32 SVekaViewPreview::PickNode(const FVector2D& HostPosition) const
+{
+	return Overlay->Pick(HostPosition);
+}
+
+void SVekaViewPreview::SetSelectMode(bool bSelect)
+{
+	Settings.bSelectMode = bSelect;
+	Overlay->Invalidate(EInvalidateWidgetReason::Paint);
+}
+
 SVekaViewPreview::~SVekaViewPreview()
 {
+	if (Context.IsValid())
+	{
+		Context->OnSelectionChanged.Remove(SelectionHandle);
+	}
 	if (Store.IsValid())
 	{
 		Store->OnEvent = nullptr;
@@ -627,6 +776,11 @@ TSharedRef<SWidget> SVekaViewPreview::MakeToolbar()
 				]
 			]
 			+ SHorizontalBox::Slot().AutoWidth()[Gap()]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				Toggle(LOCTEXT("Select", "Select"), LOCTEXT("SelectTooltip", "Click a view to select it (off: use the view: buttons, toggles...). Ctrl+click adds to the selection."),
+					[this]() { return Settings.bSelectMode; }, [this](bool bOn) { SetSelectMode(bOn); })
+			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
 				Toggle(LOCTEXT("Bounds", "Bounds"), LOCTEXT("BoundsTooltip", "Outline every view"), [this]() { return Settings.bShowBounds; }, [this](bool bOn) { SetShowBounds(bOn); })

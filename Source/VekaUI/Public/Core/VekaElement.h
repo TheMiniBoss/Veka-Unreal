@@ -84,6 +84,9 @@ public:
 	FName GetId() const;
 	/** Struct name for primitives, view type for views. Used to decide if a node can be reused. */
 	FName GetTypeName() const;
+	/** Document node this element was built from (set by the asset interpreter; the editor maps clicks back to it). */
+	const void* GetSourceDocument() const;
+	int32 GetSourceNode() const;
 
 	// --- Generic modifiers (extension API) -----------------------------------------------------
 
@@ -106,6 +109,9 @@ public:
 	/** Explicit identity among siblings (lists, matched geometry later). */
 	FVekaElement Id(FName InId) const& { return FVekaElement(*this).Id(InId); }
 	FVekaElement Id(FName InId) &&;
+
+	/** Records the document node this element comes from (no effect on layout or rendering). */
+	FVekaElement Source(const void* Document, int32 Node) &&;
 
 	// --- Layout ----------------------------------------------------------------------------------
 
@@ -397,4 +403,6 @@ struct FVekaElementData
 	TArray<FInstancedStruct> Modifiers;
 	TArray<FVekaElement> Children;
 	FName Id;
+	const void* SourceDocument = nullptr;
+	int32 SourceNode = INDEX_NONE;
 };

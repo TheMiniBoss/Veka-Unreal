@@ -270,6 +270,8 @@ namespace
 		/** Content the caller gave for each slot (built in the caller's scope). */
 		TMap<FName, TArray<FVekaElement>> SlotContents;
 		int32 ComponentDepth = 0;
+		/** Asset document the elements are tagged with (the editor maps viewport clicks back to its nodes). */
+		const void* Origin = nullptr;
 
 		FVekaValue Eval(int32 Index) const
 		{
@@ -450,7 +452,7 @@ namespace
 					Element = ApplyModifier(MoveTemp(Element), Modifier);
 				}
 			}
-			return Element;
+			return MoveTemp(Element).Source(Origin ? Origin : &Document, NodeIndex);
 		}
 
 		/** Runs Actions with the interpreter's scope plus `payload` (component event handlers). */
@@ -821,6 +823,8 @@ namespace
 	public:
 		TObjectPtr<UVekaView> Asset;
 		TSharedPtr<const FVekaDocument> Document;
+		/** The component asset's document (tag of its elements). */
+		const void* Origin = nullptr;
 		TMap<FName, FVekaValue> Params;
 		TMap<FName, TArray<FVekaElement>> SlotContents;
 		TMap<FName, TFunction<void(const FVekaValue&)>> Handlers;
@@ -872,6 +876,7 @@ namespace
 			Store->Attach(Ctx.GetNode());
 
 			FInterpreter Interpreter(Document.ToSharedRef(), Store.ToSharedRef());
+			Interpreter.Origin = Origin;
 			Interpreter.Params = Params;
 			Interpreter.SlotContents = SlotContents;
 			Interpreter.ComponentDepth = Depth;
@@ -911,6 +916,7 @@ namespace
 		FVekaDocument Copy = Asset->Document;
 		Copy.Upgrade();
 		View->Document = MakeShared<const FVekaDocument>(MoveTemp(Copy));
+		View->Origin = &Asset->Document;
 		for (const FVekaParamDeclaration& Param : View->Document->Params)
 		{
 			View->Params.Add(Param.Name, Param.Default);
@@ -944,18 +950,21 @@ namespace
 		VEKA_VIEW(FVekaInterpretedView)
 
 	public:
-		FVekaInterpretedView(const TSharedRef<const FVekaDocument>& InDocument, const TSharedRef<FVekaViewStore>& InStore) : Document(InDocument), Store(InStore) {}
+		FVekaInterpretedView(const TSharedRef<const FVekaDocument>& InDocument, const TSharedRef<FVekaViewStore>& InStore, const void* InOrigin)
+			: Document(InDocument), Store(InStore), Origin(InOrigin) {}
 
 		virtual FVekaElement Body(FVekaContext& Ctx) const override
 		{
 			Store->Attach(Ctx.GetNode());
 			FInterpreter Interpreter(Document, Store);
+			Interpreter.Origin = Origin;
 			return Interpreter.Build(Document->Root);
 		}
 
 	private:
 		TSharedRef<const FVekaDocument> Document;
 		TSharedRef<FVekaViewStore> Store;
+		const void* Origin = nullptr;
 	};
 }
 
@@ -969,7 +978,7 @@ namespace Veka::Interpreter
 		{
 			Store->Declare(State.Name, State.Initial);
 		}
-		return FVekaElement::MakeView(MakeShared<FVekaInterpretedView>(MakeShared<const FVekaDocument>(MoveTemp(Copy)), Store));
+		return FVekaElement::MakeView(MakeShared<FVekaInterpretedView>(MakeShared<const FVekaDocument>(MoveTemp(Copy)), Store, &Document));
 	}
 }
 

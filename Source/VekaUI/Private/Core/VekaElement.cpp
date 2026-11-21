@@ -173,6 +173,27 @@ FVekaElement FVekaElement::AddModifier(FInstancedStruct&& InModifier) &&
 	return MoveTemp(*this);
 }
 
+const void* FVekaElement::GetSourceDocument() const
+{
+	return Data.IsValid() ? Data->SourceDocument : nullptr;
+}
+
+int32 FVekaElement::GetSourceNode() const
+{
+	return Data.IsValid() ? Data->SourceNode : INDEX_NONE;
+}
+
+FVekaElement FVekaElement::Source(const void* Document, int32 Node) &&
+{
+	if (Data.IsValid())
+	{
+		MakeUnique();
+		Data->SourceDocument = Document;
+		Data->SourceNode = Node;
+	}
+	return MoveTemp(*this);
+}
+
 FVekaElement FVekaElement::Id(FName InId) &&
 {
 	if (Data.IsValid())

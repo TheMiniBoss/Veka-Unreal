@@ -3,6 +3,8 @@
 #include "CodeEditor/SVekaCodeEditor.h"
 #include "ViewEditor/VekaViewEditorToolkit.h"
 #include "View/VekaViewAsset.h"
+#include "SimpleMode/VekaViewEditorContext.h"
+#include "SimpleMode/VekaDocumentEdit.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Framework/Application/SlateApplication.h"
@@ -228,6 +230,7 @@ void SVekaCodeEditor::Construct(const FArguments& InArgs)
 							.HScrollBar(HorizontalScroll)
 							.OnTextChanged(this, &SVekaCodeEditor::HandleTextChanged)
 							.OnKeyDownHandler(this, &SVekaCodeEditor::HandleKeyDown)
+							.OnCursorMoved(this, &SVekaCodeEditor::HandleCursorMoved)
 						]
 						+ SVerticalBox::Slot().AutoHeight()
 						[
@@ -290,6 +293,71 @@ void SVekaCodeEditor::Construct(const FArguments& InArgs)
 
 SVekaCodeEditor::~SVekaCodeEditor()
 {
+	if (Context.IsValid())
+	{
+		Context->OnSelectionChanged.Remove(SelectionHandle);
+	}
+}
+
+void SVekaCodeEditor::SetContext(const TSharedPtr<FVekaViewEditorContext>& InContext)
+{
+	if (Context.IsValid())
+	{
+		Context->OnSelectionChanged.Remove(SelectionHandle);
+	}
+	Context = InContext;
+	if (Context.IsValid())
+	{
+		SelectionHandle = Context->OnSelectionChanged.AddLambda([this]()
+		{
+			if (Context->GetLastSelectionSource() != EVekaSelectionSource::Code)
+			{
+				RevealSelection();
+			}
+		});
+	}
+}
+
+void SVekaCodeEditor::UpdateLastParsed(const FString& Text)
+{
+	FVekaParseOptions Options;
+	Options.ResolveComponent = Resolver;
+	const FVekaParseResult Result = Veka::Lang::Parse(Text, Options);
+	if (!Result.HasErrors())
+	{
+		LastParsed = Result.Document;
+	}
+}
+
+void SVekaCodeEditor::RevealSelection()
+{
+	if (!Context.IsValid() || Context->GetSelectedPaths().IsEmpty() || bDirty || bTextHasErrors)
+	{
+		return;
+	}
+	const int32 Node = Veka::Editor::Doc::FromPath(LastParsed, Context->GetSelectedPaths().Last());
+	if (!LastParsed.Nodes.IsValidIndex(Node) || LastParsed.Nodes[Node].Source.Line <= 0)
+	{
+		return;
+	}
+	const FVekaSourceRange& Source = LastParsed.Nodes[Node].Source;
+	TGuardValue<bool> Guard(bRevealing, true);
+	const FTextLocation Location(Source.Line - 1, FMath::Max(0, Source.Column - 1));
+	Editor->GoTo(Location);
+	Editor->ScrollTo(Location);
+}
+
+void SVekaCodeEditor::HandleCursorMoved(const FTextLocation& Location)
+{
+	if (!Context.IsValid() || bRevealing || bSettingText || bDirty || bTextHasErrors || !Editor->HasKeyboardFocus())
+	{
+		return;
+	}
+	const int32 Node = Veka::Editor::Doc::NodeAtLine(LastParsed, Location.GetLineIndex() + 1);
+	if (Node != INDEX_NONE)
+	{
+		Context->SelectPaths({ Veka::Editor::Doc::Path(LastParsed, Node) }, EVekaSelectionSource::Code);
+	}
 }
 
 FString SVekaCodeEditor::GetDisplayText(const UVekaView* InView)
@@ -331,7 +399,9 @@ void SVekaCodeEditor::OnDocumentChanged()
 void SVekaCodeEditor::ReloadFromDocument()
 {
 	const FTextLocation Cursor = Editor->GetCursorLocation();
-	SetEditorText(GetDisplayText(View.Get()));
+	const FString Text = GetDisplayText(View.Get());
+	SetEditorText(Text);
+	UpdateLastParsed(Text);
 	bDirty = false;
 	bTextHasErrors = false;
 	bExternalChangePending = false;
@@ -430,6 +500,7 @@ void SVekaCodeEditor::FlushParse()
 	bTextHasErrors = bErrors;
 	if (!bErrors)
 	{
+		LastParsed = Result.Document;
 		if (!Veka::Lang::StructurallyEqual(Result.Document, Asset->Document))
 		{
 			TGuardValue<bool> Guard(bApplying, true);
