@@ -2,6 +2,7 @@
 
 #include "ViewEditor/VekaViewEditorToolkit.h"
 #include "ViewEditor/SVekaViewPreview.h"
+#include "CodeEditor/SVekaCodeEditor.h"
 #include "View/VekaViewAsset.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
@@ -17,10 +18,11 @@
 const FName FVekaViewEditorToolkit::AppIdentifier(TEXT("VekaViewEditorApp"));
 const FName FVekaViewEditorToolkit::ViewportTabId(TEXT("VekaViewEditor_Viewport"));
 const FName FVekaViewEditorToolkit::DetailsTabId(TEXT("VekaViewEditor_Details"));
+const FName FVekaViewEditorToolkit::CodeTabId(TEXT("VekaViewEditor_Code"));
 
 namespace Veka::Editor
 {
-	void ApplyDocument(UVekaView* View, const FVekaDocument& Document, const FText& Description)
+	void ApplyDocument(UVekaView* View, const FVekaDocument& Document, const FText& Description, const FString* SourceText)
 	{
 		if (!View)
 		{
@@ -30,6 +32,9 @@ namespace Veka::Editor
 		View->SetFlags(RF_Transactional);
 		View->Modify();
 		View->Document = Document;
+#if WITH_EDITORONLY_DATA
+		View->SourceText = SourceText ? *SourceText : FString();
+#endif
 		FPropertyChangedEvent Event(FindFProperty<FProperty>(UVekaView::StaticClass(), GET_MEMBER_NAME_CHECKED(UVekaView, Document)), EPropertyChangeType::ValueSet);
 		View->PostEditChangeProperty(Event);
 	}
@@ -54,13 +59,15 @@ void FVekaViewEditorToolkit::InitEditor(EToolkitMode::Type Mode, const TSharedPt
 	Details->SetObject(InView);
 
 	Preview = SNew(SVekaViewPreview).View(InView);
+	CodeEditor = SNew(SVekaCodeEditor).View(InView);
 
-	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout(TEXT("Standalone_VekaViewEditor_Layout_v1"))
+	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout(TEXT("Standalone_VekaViewEditor_Layout_v2"))
 		->AddArea(
 			FTabManager::NewPrimaryArea()
 			->SetOrientation(Orient_Horizontal)
-			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.74f)->AddTab(ViewportTabId, ETabState::OpenedTab)->SetHideTabWell(true))
-			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.26f)->AddTab(DetailsTabId, ETabState::OpenedTab)));
+			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.36f)->AddTab(CodeTabId, ETabState::OpenedTab))
+			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.44f)->AddTab(ViewportTabId, ETabState::OpenedTab))
+			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.20f)->AddTab(DetailsTabId, ETabState::OpenedTab)));
 
 	TSharedPtr<FExtender> ToolbarExtender = MakeShared<FExtender>();
 	ToolbarExtender->AddToolBarExtension(TEXT("Asset"), EExtensionHook::After, GetToolkitCommands(), FToolBarExtensionDelegate::CreateSP(this, &FVekaViewEditorToolkit::FillToolbar));
@@ -104,6 +111,10 @@ void FVekaViewEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& 
 		.SetDisplayName(LOCTEXT("DetailsTab", "Details"))
 		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
+	InTabManager->RegisterTabSpawner(CodeTabId, FOnSpawnTab::CreateSP(this, &FVekaViewEditorToolkit::SpawnCodeTab))
+		.SetDisplayName(LOCTEXT("CodeTab", "Code"))
+		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
+		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Code"));
 }
 
 void FVekaViewEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -111,11 +122,17 @@ void FVekaViewEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>
 	FAssetEditorToolkit::UnregisterTabSpawners(InTabManager);
 	InTabManager->UnregisterTabSpawner(ViewportTabId);
 	InTabManager->UnregisterTabSpawner(DetailsTabId);
+	InTabManager->UnregisterTabSpawner(CodeTabId);
 }
 
 TSharedRef<SDockTab> FVekaViewEditorToolkit::SpawnViewportTab(const FSpawnTabArgs& Args)
 {
 	return SNew(SDockTab).Label(LOCTEXT("ViewportTab", "Viewport"))[Preview.ToSharedRef()];
+}
+
+TSharedRef<SDockTab> FVekaViewEditorToolkit::SpawnCodeTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab).Label(LOCTEXT("CodeTab", "Code"))[CodeEditor.ToSharedRef()];
 }
 
 TSharedRef<SDockTab> FVekaViewEditorToolkit::SpawnDetailsTab(const FSpawnTabArgs& Args)
@@ -141,6 +158,10 @@ void FVekaViewEditorToolkit::FillToolbar(FToolBarBuilder& Builder)
 void FVekaViewEditorToolkit::PostUndo(bool bSuccess)
 {
 	RefreshPreview();
+	if (CodeEditor.IsValid())
+	{
+		CodeEditor->OnDocumentChanged();
+	}
 	if (Details.IsValid())
 	{
 		Details->ForceRefresh();
@@ -158,6 +179,11 @@ void FVekaViewEditorToolkit::HandleObjectPropertyChanged(UObject* Object, FPrope
 	if (Cast<UVekaView>(Object))
 	{
 		RefreshPreview();
+	}
+	// Edits from the Details panel or another tool (the Code tab ignores its own).
+	if (Object == View.Get() && CodeEditor.IsValid())
+	{
+		CodeEditor->OnDocumentChanged();
 	}
 }
 

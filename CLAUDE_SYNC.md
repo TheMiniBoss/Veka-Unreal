@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`) et **3b Asset Editor** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor et **3c onglet Code** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (viewport, undo, vignettes) ; 75 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3c Mode Avancé (onglet Code) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (onglet Code, viewport, undo, vignettes) ; 79 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3d Mode Simple |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,43 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 3c Mode Avancé (onglet Code)
+
+- **Branche** : `cpp/phase-3c-code` (partie de `C++` @ `49ce0be`), fusionnée dans `C++`.
+- **Onglet Code** (`SVekaCodeEditor`, nouvelle disposition Code | Viewport | Details) : la vue en code Veka, police
+  mono, **coloration** (mots-clés, déclarations `@`, composants, modificateurs, valeurs `.enum`, chaînes, nombres,
+  couleurs hex, commentaires — `Veka::Editor::TokenizeLine`).
+- **Parse à la frappe** : 150 ms après la dernière touche (synchrone : un parse de la boutique prend bien moins d'une
+  frame). Code valide → `ApplyDocument` (un pas d'undo par pause, le viewport suit). Code invalide → **le texte reste**,
+  erreurs **soulignées en rouge** (warnings en orange) et listées sous l'éditeur (clic = aller à la ligne), barre
+  d'état « N errors — the view keeps its last valid version » : le document garde sa dernière version valide.
+- **Jamais de texte perdu** : si le document change ailleurs (undo, Details, autre outil) pendant que le code a des
+  modifications non appliquées, le code est gardé et un bouton « Reload from document » apparaît.
+- **Mise en page conservée** : `UVekaView::SourceText` (editor-only) garde le code tel qu'écrit (lignes vides,
+  espacement), dans la même transaction que le document (undo / redo rendent les deux) ; réaffiché tant qu'il se
+  parse vers le document, sinon le document est imprimé. Les autres outils (`ApplyDocument` sans texte) l'effacent.
+- **Complétion** (`Veka::Editor::ComputeCompletion`, popup au curseur, Ctrl+Espace ou automatique après `.`, `@` ou
+  deux lettres ; Haut / Bas, Entrée / Tab, Échap) : composants, vues du projet et mots-clés en début de ligne ;
+  modificateurs après une vue ; noms d'arguments dans un appel (sauf ceux déjà donnés) ; valeurs d'enum et jetons
+  Colora après `.` dans un argument ; déclarations après `@` ; noms de symboles dans une chaîne de `Symbol` ; états,
+  paramètres, propriétés du modèle de prévisualisation après `model.` ; `toggle()` sur un état.
+- **Édition** : Tab = 4 espaces, Entrée garde l'indentation (+1 niveau après `{`), bouton **Format** (forme canonique).
+- **Tests** : 79 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.Editor.Code.{Tokenize,
+  Completion, Apply, Shop}` : couleurs d'une ligne ; 15 cas de complétion ; application après la pause, mise en page
+  gardée, undo / redo du document et du code, erreur qui n'efface rien (texte gardé, document intact, message avec sa
+  ligne), changement extérieur pendant une erreur, Format ; **la boutique écrite entièrement en code** dans une vue
+  vide = le document de la boutique (composant `VV_ShopItem` du projet résolu par nom).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3c-code-error.jpg`, `phase3c-code-completion.jpg`,
+  `phase3c-code-enum.jpg`) : coloration de `VV_Shop` ; `Spacer(min: cnt)` → soulignement, « 1 error — the view keeps
+  its last valid version », liste « 19:25 error: Unknown name 'cnt' », viewport inchangé ; corrigé → « Applied » ;
+  `.fo` → popup des modificateurs au curseur ; `fontWeight(.` → les 12 graisses ; `Bo` + Entrée → appliqué.
+- **Assets d'exemple** : l'éditeur s'est fermé sans sauvegarder des modifications non enregistrées de `VV_Shop` /
+  `WBP_VekaShop` (demande de TheMiniBoss : « Save them ») ; restaurés depuis l'autosave UE de 17:03
+  (`Saved/Autosaves`), anciennes versions gardées dans `Saved/VekaSamplesBackup_20261121`.
+- **Limites** : Ctrl+Z dans la zone de code annule le texte caractère par caractère (l'undo de l'éditeur, menu Edit,
+  annule par pause) ; pas de numéros de ligne ; parse synchrone (assez rapide pour les vues actuelles).
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 3b Asset Editor (coque)
 
