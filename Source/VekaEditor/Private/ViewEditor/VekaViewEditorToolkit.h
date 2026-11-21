@@ -14,6 +14,8 @@ class SVekaPalette;
 class SVekaInspector;
 class SVekaStatePanel;
 class FVekaViewEditorContext;
+class SVekaTestPanel;
+class SVekaTimelinePanel;
 class IDetailsView;
 class FToolBarBuilder;
 struct FVekaDocument;
@@ -44,6 +46,8 @@ public:
 	static const FName PaletteTabId;
 	static const FName InspectorTabId;
 	static const FName StateTabId;
+	static const FName TestTabId;
+	static const FName TimelineTabId;
 
 	virtual ~FVekaViewEditorToolkit() override;
 
@@ -55,6 +59,8 @@ public:
 	TSharedPtr<FVekaViewEditorContext> GetContext() const { return Context; }
 	TSharedPtr<SVekaOutliner> GetOutliner() const { return Outliner; }
 	TSharedPtr<SVekaInspector> GetInspector() const { return Inspector; }
+	TSharedPtr<SVekaTestPanel> GetTestPanel() const { return TestPanel; }
+	TSharedPtr<SVekaTimelinePanel> GetTimelinePanel() const { return TimelinePanel; }
 
 	// FAssetEditorToolkit
 	virtual FName GetToolkitFName() const override;
@@ -87,5 +93,7 @@ private:
 	TSharedPtr<SVekaPalette> Palette;
 	TSharedPtr<SVekaInspector> Inspector;
 	TSharedPtr<SVekaStatePanel> StatePanel;
+	TSharedPtr<SVekaTestPanel> TestPanel;
+	TSharedPtr<SVekaTimelinePanel> TimelinePanel;
 	FDelegateHandle PropertyChangedHandle;
 };

@@ -9,6 +9,7 @@
 #include "Modifiers/VekaLayoutModifiers.h"
 #include "View/VekaViewAsset.h"
 #include "SimpleMode/VekaViewEditorContext.h"
+#include "VekaLanguage.h"
 #include "Engine/UserInterfaceSettings.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "PropertyCustomizationHelpers.h"
@@ -387,6 +388,7 @@ void SVekaViewPreview::Construct(const FArguments& InArgs)
 {
 	View = InArgs._View;
 	bPersistSettings = InArgs._bPersistSettings;
+	StartTime = FPlatformTime::Seconds();
 	if (bPersistSettings)
 	{
 		LoadSettings();
@@ -542,6 +544,7 @@ void SVekaViewPreview::Refresh()
 			}
 		}
 		Store->OnEvent = nullptr;
+		Store->OnValueChanged = nullptr;
 	}
 	NewStore->SetModel(Model.Get());
 	TWeakPtr<SVekaViewPreview> WeakThis = SharedThis(this);
@@ -550,6 +553,14 @@ void SVekaViewPreview::Refresh()
 		if (TSharedPtr<SVekaViewPreview> Preview = WeakThis.Pin())
 		{
 			Preview->LastEvent = Payload.IsNone() ? FText::FromName(Event) : FText::Format(LOCTEXT("EventWithPayload", "{0}({1})"), FText::FromName(Event), FText::FromString(Payload.AsString()));
+			Preview->AddLog(TEXT("emit ") + Event.ToString() + (Payload.IsNone() ? FString() : TEXT("(") + Veka::Lang::PrintValue(Payload) + TEXT(")")), true);
+		}
+	};
+	NewStore->OnValueChanged = [WeakThis](FName Name, const FVekaValue& Value)
+	{
+		if (TSharedPtr<SVekaViewPreview> Preview = WeakThis.Pin())
+		{
+			Preview->AddLog(Name.ToString() + TEXT(" = ") + Veka::Lang::PrintValue(Value), false);
 		}
 	};
 	Store = NewStore;
@@ -560,6 +571,27 @@ void SVekaViewPreview::Refresh()
 	}
 	Host->SetRoot(Asset->BuildRoot(NewStore));
 	++RefreshCount;
+	OnRefreshed.Broadcast();
+}
+
+void SVekaViewPreview::AddLog(const FString& Text, bool bEvent)
+{
+	FVekaPreviewLogEntry& Entry = Log.AddDefaulted_GetRef();
+	Entry.Time = FPlatformTime::Seconds() - StartTime;
+	Entry.Text = Text;
+	Entry.bEvent = bEvent;
+	if (Log.Num() > 500)
+	{
+		Log.RemoveAt(0, Log.Num() - 500);
+	}
+	OnLogChanged.Broadcast();
+}
+
+void SVekaViewPreview::ClearLog()
+{
+	Log.Reset();
+	LastEvent = FText::GetEmpty();
+	OnLogChanged.Broadcast();
 }
 
 void SVekaViewPreview::ResetState()
@@ -567,6 +599,7 @@ void SVekaViewPreview::ResetState()
 	if (Store.IsValid())
 	{
 		Store->OnEvent = nullptr;
+		Store->OnValueChanged = nullptr;
 	}
 	Store.Reset();
 	LastEvent = FText::GetEmpty();

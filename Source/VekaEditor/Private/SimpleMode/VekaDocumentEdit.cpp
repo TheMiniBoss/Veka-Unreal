@@ -627,6 +627,13 @@ namespace Veka::Editor::Doc
 			return Slot;
 		};
 		Out.Root = CopyNodeTree(Document.Root);
+		for (FVekaDocumentTimeline& Timeline : Out.Timelines)
+		{
+			for (FVekaTimelineCue& Cue : Timeline.Cues)
+			{
+				CopyActs(Cue.Actions);
+			}
+		}
 		Document = MoveTemp(Out);
 	}
 
@@ -756,7 +763,8 @@ namespace Veka::Editor::Doc
 			return Document.States.ContainsByPredicate([Name](const FVekaStateDeclaration& Item) { return Item.Name == Name; })
 				|| Document.Params.ContainsByPredicate([Name](const FVekaParamDeclaration& Item) { return Item.Name == Name; })
 				|| Document.EventDeclarations.ContainsByPredicate([Name](const FVekaEventDeclaration& Item) { return Item.Name == Name; })
-				|| Document.Slots.ContainsByPredicate([Name](const FVekaSlotDeclaration& Item) { return Item.Name == Name; });
+				|| Document.Slots.ContainsByPredicate([Name](const FVekaSlotDeclaration& Item) { return Item.Name == Name; })
+				|| Document.Timelines.ContainsByPredicate([Name](const FVekaDocumentTimeline& Item) { return Item.Name == Name; });
 		};
 		FName Name(*Base);
 		for (int32 Suffix = 2; Used(Name); ++Suffix)
@@ -799,6 +807,7 @@ namespace Veka::Editor::Doc
 		Document.Params.RemoveAll([Name](const FVekaParamDeclaration& Item) { return Item.Name == Name; });
 		Document.EventDeclarations.RemoveAll([Name](const FVekaEventDeclaration& Item) { return Item.Name == Name; });
 		Document.Slots.RemoveAll([Name](const FVekaSlotDeclaration& Item) { return Item.Name == Name; });
+		Document.Timelines.RemoveAll([Name](const FVekaDocumentTimeline& Item) { return Item.Name == Name; });
 	}
 
 	bool RenameDeclaration(FVekaDocument& Document, FName Old, FName New)
@@ -815,6 +824,15 @@ namespace Veka::Editor::Doc
 		bool bParam = false;
 		bool bEvent = false;
 		bool bSlot = false;
+		bool bTimeline = false;
+		for (FVekaDocumentTimeline& Item : Document.Timelines)
+		{
+			if (Item.Name == Old)
+			{
+				Item.Name = New;
+				bTimeline = true;
+			}
+		}
 		for (FVekaStateDeclaration& Item : Document.States)
 		{
 			if (Item.Name == Old)
@@ -849,7 +867,8 @@ namespace Veka::Editor::Doc
 		}
 		for (FVekaAstExpr& Expr : Document.Expressions)
 		{
-			if ((bState && Expr.Kind == EVekaExprKind::State && Expr.Name == Old) || (bParam && Expr.Kind == EVekaExprKind::Param && Expr.Name == Old))
+			if ((bState && Expr.Kind == EVekaExprKind::State && Expr.Name == Old) || (bParam && Expr.Kind == EVekaExprKind::Param && Expr.Name == Old)
+				|| (bTimeline && Expr.Kind == EVekaExprKind::Timeline && Expr.Name == Old))
 			{
 				Expr.Name = New;
 			}
@@ -859,12 +878,20 @@ namespace Veka::Editor::Doc
 			for (FVekaAstAction& Action : InActions)
 			{
 				const bool bEmit = Action.Kind == EVekaActionKind::Emit;
-				if (Action.Target == Old && ((bEmit && bEvent) || (!bEmit && bState)))
+				const bool bControl = Action.Kind >= EVekaActionKind::Play;
+				if (Action.Target == Old && ((bEmit && bEvent) || (bControl && bTimeline) || (!bEmit && !bControl && bState)))
 				{
 					Action.Target = New;
 				}
 			}
 		};
+		for (FVekaDocumentTimeline& Timeline : Document.Timelines)
+		{
+			for (FVekaTimelineCue& Cue : Timeline.Cues)
+			{
+				RenameActions(Cue.Actions);
+			}
+		}
 		for (FVekaAstNode& Node : Document.Nodes)
 		{
 			RenameActions(Node.Actions);

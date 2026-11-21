@@ -58,6 +58,25 @@ namespace
 		return Text;
 	}
 
+	/** Shortest decimal that reads back as the same float (timeline keys and settings are floats). */
+	FString FormatFloat32(float Value)
+	{
+		FString Text;
+		for (int32 Precision = 1; Precision <= 9; ++Precision)
+		{
+			Text = FString::Printf(TEXT("%.*g"), Precision, Value);
+			if (static_cast<float>(FCString::Atod(*Text)) == Value)
+			{
+				break;
+			}
+		}
+		if (!Text.Contains(TEXT(".")) && !Text.Contains(TEXT("e")) && !Text.Contains(TEXT("n")) && !Text.Contains(TEXT("i")))
+		{
+			Text += TEXT(".0");
+		}
+		return Text;
+	}
+
 	bool IsIdentifier(const FString& Text)
 	{
 		if (Text.IsEmpty() || !(FChar::IsAlpha(Text[0]) || Text[0] == TEXT('_')))
@@ -175,6 +194,11 @@ namespace
 					: FString::Printf(TEXT("@Event %s(%s)"), *Event.Name.ToString(), *Veka::Lang::TypeName(Event.PayloadType)));
 				bDeclarations = true;
 			}
+			for (const FVekaDocumentTimeline& Timeline : Document.Timelines)
+			{
+				PrintTimeline(Timeline);
+				bDeclarations = true;
+			}
 			if (Document.Nodes.IsValidIndex(Document.Root))
 			{
 				if (bDeclarations)
@@ -203,6 +227,50 @@ namespace
 				Text += TEXT(" = ") + PrintValue(Value);
 			}
 			return Text;
+		}
+
+		void PrintTimeline(const FVekaDocumentTimeline& Timeline)
+		{
+			TArray<FString> Settings;
+			if (Timeline.Data.Length > 0.f)
+			{
+				Settings.Add(TEXT("length: ") + FormatFloat32(Timeline.Data.Length));
+			}
+			if (Timeline.Data.bLoop)
+			{
+				Settings.Add(TEXT("loop: true"));
+			}
+			if (Timeline.Data.Speed != 1.f)
+			{
+				Settings.Add(TEXT("speed: ") + FormatFloat32(Timeline.Data.Speed));
+			}
+			if (Timeline.bAutoPlay)
+			{
+				Settings.Add(TEXT("autoplay: true"));
+			}
+			Line(1, TEXT("@Timeline ") + Timeline.Name.ToString() + (Settings.IsEmpty() ? FString() : TEXT("(") + FString::Join(Settings, TEXT(", ")) + TEXT(")")) + TEXT(" {"));
+			const UEnum* Curves = StaticEnum<EVekaAnimationCurve>();
+			for (const FVekaTimelineTrack& Track : Timeline.Data.Tracks)
+			{
+				TArray<FString> Keys;
+				for (const FVekaTimelineKey& Key : Track.Keys)
+				{
+					FString Text = FormatFloat32(Key.Time) + TEXT(": ") + FormatFloat32(Key.Value);
+					if (Key.Curve != EVekaAnimationCurve::EaseInOut)
+					{
+						Text += TEXT(" .") + Curves->GetNameStringByValue(static_cast<int64>(Key.Curve));
+					}
+					Keys.Add(Text);
+				}
+				Line(2, TEXT("track ") + Track.Name.ToString() + TEXT(" { ") + FString::Join(Keys, TEXT(", ")) + (Keys.IsEmpty() ? TEXT("}") : TEXT(" }")));
+			}
+			for (const FVekaTimelineCue& Cue : Timeline.Cues)
+			{
+				Line(2, TEXT("at ") + FormatFloat32(Cue.Time) + TEXT(" {"));
+				Actions(Cue.Actions, 3);
+				Line(2, TEXT("}"));
+			}
+			Line(1, TEXT("}"));
 		}
 
 		void Line(int32 Indent, const FString& Text)
@@ -276,6 +344,11 @@ namespace
 				}
 				return Target + TEXT(" += ") + (InAction.Expr == INDEX_NONE ? FString(TEXT("1")) : Expression(InAction.Expr));
 			case EVekaActionKind::Emit: return TEXT("emit ") + Target + (InAction.Expr == INDEX_NONE ? FString() : TEXT("(") + Expression(InAction.Expr) + TEXT(")"));
+			case EVekaActionKind::Play: return Target + TEXT(".play()");
+			case EVekaActionKind::Pause: return Target + TEXT(".pause()");
+			case EVekaActionKind::Stop: return Target + TEXT(".stop()");
+			case EVekaActionKind::Reverse: return Target + TEXT(".reverse()");
+			case EVekaActionKind::Seek: return Target + TEXT(".seek(") + Expression(InAction.Expr) + TEXT(")");
 			}
 			return FString();
 		}
@@ -526,6 +599,7 @@ namespace
 			case EVekaExprKind::Param:
 			case EVekaExprKind::Local: return E.Name.ToString();
 			case EVekaExprKind::Model: return TEXT("model.") + E.Name.ToString();
+			case EVekaExprKind::Timeline: return E.Name.ToString();
 			case EVekaExprKind::Member: return Wrapped(Operand(0), 10) + TEXT(".") + E.Name.ToString();
 			case EVekaExprKind::Unary:
 			{
@@ -635,6 +709,44 @@ namespace
 			if (A.Comments != B.Comments)
 			{
 				return Fail(TEXT("document comments"));
+			}
+			if (A.Timelines.Num() != B.Timelines.Num())
+			{
+				return Fail(TEXT("timeline count"));
+			}
+			for (int32 Index = 0; Index < A.Timelines.Num(); ++Index)
+			{
+				const FVekaDocumentTimeline& TA = A.Timelines[Index];
+				const FVekaDocumentTimeline& TB = B.Timelines[Index];
+				const FString Where = TEXT("timeline ") + TA.Name.ToString();
+				if (TA.Name != TB.Name || TA.bAutoPlay != TB.bAutoPlay || TA.Data.Length != TB.Data.Length || TA.Data.bLoop != TB.Data.bLoop || TA.Data.Speed != TB.Data.Speed
+					|| TA.Data.Tracks.Num() != TB.Data.Tracks.Num() || TA.Cues.Num() != TB.Cues.Num())
+				{
+					return Fail(Where);
+				}
+				for (int32 Track = 0; Track < TA.Data.Tracks.Num(); ++Track)
+				{
+					const FVekaTimelineTrack& KA = TA.Data.Tracks[Track];
+					const FVekaTimelineTrack& KB = TB.Data.Tracks[Track];
+					if (KA.Name != KB.Name || KA.Keys.Num() != KB.Keys.Num())
+					{
+						return Fail(Where + TEXT(" track ") + KA.Name.ToString());
+					}
+					for (int32 Key = 0; Key < KA.Keys.Num(); ++Key)
+					{
+						if (KA.Keys[Key].Time != KB.Keys[Key].Time || KA.Keys[Key].Value != KB.Keys[Key].Value || KA.Keys[Key].Curve != KB.Keys[Key].Curve)
+						{
+							return Fail(Where + TEXT(" track ") + KA.Name.ToString() + TEXT(" key"));
+						}
+					}
+				}
+				for (int32 Cue = 0; Cue < TA.Cues.Num(); ++Cue)
+				{
+					if (TA.Cues[Cue].Time != TB.Cues[Cue].Time || !SameActions(TA.Cues[Cue].Actions, TB.Cues[Cue].Actions, Where + TEXT(" cue")))
+					{
+						return Fail(Where + TEXT(" cue"));
+					}
+				}
 			}
 			return SameNode(A.Root, B.Root, TEXT("root"));
 		}
@@ -858,6 +970,20 @@ namespace
 			for (const FString& Problem : Document.Validate())
 			{
 				Add(EVekaDiagnosticSeverity::Error, FText::FromString(Problem), FVekaSourceRange());
+			}
+			for (const FVekaAstExpr& Expr : Document.Expressions)
+			{
+				if (Expr.Kind != EVekaExprKind::Member || !Document.Expressions.IsValidIndex(Expr.Operands.IsEmpty() ? INDEX_NONE : Expr.Operands[0]))
+				{
+					continue;
+				}
+				const FVekaAstExpr& Owner = Document.Expressions[Expr.Operands[0]];
+				const FVekaDocumentTimeline* Timeline = Owner.Kind == EVekaExprKind::Timeline ? Document.FindTimeline(Owner.Name) : nullptr;
+				if (Timeline && !Timeline->Data.Tracks.ContainsByPredicate([&Expr](const FVekaTimelineTrack& Track) { return Track.Name == Expr.Name; }))
+				{
+					Add(EVekaDiagnosticSeverity::Warning, FText::Format(LOCTEXT("UnknownTrack", "Timeline {0} has no track '{1}' (reads 0)"), FText::FromName(Owner.Name),
+						FText::FromName(Expr.Name)), Expr.Source);
+				}
 			}
 			for (const FVekaParamDeclaration& Param : Document.Params)
 			{

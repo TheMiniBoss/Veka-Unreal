@@ -25,6 +25,15 @@ struct FVekaDevicePreset
 	FIntPoint Size;
 };
 
+/** A line of the Test mode log: an emitted event or a state change. */
+struct FVekaPreviewLogEntry
+{
+	/** Seconds since the viewport opened. */
+	double Time = 0.0;
+	FString Text;
+	bool bEvent = false;
+};
+
 /** What the viewport shows (kept between sessions in EditorPerProjectUserSettings). */
 struct FVekaPreviewSettings
 {
@@ -95,6 +104,13 @@ public:
 	/** Overlay rectangles drawn in the last paint (bounds + padding strips). */
 	int32 GetOverlayRectCount() const;
 
+	/** Events emitted and states changed while using the view (Test mode). */
+	const TArray<FVekaPreviewLogEntry>& GetLog() const { return Log; }
+	void ClearLog();
+	FSimpleMulticastDelegate OnLogChanged;
+	/** The view was rebuilt (new store: states, timelines). */
+	FSimpleMulticastDelegate OnRefreshed;
+
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
@@ -123,6 +139,9 @@ private:
 	bool bPersistSettings = true;
 	int32 RefreshCount = 0;
 	FText LastEvent;
+	TArray<FVekaPreviewLogEntry> Log;
+	double StartTime = 0.0;
+	void AddLog(const FString& Text, bool bEvent);
 	/** Declared initial values at the last refresh (a state still equal to it follows edits of the declaration). */
 	TMap<FName, FVekaValue> DeclaredInitials;
 };

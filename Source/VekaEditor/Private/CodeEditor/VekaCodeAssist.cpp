@@ -17,7 +17,7 @@ namespace
 	{
 		static const TSet<FString> Set = { TEXT("view"), TEXT("var"), TEXT("if"), TEXT("else"), TEXT("in"), TEXT("true"), TEXT("false"), TEXT("nil"), TEXT("emit"),
 			TEXT("withAnimation"), TEXT("action"), TEXT("model"), TEXT("ForEach"), TEXT("Slot"), TEXT("default"), TEXT("format"), TEXT("rgba"), TEXT("vec2"), TEXT("min"),
-			TEXT("max"), TEXT("toggle") };
+			TEXT("max"), TEXT("toggle"), TEXT("track") };
 		return Set;
 	}
 
@@ -206,6 +206,10 @@ namespace
 		for (const FVekaParamDeclaration& Param : Sources.Document->Params)
 		{
 			AddItem(Items, Param.Name.ToString(), Param.Name.ToString(), TEXT("param"), EVekaCompletionKind::Variable);
+		}
+		for (const FVekaDocumentTimeline& Timeline : Sources.Document->Timelines)
+		{
+			AddItem(Items, Timeline.Name.ToString(), Timeline.Name.ToString() + TEXT("."), TEXT("timeline"), EVekaCompletionKind::Variable);
 		}
 	}
 
@@ -411,6 +415,7 @@ namespace Veka::Editor
 			AddItem(Out.Items, TEXT("Param"), TEXT("Param var "), TEXT("given by the caller"), EVekaCompletionKind::Keyword);
 			AddItem(Out.Items, TEXT("Slot"), TEXT("Slot "), TEXT("content given by the caller"), EVekaCompletionKind::Keyword);
 			AddItem(Out.Items, TEXT("Event"), TEXT("Event "), TEXT("sent to the caller"), EVekaCompletionKind::Keyword);
+			AddItem(Out.Items, TEXT("Timeline"), TEXT("Timeline "), TEXT("keyframe animation"), EVekaCompletionKind::Keyword);
 			Filter(Out.Items, Out.Prefix);
 			return Out;
 		}
@@ -434,6 +439,17 @@ namespace Veka::Editor
 						{
 							AddItem(Out.Items, It->GetName(), It->GetName(), It->GetCPPType(), EVekaCompletionKind::Variable);
 						}
+					}
+				}
+				else if (const FVekaDocumentTimeline* Timeline = Sources.Document ? Sources.Document->FindTimeline(FName(*Owner)) : nullptr)
+				{
+					for (const FVekaTimelineTrack& Track : Timeline->Data.Tracks)
+					{
+						AddItem(Out.Items, Track.Name.ToString(), Track.Name.ToString(), TEXT("track"), EVekaCompletionKind::Variable);
+					}
+					for (const TCHAR* Control : { TEXT("play()"), TEXT("pause()"), TEXT("stop()"), TEXT("reverse()"), TEXT("seek(") })
+					{
+						AddItem(Out.Items, Control, Control, TEXT("timeline control"), EVekaCompletionKind::Keyword);
 					}
 				}
 				else if (Sources.Document && Sources.Document->States.ContainsByPredicate([&Owner](const FVekaStateDeclaration& State) { return State.Name.ToString() == Owner; }))
