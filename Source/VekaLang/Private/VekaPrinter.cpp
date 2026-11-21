@@ -6,6 +6,7 @@
 #include "Core/VekaSchema.h"
 #include "Core/VekaPaint.h"
 #include "Colora/VekaTheme.h"
+#include "Colora/VekaPaintAsset.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "UObject/UnrealType.h"
@@ -1104,9 +1105,9 @@ namespace
 					if (bLiteral && Value->Value.Type == EVekaValueType::String && !Value->Value.StringValue.StartsWith(TEXT("#")))
 					{
 						FLinearColor Ignored;
-						if (!Veka::Colora::GetDefaultColor(FName(*Value->Value.StringValue), EVekaColorScheme::Dark, Ignored))
+						if (!Veka::Colora::GetDefaultColor(FName(*Value->Value.StringValue), EVekaColorScheme::Dark, Ignored) && !Veka::Paints::Find(FName(*Value->Value.StringValue)))
 						{
-							Add(EVekaDiagnosticSeverity::Error, FText::Format(LOCTEXT("BadToken", "'.{0}' is not a Colora token"), FText::FromString(Value->Value.StringValue)), At);
+							Add(EVekaDiagnosticSeverity::Error, FText::Format(LOCTEXT("BadToken", "'.{0}' is not a Colora token nor a paint asset"), FText::FromString(Value->Value.StringValue)), At);
 						}
 					}
 					break;

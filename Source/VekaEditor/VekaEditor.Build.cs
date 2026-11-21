@@ -35,6 +35,9 @@ public class VekaEditor : ModuleRules
 			"RenderCore",
 			// 3d: color picker in the inspector.
 			"AppFramework",
+			// 3f: SVG import, clipboard.
+			"XmlParser",
+			"ApplicationCore",
 		});
 	}
 }

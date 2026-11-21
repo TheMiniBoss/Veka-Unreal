@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A small rocket for the Veka Symbol import check -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path d="M32 6 C44 16 46 30 42 44 L22 44 C18 30 20 16 32 6 Z" fill="none" stroke="black" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="32" cy="24" r="5" fill="none" stroke="black" stroke-width="4" data-role="secondary"/>
+  <path d="M22 36 L14 48 L22 46" fill="none" stroke="black" stroke-width="4" data-role="secondary"/>
+  <path d="M42 36 L50 48 L42 46" fill="none" stroke="black" stroke-width="4" data-role="secondary"/>
+  <path d="M28 50 L32 58 L36 50" fill="#ff7a1a" data-variable="0"/>
+</svg>

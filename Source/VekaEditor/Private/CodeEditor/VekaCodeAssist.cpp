@@ -5,6 +5,7 @@
 #include "View/VekaDocument.h"
 #include "Colora/VekaTheme.h"
 #include "Symbols/VekaSymbol.h"
+#include "Colora/VekaPaintAsset.h"
 #include "UObject/Class.h"
 #include "UObject/UnrealType.h"
 
@@ -390,7 +391,7 @@ namespace Veka::Editor
 			Out.ReplaceStart = StringStart + 1;
 			Out.ReplaceEnd = Column;
 			Out.Prefix = Line.Mid(Out.ReplaceStart, Column - Out.ReplaceStart);
-			for (const FName Name : Veka::Symbols::GetBuiltInNames())
+			for (const FName Name : Veka::Symbols::GetAllNames())
 			{
 				AddItem(Out.Items, Name.ToString(), Name.ToString(), TEXT("symbol"), EVekaCompletionKind::Symbol);
 			}
@@ -482,6 +483,10 @@ namespace Veka::Editor
 						for (const FName Token : Veka::Colora::DefaultTokenNames())
 						{
 							AddItem(Out.Items, Token.ToString(), Token.ToString(), TEXT("Colora token"), EVekaCompletionKind::Value);
+						}
+						for (const FName Paint : Veka::Paints::GetAllNames())
+						{
+							AddItem(Out.Items, Paint.ToString(), Paint.ToString(), TEXT("paint asset"), EVekaCompletionKind::Value);
 						}
 					}
 				}

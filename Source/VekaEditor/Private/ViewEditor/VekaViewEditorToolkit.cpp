@@ -7,6 +7,9 @@
 #include "SimpleMode/SVekaOutliner.h"
 #include "SimpleMode/SVekaInspector.h"
 #include "TestMode/SVekaTestPanels.h"
+#include "Symbols/SVekaSymbolLibrary.h"
+#include "Symbols/VekaSymbol.h"
+#include "Colora/VekaPaintAsset.h"
 #include "View/VekaViewAsset.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
@@ -227,6 +230,9 @@ void FVekaViewEditorToolkit::FillToolbar(FToolBarBuilder& Builder)
 	Builder.AddToolBarButton(
 		FUIAction(FExecuteAction::CreateLambda([this]() { Preview->ZoomToFit(); })), NAME_None, LOCTEXT("Fit", "Fit"),
 		LOCTEXT("FitTooltip", "Zoom to fit the screen (F)"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Fullscreen"));
+	Builder.AddToolBarButton(
+		FUIAction(FExecuteAction::CreateLambda([]() { FGlobalTabmanager::Get()->TryInvokeTab(Veka::Editor::SymbolLibrary::TabId); })), NAME_None, LOCTEXT("Symbols", "Symbols"),
+		LOCTEXT("SymbolsTooltip", "Open the Veka Symbol Library"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"));
 	Builder.EndSection();
 }
 
@@ -251,8 +257,8 @@ void FVekaViewEditorToolkit::PostRedo(bool bSuccess)
 
 void FVekaViewEditorToolkit::HandleObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& Event)
 {
-	// This view, or a view it uses as a component.
-	if (Cast<UVekaView>(Object))
+	// This view, a view it uses as a component, a symbol or a paint it may draw.
+	if (Cast<UVekaView>(Object) || Cast<UVekaSymbol>(Object) || Cast<UVekaPaintAsset>(Object))
 	{
 		RefreshPreview();
 	}
