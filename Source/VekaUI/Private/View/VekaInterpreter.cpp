@@ -96,6 +96,12 @@ void FVekaViewStore::Declare(FName Name, const FVekaValue& Initial)
 
 void FVekaViewStore::SetModel(UVekaViewModel* InModel)
 {
+	SetModelSilently(InModel);
+	Invalidate();
+}
+
+void FVekaViewStore::SetModelSilently(UVekaViewModel* InModel)
+{
 	if (UVekaViewModel* Old = Model.Get())
 	{
 		Old->OnChanged.Remove(ModelChangedHandle);
@@ -125,7 +131,6 @@ void FVekaViewStore::SetModel(UVekaViewModel* InModel)
 			return Pinned.IsValid() && Pinned->PollModel(DeltaTime);
 		}), 0.1f);
 	}
-	Invalidate();
 }
 
 bool FVekaViewStore::PollModel(float DeltaTime)
@@ -260,6 +265,11 @@ namespace
 		}
 
 		TMap<FName, FVekaValue> Locals;
+		/** Parameters of the view (component call arguments; for a root view, store values or defaults). */
+		TMap<FName, FVekaValue> Params;
+		/** Content the caller gave for each slot (built in the caller's scope). */
+		TMap<FName, TArray<FVekaElement>> SlotContents;
+		int32 ComponentDepth = 0;
 
 		FVekaValue Eval(int32 Index) const
 		{
@@ -279,6 +289,20 @@ namespace
 				const FVekaValue* Found = Locals.Find(Expr.Name);
 				return Found ? *Found : FVekaValue();
 			}
+			case EVekaExprKind::Param:
+			{
+				if (const FVekaValue* Found = Params.Find(Expr.Name))
+				{
+					return *Found;
+				}
+				if (Store->Contains(Expr.Name))
+				{
+					return Store->Get(Expr.Name);
+				}
+				const FVekaParamDeclaration* Declaration = Document.FindParam(Expr.Name);
+				return Declaration ? Declaration->Default : FVekaValue();
+			}
+			case EVekaExprKind::Member: return Operand(0).GetField(Expr.Name);
 			case EVekaExprKind::Unary:
 			{
 				const FVekaValue A = Operand(0);
@@ -290,6 +314,28 @@ namespace
 			case EVekaExprKind::Ternary: return Operand(0).AsBool() ? Operand(1) : Operand(2);
 			case EVekaExprKind::Format:
 			{
+				if (Expr.Value.Type == EVekaValueType::Text)
+				{
+					// Localizable pattern: translated with its {0} placeholders, then formatted for the culture.
+					FFormatOrderedArguments Arguments;
+					for (int32 Position = 0; Position < Expr.Operands.Num(); ++Position)
+					{
+						const FVekaValue Argument = Operand(Position);
+						if (Argument.Type == EVekaValueType::Int)
+						{
+							Arguments.Add(FFormatArgumentValue(Argument.IntValue));
+						}
+						else if (Argument.Type == EVekaValueType::Float)
+						{
+							Arguments.Add(FFormatArgumentValue(Argument.FloatValue));
+						}
+						else
+						{
+							Arguments.Add(FFormatArgumentValue(Argument.AsText()));
+						}
+					}
+					return FVekaValue::Text(FText::Format(Expr.Value.TextValue, Arguments));
+				}
 				FString Out = Expr.Value.StringValue;
 				for (int32 Position = 0; Position < Expr.Operands.Num(); ++Position)
 				{
@@ -308,7 +354,7 @@ namespace
 			switch (Op)
 			{
 			case EVekaExprOp::Add:
-				if (A.Type == EVekaValueType::String || B.Type == EVekaValueType::String)
+				if (A.Type == EVekaValueType::String || B.Type == EVekaValueType::String || A.Type == EVekaValueType::Text || B.Type == EVekaValueType::Text)
 				{
 					return FVekaValue::String(A.AsString() + B.AsString());
 				}
@@ -337,6 +383,7 @@ namespace
 			case EVekaExprOp::Or: return FVekaValue::Bool(A.AsBool() || B.AsBool());
 			case EVekaExprOp::Min: return Number(FMath::Min(A.AsFloat(), B.AsFloat()));
 			case EVekaExprOp::Max: return Number(FMath::Max(A.AsFloat(), B.AsFloat()));
+			case EVekaExprOp::Index: return A.Type == EVekaValueType::Struct ? A.GetField(FName(*B.AsString())) : A.GetItem(B.AsInt());
 			default: return FVekaValue();
 			}
 		}
@@ -365,11 +412,17 @@ namespace
 			case EVekaAstNodeKind::ForEach:
 			{
 				TArray<FVekaElement> Elements;
-				const int64 Count = FMath::Clamp<int64>(Eval(Node.Expr).AsInt(), 0, 1000);
-				const TOptional<FVekaValue> Saved = Locals.Contains(Node.LoopVariable) ? TOptional<FVekaValue>(Locals[Node.LoopVariable]) : TOptional<FVekaValue>();
+				const FVekaValue Source = Eval(Node.Expr);
+				const bool bArray = Source.Type == EVekaValueType::Array;
+				const int64 Count = FMath::Clamp<int64>(bArray ? Source.Num() : Source.AsInt(), 0, 1000);
+				const TMap<FName, FVekaValue> SavedLocals = Locals;
 				for (int64 Item = 0; Item < Count; ++Item)
 				{
-					Locals.Add(Node.LoopVariable, FVekaValue::Int(Item));
+					Locals.Add(Node.LoopVariable, bArray ? Source.GetItem(Item) : FVekaValue::Int(Item));
+					if (!Node.IndexVariable.IsNone())
+					{
+						Locals.Add(Node.IndexVariable, FVekaValue::Int(Item));
+					}
 					TArray<FVekaElement> Body;
 					for (const int32 Child : Node.Children)
 					{
@@ -377,27 +430,32 @@ namespace
 					}
 					Elements.Add(FVekaElement::MakeFragment(MoveTemp(Body)).Id(FName(*FString::Printf(TEXT("item%lld"), Item))));
 				}
-				if (Saved.IsSet())
-				{
-					Locals.Add(Node.LoopVariable, Saved.GetValue());
-				}
-				else
-				{
-					Locals.Remove(Node.LoopVariable);
-				}
+				Locals = SavedLocals;
 				return FVekaElement::MakeFragment(MoveTemp(Elements));
+			}
+			case EVekaAstNodeKind::Slot:
+			{
+				const TArray<FVekaElement>* Content = SlotContents.Find(Node.Type);
+				return FVekaElement::MakeFragment(Content ? TArray<FVekaElement>(*Content) : TArray<FVekaElement>());
 			}
 			default:
 				break;
 			}
 
-			FVekaElement Element = MakeElement(Node, Depth);
+			FVekaElement Element = Node.Component ? MakeComponent(Node, Depth) : MakeElement(Node, Depth);
 			for (const FVekaAstModifier& Modifier : Node.Modifiers)
 			{
-				Element = ApplyModifier(MoveTemp(Element), Modifier);
+				if (Modifier.Name != TEXT("on"))
+				{
+					Element = ApplyModifier(MoveTemp(Element), Modifier);
+				}
 			}
 			return Element;
 		}
+
+		/** Runs Actions with the interpreter's scope plus `payload` (component event handlers). */
+		TFunction<void(const FVekaValue&)> MakeHandler(const TArray<FVekaAstAction>& Actions) const;
+		FVekaElement MakeComponent(const FVekaAstNode& Node, int32 Depth);
 
 	private:
 		FVekaValue Arg(const TArray<FVekaAstArgument>& Arguments, FName Name) const
@@ -450,10 +508,12 @@ namespace
 			const TSharedRef<const FVekaDocument> Doc = DocumentRef;
 			const TSharedRef<FVekaViewStore> InStore = Store;
 			const TMap<FName, FVekaValue> CapturedLocals = Locals;
-			return [Doc, InStore, CapturedLocals, Actions]()
+			const TMap<FName, FVekaValue> CapturedParams = Params;
+			return [Doc, InStore, CapturedLocals, CapturedParams, Actions]()
 			{
 				FInterpreter Runner(Doc, InStore);
 				Runner.Locals = CapturedLocals;
+				Runner.Params = CapturedParams;
 				for (const FVekaAstAction& Action : Actions)
 				{
 					auto Run = [&]()
@@ -743,6 +803,141 @@ namespace
 		TSharedRef<FVekaViewStore> Store;
 	};
 
+	/** Handlers of a component's events, refreshed at every evaluation of the caller. */
+	struct FComponentHandlers
+	{
+		TMap<FName, TFunction<void(const FVekaValue&)>> ByEvent;
+		TWeakPtr<FVekaViewStore> Parent;
+	};
+
+	/**
+	 * A view used as a component: its own store (its states), the caller's parameters, slots and handlers. Events
+	 * without a handler go up to the caller's store (so to the host).
+	 */
+	class FVekaComponentView : public FVekaView
+	{
+		VEKA_VIEW(FVekaComponentView)
+
+	public:
+		TObjectPtr<UVekaView> Asset;
+		TSharedPtr<const FVekaDocument> Document;
+		TMap<FName, FVekaValue> Params;
+		TMap<FName, TArray<FVekaElement>> SlotContents;
+		TMap<FName, TFunction<void(const FVekaValue&)>> Handlers;
+		TSharedPtr<FVekaViewStore> ParentStore;
+		int32 Depth = 0;
+
+		virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+		{
+			Collector.AddReferencedObject(Asset);
+		}
+
+		virtual FVekaElement Body(FVekaContext& Ctx) const override
+		{
+			// Kept in the node across evaluations (the initial value is used the first time only).
+			const TSharedPtr<FComponentHandlers> Shared = Ctx.State<TSharedPtr<FComponentHandlers>>(TEXT("Handlers"), MakeShared<FComponentHandlers>()).Get();
+			Shared->ByEvent = Handlers;
+			Shared->Parent = ParentStore;
+
+			const TSharedPtr<FVekaViewStore> Store = Ctx.State<TSharedPtr<FVekaViewStore>>(TEXT("Store"), MakeShared<FVekaViewStore>()).Get();
+			if (!Store->OnEvent)
+			{
+				for (const FVekaStateDeclaration& State : Document->States)
+				{
+					Store->Declare(State.Name, State.Initial);
+				}
+				const TWeakPtr<FComponentHandlers> WeakHandlers = Shared;
+				Store->OnEvent = [WeakHandlers](FName Event, const FVekaValue& Payload)
+				{
+					const TSharedPtr<FComponentHandlers> Pinned = WeakHandlers.Pin();
+					if (!Pinned.IsValid())
+					{
+						return;
+					}
+					if (const TFunction<void(const FVekaValue&)>* Handler = Pinned->ByEvent.Find(Event))
+					{
+						(*Handler)(Payload);
+					}
+					else if (const TSharedPtr<FVekaViewStore> Parent = Pinned->Parent.Pin())
+					{
+						Parent->Emit(Event, Payload);
+					}
+				};
+			}
+			UVekaViewModel* Model = ParentStore.IsValid() ? ParentStore->GetModel() : nullptr;
+			if (Store->GetModel() != Model)
+			{
+				Store->SetModelSilently(Model);
+			}
+			Store->Attach(Ctx.GetNode());
+
+			FInterpreter Interpreter(Document.ToSharedRef(), Store.ToSharedRef());
+			Interpreter.Params = Params;
+			Interpreter.SlotContents = SlotContents;
+			Interpreter.ComponentDepth = Depth;
+			return Interpreter.Build(Document->Root);
+		}
+	};
+
+	TFunction<void(const FVekaValue&)> FInterpreter::MakeHandler(const TArray<FVekaAstAction>& Actions) const
+	{
+		const TSharedRef<const FVekaDocument> Doc = DocumentRef;
+		const TSharedRef<FVekaViewStore> InStore = Store;
+		const TMap<FName, FVekaValue> CapturedLocals = Locals;
+		const TMap<FName, FVekaValue> CapturedParams = Params;
+		return [Doc, InStore, CapturedLocals, CapturedParams, Actions](const FVekaValue& Payload)
+		{
+			FInterpreter Runner(Doc, InStore);
+			Runner.Locals = CapturedLocals;
+			Runner.Locals.Add(TEXT("payload"), Payload);
+			Runner.Params = CapturedParams;
+			if (TFunction<void()> Run = Runner.MakeActions(Actions))
+			{
+				Run();
+			}
+		};
+	}
+
+	FVekaElement FInterpreter::MakeComponent(const FVekaAstNode& Node, int32 Depth)
+	{
+		UVekaView* Asset = Node.Component.Get();
+		if (ComponentDepth >= 16)
+		{
+			UE_LOG(LogVekaUI, Warning, TEXT("VekaUI view: components nested more than 16 deep (%s uses itself?)"), *Asset->GetName());
+			return Text(FText::FromString(FString::Printf(TEXT("Recursive '%s'"), *Asset->GetName()))).Foreground(FLinearColor(1.f, 0.25f, 0.25f));
+		}
+		TSharedRef<FVekaComponentView> View = MakeShared<FVekaComponentView>();
+		View->Asset = Asset;
+		FVekaDocument Copy = Asset->Document;
+		Copy.Upgrade();
+		View->Document = MakeShared<const FVekaDocument>(MoveTemp(Copy));
+		for (const FVekaParamDeclaration& Param : View->Document->Params)
+		{
+			View->Params.Add(Param.Name, Param.Default);
+		}
+		for (const FVekaAstArgument& Argument : Node.Arguments)
+		{
+			View->Params.Add(Argument.Name, Eval(Argument.Expr));
+		}
+		for (const int32 Child : Node.Children)
+		{
+			if (Document.Nodes.IsValidIndex(Child))
+			{
+				View->SlotContents.FindOrAdd(Document.Nodes[Child].SlotName).Add(Build(Child, Depth + 1));
+			}
+		}
+		for (const FVekaAstModifier& Modifier : Node.Modifiers)
+		{
+			if (Modifier.Name == TEXT("on"))
+			{
+				View->Handlers.Add(FName(*Arg(Modifier.Arguments, TEXT("event")).AsString()), MakeHandler(Modifier.Actions));
+			}
+		}
+		View->ParentStore = Store;
+		View->Depth = ComponentDepth + 1;
+		return FVekaElement::MakeView(View);
+	}
+
 	/** The interpreted view: evaluated like a C++ view, its state lives in the store. */
 	class FVekaInterpretedView : public FVekaView
 	{
@@ -768,17 +963,25 @@ namespace Veka::Interpreter
 {
 	FVekaElement MakeView(const FVekaDocument& Document, const TSharedRef<FVekaViewStore>& Store)
 	{
-		for (const FVekaStateDeclaration& State : Document.States)
+		FVekaDocument Copy = Document;
+		Copy.Upgrade();
+		for (const FVekaStateDeclaration& State : Copy.States)
 		{
 			Store->Declare(State.Name, State.Initial);
 		}
-		return FVekaElement::MakeView(MakeShared<FVekaInterpretedView>(MakeShared<const FVekaDocument>(Document), Store));
+		return FVekaElement::MakeView(MakeShared<FVekaInterpretedView>(MakeShared<const FVekaDocument>(MoveTemp(Copy)), Store));
 	}
 }
 
 FVekaElement UVekaView::BuildRoot(const TSharedRef<FVekaViewStore>& Store) const
 {
 	return Veka::Interpreter::MakeView(Document, Store);
+}
+
+void UVekaView::PostLoad()
+{
+	Super::PostLoad();
+	Document.Upgrade();
 }
 
 FVekaElement UVekaView::BuildRoot() const

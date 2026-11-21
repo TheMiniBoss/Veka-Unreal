@@ -60,6 +60,8 @@ public:
 	void Declare(FName Name, const FVekaValue& Initial);
 
 	void SetModel(UVekaViewModel* InModel);
+	/** SetModel without re-evaluating (used during an evaluation). */
+	void SetModelSilently(UVekaViewModel* InModel);
 	UVekaViewModel* GetModel() const { return Model.Get(); }
 	FVekaValue GetModelValue(FName Property) const;
 
@@ -98,6 +100,9 @@ public:
 
 	/** Store with the declared initial values. */
 	virtual FVekaElement BuildRoot() const override;
+
+	/** Older documents are converted to the current format. */
+	virtual void PostLoad() override;
 };
 
 namespace Veka::Interpreter

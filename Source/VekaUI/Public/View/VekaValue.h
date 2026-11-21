@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "StructUtils/InstancedStruct.h"
 #include "VekaValue.generated.h"
 
 class FProperty;
@@ -15,10 +16,16 @@ enum class EVekaValueType : uint8
 	Bool,
 	Int,
 	Float,
-	/** Text, names and enum values (by name). */
+	/** Names, enum values (by name) and text that is not translated. */
 	String,
 	Color,
-	Vector2
+	Vector2,
+	/** Localizable text (literals of the Veka language): gathered and translated by the Localization Dashboard. */
+	Text,
+	/** List of values (`ForEach(items)`). */
+	Array,
+	/** Named fields (`item.name`). */
+	Struct
 };
 
 /**
@@ -51,12 +58,33 @@ struct VEKAUI_API FVekaValue
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Value", meta = (EditCondition = "Type == EVekaValueType::Vector2", EditConditionHides))
 	FVector2D VectorValue = FVector2D::ZeroVector;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Value", meta = (EditCondition = "Type == EVekaValueType::Text", EditConditionHides))
+	FText TextValue;
+
+	/** Items, each an FVekaValue (UHT does not allow a struct to contain an array of itself). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Value", meta = (EditCondition = "Type == EVekaValueType::Array", EditConditionHides, BaseStruct = "/Script/VekaUI.VekaValue"))
+	TArray<FInstancedStruct> ArrayValue;
+
+	/** Fields, each an FVekaValue. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Value", meta = (EditCondition = "Type == EVekaValueType::Struct", EditConditionHides, BaseStruct = "/Script/VekaUI.VekaValue"))
+	TMap<FName, FInstancedStruct> StructValue;
+
 	static FVekaValue Bool(bool Value);
 	static FVekaValue Int(int64 Value);
 	static FVekaValue Float(double Value);
 	static FVekaValue String(const FString& Value);
 	static FVekaValue Color(const FLinearColor& Value);
 	static FVekaValue Vector2(const FVector2D& Value);
+	static FVekaValue Text(const FText& Value);
+	static FVekaValue Array(TArray<FVekaValue> Items);
+	static FVekaValue Struct(TMap<FName, FVekaValue> Fields);
+
+	/** Field of a struct (None if missing or not a struct). */
+	FVekaValue GetField(FName Field) const;
+	/** Item of an array (None if out of range). */
+	FVekaValue GetItem(int64 Index) const;
+	/** Number of items of an array (0 for other types). */
+	int32 Num() const { return Type == EVekaValueType::Array ? ArrayValue.Num() : 0; }
 
 	bool IsNone() const { return Type == EVekaValueType::None; }
 	bool IsNumber() const { return Type == EVekaValueType::Int || Type == EVekaValueType::Float || Type == EVekaValueType::Bool; }
@@ -65,7 +93,8 @@ struct VEKAUI_API FVekaValue
 	int64 AsInt() const;
 	double AsFloat() const;
 	FString AsString() const;
-	FText AsText() const { return FText::FromString(AsString()); }
+	/** The localized text itself for Text values (culture-aware), else the string form. */
+	FText AsText() const;
 	FLinearColor AsColor() const;
 	FVector2D AsVector2() const;
 

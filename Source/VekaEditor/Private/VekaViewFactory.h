@@ -6,7 +6,7 @@
 #include "Factories/Factory.h"
 #include "VekaViewFactory.generated.h"
 
-/** Content Browser > Add > VekaUI > Veka View. Starts from the sample shop document (Phase 3: the Veka Editor). */
+/** Content Browser > Add > User Interface > Veka View. Starts from a small starter document. */
 UCLASS()
 class UVekaViewFactory : public UFactory
 {

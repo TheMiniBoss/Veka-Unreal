@@ -6,10 +6,30 @@
 #include "View/VekaValue.h"
 #include "VekaDocument.generated.h"
 
+class UVekaView;
+
 /**
  * Asset views are stored as an AST (flat arrays, indices between them), interpreted at runtime. Phase 3's VekaLang
  * parses the DSL into this document and prints it back; until then documents are made in C++ (FVekaDocumentBuilder).
  */
+
+/** Where a node or an expression comes from in the .vk source (1-based; 0 = not from source). */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaSourceRange
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	int32 Line = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	int32 Column = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	int32 Length = 0;
+
+	bool IsSet() const { return Line > 0; }
+};
 
 UENUM(BlueprintType)
 enum class EVekaExprKind : uint8
@@ -25,8 +45,12 @@ enum class EVekaExprKind : uint8
 	Binary,
 	/** Operands: condition, then, else. */
 	Ternary,
-	/** Value.StringValue is a format with {0} {1}...; operands are the arguments. */
-	Format
+	/** Value is the pattern with {0} {1}... (a Text pattern is localizable); operands are the arguments. */
+	Format,
+	/** Parameter of the view (`@Param var title`). */
+	Param,
+	/** Field Name of operand 0 (`item.name`). */
+	Member
 };
 
 UENUM(BlueprintType)
@@ -49,7 +73,9 @@ enum class EVekaExprOp : uint8
 	And,
 	Or,
 	Min,
-	Max
+	Max,
+	/** Operand 0 [operand 1]. */
+	Index
 };
 
 USTRUCT(BlueprintType)
@@ -73,6 +99,9 @@ struct VEKAUI_API FVekaAstExpr
 	/** Indices into FVekaDocument::Expressions. */
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	TArray<int32> Operands;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FVekaSourceRange Source;
 };
 
 USTRUCT(BlueprintType)
@@ -143,8 +172,10 @@ enum class EVekaAstNodeKind : uint8
 	Element,
 	/** Condition expression; Children if true, ElseChildren otherwise. */
 	If,
-	/** Count expression; Children repeated, LoopVariable = 0..Count-1. */
-	ForEach
+	/** Expr is a count or an array; Children repeated with LoopVariable = the item (or the index) and IndexVariable = the index. */
+	ForEach,
+	/** Inside a component: the content the caller gave for slot Type (None = the default slot). */
+	Slot
 };
 
 USTRUCT(BlueprintType)
@@ -182,6 +213,24 @@ struct VEKAUI_API FVekaAstNode
 
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	FName LoopVariable;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FName IndexVariable;
+
+	/** Another view used as a component: arguments set its parameters, children fill its slots, `on` modifiers handle its events. */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TObjectPtr<UVekaView> Component;
+
+	/** Child of a component call: the slot it fills (None = the default slot). */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FName SlotName;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FVekaSourceRange Source;
+
+	/** Comment lines written above the node in the source (kept by parse / print). */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FString> Comments;
 };
 
 USTRUCT(BlueprintType)
@@ -196,17 +245,75 @@ struct VEKAUI_API FVekaStateDeclaration
 	FVekaValue Initial;
 };
 
+/** `@Param var title: Text = "Hello"`: set by the caller when the view is used as a component. */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaParamDeclaration
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FName Name;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	EVekaValueType Type = EVekaValueType::None;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FVekaValue Default;
+};
+
+/** `@Slot accessory`: content the caller injects (the default slot has no name). */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaSlotDeclaration
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FName Name;
+};
+
+/** `@Event buy(price: Int)`. */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaEventDeclaration
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	FName Name;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	EVekaValueType PayloadType = EVekaValueType::None;
+};
+
 USTRUCT(BlueprintType)
 struct VEKAUI_API FVekaDocument
 {
 	GENERATED_BODY()
 
+	/** 1 = Phase 2 (events as names); 2 = params, slots, components, typed events. Upgrade() converts. */
+	static constexpr int32 CurrentFormatVersion = 2;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	int32 FormatVersion = 0;
+
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	TArray<FVekaStateDeclaration> States;
 
-	/** Events the view may emit (documentation and validation). */
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FVekaParamDeclaration> Params;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FVekaSlotDeclaration> Slots;
+
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FVekaEventDeclaration> EventDeclarations;
+
+	/** Format 1 only (event names); moved to EventDeclarations by Upgrade(). */
+	UPROPERTY()
 	TArray<FName> Events;
+
+	/** Comment lines at the top of the source. */
+	UPROPERTY(EditAnywhere, Category = "Veka|View")
+	TArray<FString> Comments;
 
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	TArray<FVekaAstNode> Nodes;
@@ -217,8 +324,15 @@ struct VEKAUI_API FVekaDocument
 	UPROPERTY(EditAnywhere, Category = "Veka|View")
 	int32 Root = INDEX_NONE;
 
-	/** Problems a reader would hit (bad indices, unknown states / events); empty when valid. */
+	/** Problems a reader would hit (bad indices, unknown states / params / events / slots); empty when valid. */
 	TArray<FString> Validate() const;
+
+	/** Converts an older format to the current one; true if something changed. */
+	bool Upgrade();
+
+	bool HasEvent(FName Name) const;
+	const FVekaParamDeclaration* FindParam(FName Name) const;
+	bool HasSlot(FName Name) const;
 };
 
 /**
@@ -245,6 +359,12 @@ public:
 		FNode& Action(const FVekaAstAction& InAction);
 		FNode& Children(TArray<FNode> InChildren);
 		FNode& Else(TArray<FNode> InChildren);
+		/** Component handler: runs Actions when the component emits Event (payload in the local `payload`). */
+		FNode& On(FName Event, TArray<FVekaAstAction> Actions) { return Modifier(TEXT("on"), { { TEXT("event"), Builder->Lit(FVekaValue::String(Event.ToString())) } }, MoveTemp(Actions)); }
+		/** This node fills slot Name of the component it is a child of. */
+		FNode& InSlot(FName Name);
+		FNode& Comment(const FString& Line);
+		FNode& IndexVariable(FName Name);
 		int32 GetIndex() const { return Index; }
 
 	private:
@@ -254,11 +374,17 @@ public:
 	};
 
 	void State(FName Name, const FVekaValue& Initial);
-	void Event(FName Name);
+	void Event(FName Name, EVekaValueType PayloadType = EVekaValueType::None);
+	void Param(FName Name, EVekaValueType Type, const FVekaValue& Default = FVekaValue());
+	void Slot(FName Name = NAME_None);
 
 	FNode Node(FName Type);
 	FNode If(int32 Condition, TArray<FNode> Then, TArray<FNode> Otherwise = {});
 	FNode ForEach(int32 Count, FName LoopVariable, TArray<FNode> Body);
+	/** An instance of another view. */
+	FNode Component(UVekaView* View);
+	/** Where a component shows the content of slot Name. */
+	FNode SlotContent(FName Name = NAME_None);
 	void SetRoot(const FNode& Node);
 
 	int32 Lit(const FVekaValue& Value);
@@ -267,6 +393,8 @@ public:
 	int32 Lit(double Value) { return Lit(FVekaValue::Float(Value)); }
 	int32 Lit(const TCHAR* Value) { return Lit(FVekaValue::String(Value)); }
 	int32 Lit(const FLinearColor& Value) { return Lit(FVekaValue::Color(Value)); }
+	/** Localizable text literal. */
+	int32 LitText(const FText& Value) { return Lit(FVekaValue::Text(Value)); }
 	int32 Var(FName State);
 	int32 Model(FName Property);
 	int32 Local(FName Name);
@@ -274,6 +402,11 @@ public:
 	int32 Binary(EVekaExprOp Op, int32 A, int32 B);
 	int32 Ternary(int32 Condition, int32 Then, int32 Otherwise);
 	int32 Format(const FString& Pattern, TArray<int32> Arguments);
+	/** Localizable pattern (FText::Format). */
+	int32 FormatText(const FText& Pattern, TArray<int32> Arguments);
+	int32 ParamRef(FName Name);
+	int32 Member(int32 Object, FName Field);
+	int32 Index(int32 Array, int32 Item) { return Binary(EVekaExprOp::Index, Array, Item); }
 
 	static FVekaAstAction Set(FName State, int32 Expr, bool bAnimated = false);
 	static FVekaAstAction Toggle(FName State, bool bAnimated = false);
@@ -281,7 +414,7 @@ public:
 	static FVekaAstAction Emit(FName Event, int32 Payload = INDEX_NONE);
 
 	const FVekaDocument& GetDocument() const { return Document; }
-	FVekaDocument&& Release() { return MoveTemp(Document); }
+	FVekaDocument&& Release() { Document.FormatVersion = FVekaDocument::CurrentFormatVersion; return MoveTemp(Document); }
 
 private:
 	FVekaDocument Document;

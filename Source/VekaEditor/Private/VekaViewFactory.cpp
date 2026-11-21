@@ -17,7 +17,7 @@ UVekaViewFactory::UVekaViewFactory()
 UObject* UVekaViewFactory::FactoryCreateNew(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
 	UVekaView* View = NewObject<UVekaView>(InParent, InClass, InName, Flags);
-	View->Document = Veka::Samples::MakeShopDocument();
+	View->Document = Veka::Samples::MakeStarterDocument();
 	return View;
 }
 
