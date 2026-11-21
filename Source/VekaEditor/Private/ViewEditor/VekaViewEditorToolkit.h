@@ -9,6 +9,11 @@
 class UVekaView;
 class SVekaViewPreview;
 class SVekaCodeEditor;
+class SVekaOutliner;
+class SVekaPalette;
+class SVekaInspector;
+class SVekaStatePanel;
+class FVekaViewEditorContext;
 class IDetailsView;
 class FToolBarBuilder;
 struct FVekaDocument;
@@ -25,8 +30,8 @@ namespace Veka::Editor
 }
 
 /**
- * The Veka View asset editor (double-click a Veka View): Code (3c), Viewport and Details tabs, toolbar, undo / redo.
- * 3d adds the Simple mode.
+ * The Veka View asset editor (double-click a Veka View): Simple mode (Outliner, Palette, Inspector, State: 3d), Code
+ * (3c), Viewport and Details tabs, toolbar, undo / redo. Selection is shared by the viewport, the outliner and the code.
  */
 class FVekaViewEditorToolkit : public FAssetEditorToolkit, public FSelfRegisteringEditorUndoClient
 {
@@ -35,6 +40,10 @@ public:
 	static const FName ViewportTabId;
 	static const FName DetailsTabId;
 	static const FName CodeTabId;
+	static const FName OutlinerTabId;
+	static const FName PaletteTabId;
+	static const FName InspectorTabId;
+	static const FName StateTabId;
 
 	virtual ~FVekaViewEditorToolkit() override;
 
@@ -43,6 +52,9 @@ public:
 	UVekaView* GetView() const { return View.Get(); }
 	TSharedPtr<SVekaViewPreview> GetPreview() const { return Preview; }
 	TSharedPtr<SVekaCodeEditor> GetCodeEditor() const { return CodeEditor; }
+	TSharedPtr<FVekaViewEditorContext> GetContext() const { return Context; }
+	TSharedPtr<SVekaOutliner> GetOutliner() const { return Outliner; }
+	TSharedPtr<SVekaInspector> GetInspector() const { return Inspector; }
 
 	// FAssetEditorToolkit
 	virtual FName GetToolkitFName() const override;
@@ -60,6 +72,8 @@ private:
 	TSharedRef<SDockTab> SpawnViewportTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnDetailsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnCodeTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnPanelTab(const FSpawnTabArgs& Args, FText Label, TSharedPtr<SWidget> Content);
+	void DocumentChanged();
 	void FillToolbar(FToolBarBuilder& Builder);
 	void HandleObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& Event);
 	void RefreshPreview();
@@ -68,5 +82,10 @@ private:
 	TSharedPtr<SVekaViewPreview> Preview;
 	TSharedPtr<IDetailsView> Details;
 	TSharedPtr<SVekaCodeEditor> CodeEditor;
+	TSharedPtr<FVekaViewEditorContext> Context;
+	TSharedPtr<SVekaOutliner> Outliner;
+	TSharedPtr<SVekaPalette> Palette;
+	TSharedPtr<SVekaInspector> Inspector;
+	TSharedPtr<SVekaStatePanel> StatePanel;
 	FDelegateHandle PropertyChangedHandle;
 };

@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor et **3c onglet Code** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code et **3d Mode Simple** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (onglet Code, viewport, undo, vignettes) ; 79 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3d Mode Simple |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, onglet Code, viewport, undo, vignettes) ; 84 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3e Mode Test + Timeline |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,57 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 3d Mode Simple
+
+- **Branche** : `cpp/phase-3d-simple` (partie de `C++` @ `f58dc48`), fusionnée dans `C++`.
+- **Éditions du document** (`Veka::Editor::Doc`, `SimpleMode/VekaDocumentEdit`) : insérer (valeurs par défaut utiles :
+  un Toggle se lie au premier état Bool…), supprimer, déplacer (jamais dans soi-même), dupliquer, envelopper dans une
+  pile, libellé (= premier commentaire du nœud, `// Libellé` en code), arguments, pile de modificateurs (ajout avec
+  défauts, retrait, réordonnancement), actions, déclarations (états, params, événements, slots ; **renommage partout** :
+  lectures, cibles d'actions, `emit`, nœuds `Slot`), `Compact` (plus de nœuds / expressions orphelins). Chemins de nœuds
+  (`Path` / `FromPath`) : la sélection survit aux éditions et aux re-parses. Tout passe par
+  `FVekaViewEditorContext::Edit` → une transaction (`ApplyDocument`), refusé si le code a des erreurs.
+- **VekaLang** : `ParseExpression` (une expression dans la portée du document + variables locales, rien de modifié en
+  cas d'erreur), `ParseValue`, `PrintExpression`, `PrintValue` ; un diagnostic sans position n'affiche plus « 0:0 ».
+- **Outliner** : arbre (branche `else` des `if`), glisser-déposer (déplacer, ou déposer une entrée de la palette ; au-
+  dessus / dessous / dedans selon la cible), renommer (double-clic / F2), multi-sélection, Suppr, Ctrl+D, menu
+  contextuel (ajouter, envelopper dans VStack / HStack / ZStack, dupliquer, supprimer).
+- **Palette** : Layout, Content, Controls, Shapes, Logic (`if`, `ForEach`, `Slot`) et les vues du projet ; recherche ;
+  glisser sur l'outliner ou double-cliquer (dans le conteneur sélectionné, sinon après la sélection).
+- **Inspecteur** (généré depuis le catalogue / les params du composant) : libellé ; arguments avec éditeurs typés —
+  nombre, case, menu d'enum, **jetons Colora avec pastilles + sélecteur de couleur**, **sélecteur de symboles avec
+  aperçus et recherche**, liaison à un état, transitions (Anima : opacity / scale / slide), événement de `.on` — et
+  « Edit as code » sur chaque argument (expression Veka ; une expression fausse est refusée et ne change rien) ;
+  condition d'un `if`, collection et variables d'un `ForEach`, slot d'un `Slot`, « In slot » dans un composant ; actions
+  (set / toggle / add / emit, cible, valeur, animé) ; pile de modificateurs (ajouter, monter / descendre, retirer).
+- **Onglet State** : états, params, événements, slots — ajouter, renommer (partout), type, valeur initiale, retirer ;
+  **valeurs mock** du modèle de prévisualisation (Details de l'instance, non sauvegardées).
+- **Sélection synchronisée** viewport ⇄ outliner ⇄ code : les éléments construits par l'interpréteur portent leur nœud
+  (`FVekaElement::Source`, document d'origine = l'asset, pas ses composants) ; clic dans le viewport en mode **Select**
+  (Ctrl+clic ajoute ; contour orange, survol plus clair ; Select désactivé = utiliser la vue) ; le curseur du code
+  sélectionne la vue de sa ligne ; une sélection ailleurs déplace le curseur du code.
+- **Lecture seule** tant que le code a des erreurs (le texte n'est jamais écrasé).
+- **Disposition** v3 : Outliner + Palette | Viewport + Code | Inspector / State / Details.
+- **Tests** : 84 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.Editor.Simple.{Build,
+  RoundTrip, Context, Pick, Panels}` : **une vue complète faite uniquement avec les éditions du Mode Simple** (états,
+  événement, Text interpolé, Button à actions, Toggle lié, if / else, modificateurs réordonnés, déplacement, duplication,
+  enveloppe, renommage partout), valide, et **Simple → Code → Simple sans perte** ; la boutique éditée en Simple garde
+  commentaires, composants et chemins ; une édition = un undo, sélection de ce qui a été créé, lecture seule ;
+  clic viewport → le bon nœud ; panneaux du vrai éditeur (outliner complet, édition de texte / enum / expression dans
+  l'inspecteur reflétée dans le code, expression fausse refusée, lecture seule pendant une erreur de code).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3d-select.jpg`, `phase3d-colora.jpg`, `phase3d-symbols.jpg`,
+  `phase3d-drag.jpg`), sur une vue neuve `VV_SimpleDemo` (non sauvegardée) : texte édité dans l'inspecteur ; Toggle
+  ajouté depuis la palette ; état ajouté puis renommé `wifi` dans State, lié à `isOn` ; `.background` ajouté, jeton
+  Indigo choisi dans les pastilles ; clic sur le bouton dans le viewport → sélection partout ; symbole `star` choisi dans
+  le sélecteur (aperçu) ; Button glissé au-dessus de Text ; Ctrl+Z annule le déplacement. Trois défauts trouvés et
+  corrigés : la sélection se perdait après une édition (rafraîchissement de l'arbre pris pour un clic), « 0:0 » dans les
+  warnings, liaison affichée en code quand elle tenait une constante.
+- **Assets** : `VV_Shop` sauvegardé avec les modifications de TheMiniBoss (« Save and close »).
+- **Limites** : la sélection est un chemin dans l'arbre (après un undo qui déplace un nœud, elle désigne ce qui est à cet
+  endroit) ; pas de glisser-déposer dans le viewport ; arguments des primitives du schéma non listés (seulement ceux
+  déjà donnés) ; un coin de l'écran est couvert par l'overlay Razer (clics perdus pendant la vérification à la souris).
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 3c Mode Avancé (onglet Code)
 

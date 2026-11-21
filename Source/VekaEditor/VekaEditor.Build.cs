@@ -33,6 +33,8 @@ public class VekaEditor : ModuleRules
 			"ToolMenus",
 			"InputCore",
 			"RenderCore",
+			// 3d: color picker in the inspector.
+			"AppFramework",
 		});
 	}
 }

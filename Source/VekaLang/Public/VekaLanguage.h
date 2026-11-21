@@ -83,6 +83,23 @@ namespace Veka::Lang
 	/** Resolver over the project's UVekaView assets (asset registry), by asset name. */
 	VEKALANG_API TFunction<UVekaView*(FName)> MakeAssetResolver();
 
+	/**
+	 * Parses one expression (`"Buy"`, `count * 2`, `.leading`, `"\(model.Gold) gold"`) into Document (appended to its
+	 * expressions), with the document's states, params and events plus Locals in scope. Returns its index, or INDEX_NONE
+	 * with the errors in OutDiagnostics (the document is then unchanged). Used by the Simple mode's inspector.
+	 */
+	VEKALANG_API int32 ParseExpression(FVekaDocument& Document, const FString& Source, TConstArrayView<FName> Locals, const FString& TextNamespace,
+		TArray<FVekaDiagnostic>& OutDiagnostics);
+
+	/** A constant (`0`, `"Hello"`, `[1, 2]`, `rgba(1, 0, 0, 1)`): initial values of states and params. */
+	VEKALANG_API bool ParseValue(const FString& Source, const FString& TextNamespace, FVekaValue& OutValue, TArray<FVekaDiagnostic>& OutDiagnostics);
+
+	/** Text of an expression of the document, as the printer writes it. */
+	VEKALANG_API FString PrintExpression(const FVekaDocument& Document, int32 Expression);
+
+	/** Text of a constant, as the printer writes it. */
+	VEKALANG_API FString PrintValue(const FVekaValue& Value);
+
 	/** Name of a value type in the language ("Int", "Text"...). */
 	VEKALANG_API FString TypeName(EVekaValueType Type);
 }
