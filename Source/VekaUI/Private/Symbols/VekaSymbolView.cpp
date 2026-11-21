@@ -115,8 +115,14 @@ namespace
 		float ReplaceDuration = 0.35f;
 		EVekaSymbolReplace ReplaceMode = EVekaSymbolReplace::None;
 
-		// Shapes drawn inside a filled outline (knockouts of the .fill variant), per definition.
-		TMap<const FVekaSymbolDefinition*, TArray<bool>> Knockouts;
+		// Shapes drawn inside a filled outline (knockouts of the .fill variant), per definition, for the symbol revision
+		// they were computed at (an edited symbol can gain or lose layers).
+		struct FKnockouts
+		{
+			uint32 Revision = 0;
+			TArray<bool> Inside;
+		};
+		TMap<const FVekaSymbolDefinition*, FKnockouts> Knockouts;
 
 		virtual bool NeedsAnimationFrame(double Now) const override
 		{
@@ -148,9 +154,13 @@ namespace
 
 	const TArray<bool>& GetKnockouts(FVekaSymbolState& State, const FVekaSymbolDefinition& Definition)
 	{
-		if (const TArray<bool>* Found = State.Knockouts.Find(&Definition))
+		const uint32 Revision = Veka::Symbols::GetRevision();
+		if (const FVekaSymbolState::FKnockouts* Found = State.Knockouts.Find(&Definition))
 		{
-			return *Found;
+			if (Found->Revision == Revision && Found->Inside.Num() == Definition.Shapes.Num())
+			{
+				return Found->Inside;
+			}
 		}
 		TArray<bool> Out;
 		Out.SetNumZeroed(Definition.Shapes.Num());
@@ -184,7 +194,10 @@ namespace
 				}
 			}
 		}
-		return State.Knockouts.Add(&Definition, MoveTemp(Out));
+		FVekaSymbolState::FKnockouts& Entry = State.Knockouts.Add(&Definition);
+		Entry.Revision = Revision;
+		Entry.Inside = MoveTemp(Out);
+		return Entry.Inside;
 	}
 
 	FVekaPaint WithOpacity(FVekaPaint Paint, float Opacity)
@@ -429,7 +442,7 @@ namespace
 					Opacity *= bLit ? 1.f : 0.25f;
 				}
 
-				const bool bInsideFill = Variant.bFill && (bEnclosed || Knockouts[Index]);
+				const bool bInsideFill = Variant.bFill && (bEnclosed || (Knockouts.IsValidIndex(Index) && Knockouts[Index]));
 				const FVekaPaint Paint = WithOpacity(bInsideFill && UsesKnockout(&Shape) ? Knockout : RolePaint(Role, &Shape), Opacity);
 				Placement.Apply(GetShapeGeometry(Definition, Index), Placed);
 
