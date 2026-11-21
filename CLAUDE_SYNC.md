@@ -84,7 +84,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 | Phase | **2** ✅ terminée — jalons 2.0, 2a Colora, 2b Anima, 2c Typographie, 2d Symboles, 2e Contrôles, 2f Morph, **2g UVekaView + bridge** fusionnés dans `C++` |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 (Colora, Anima, typo, symboles, contrôles, morph, vues asset interprétées, bridge Blueprint) ; 60/60 tests automation ✅ |
-| Prochaine étape | Phase 3 — Veka Editor (VekaLang : parse / print du DSL vers `FVekaDocument`, éditeur d'asset) — plan à proposer |
+| Prochaine étape | Phase 3 — Veka Editor : plan proposé (entrée « CLOUD → plan de la Phase 3 »), en attente de validation |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,34 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD → plan de la Phase 3 (proposition, à valider)
+
+Phase 3 de `VEKAUI_PHASE0.md` §16.2 (Veka Editor), découpée comme la Phase 2 : **une branche par jalon**
+(`cpp/phase-3a-lang`, …), fusionnée dans `C++` quand elle est verte (compile Editor + Shipping, tests, vérif dans
+l'éditeur). Critère final de la phase (§16.2) : aller-retour Mode Simple ⇄ Mode Avancé sans perte sur toute la suite
+de tests ; une vue complète faite à 100 % en Mode Simple et une à 100 % en code.
+
+| Jalon | Contenu | Dépend de | Critère « vert » |
+|---|---|---|---|
+| **3.0 Document v2** | ce qui manque au modèle avant d'écrire un langage dessus : `@Param` (paramètres typés avec valeur par défaut), `@Slot` (contenu injecté), une vue utilisée comme composant d'une autre (`ShopItem(title: …)`), événements avec payload typé ; `FVekaValue` tableaux et structs (`ForEach(items)`, `item.name`), accès membre ; positions source et commentaires (trivia) dans l'AST ; version du format + mise à niveau ; graphe Blueprint d'exemple câblé (`SetState` / `OnVekaEvent`) | 2g | une vue asset en utilise une autre avec paramètres et slot ; ancien format chargé et converti ; tests |
+| **3a VekaLang** | module `VekaLang` (UncookedOnly) : lexer, parser récursif descendant → `FVekaDocument`, **printer canonique**, récupération d'erreurs (ligne / colonne), analyse sémantique contre le **schéma** (composant / argument / modificateur inconnu, type incorrect, jeton Colora, état ou événement inexistant) ; syntaxe de `VEKAUI_PHASE0.md` §14.2 | 3.0 | `parse(print(doc)) == doc` sur tous les documents de test + un corpus ; commentaires conservés ; messages d'erreur testés |
+| **3b Asset Editor (coque)** | `FVekaViewEditorToolkit` : ouverture au double-clic, onglets dockables, **Viewport** (résolutions 1080p / 1440p / 4K / ultrawide / mobile, DPI, zoom / pan, Light / Dark / thème, overlays bounds / padding), barre d'outils, **undo / redo** (`FScopedTransaction` sur le document), vignettes d'assets | 3.0 | `VV_Shop` s'ouvre, s'affiche dans chaque résolution et schéma ; undo / redo |
+| **3c Mode Avancé (onglet Code)** | éditeur de texte avec coloration, parse à la frappe (≈150 ms), erreurs en ligne, l'arbre garde la dernière version valide (jamais de texte perdu), **complétion** depuis le schéma (composants, modificateurs, arguments, valeurs d'enum, jetons Colora, symboles, états), formatage | 3a, 3b | la vue boutique réécrite entièrement en code ; une erreur n'efface rien |
+| **3d Mode Simple** | **Outliner** (arbre, glisser-déposer, renommer, multi-sélection, palette de composants), **Inspecteur** généré depuis le schéma (arguments, pile de modificateurs ajoutables / réordonnables, sélecteurs visuels Colora / Anima / symboles / enums), onglet **State** (états, paramètres, événements, valeurs mock) ; sélection synchronisée viewport ⇄ outliner ⇄ code | 3b, 3c | une vue complète faite 100 % en Simple ; aller-retour Simple ⇄ Code sans perte |
+| **3e Mode Test + Timeline** | aperçu interactif sans PIE (clics, survol, focus, états, `emit` journalisés, modèle mock éditable) ; onglet **Timeline** (pistes, keyframes, lecture, scrub) sur les timelines du document | 3d | la boutique testée en Play avec un modèle mock ; une animation faite à la timeline |
+| **3f Symboles et peintures** | **Symbol Library** (recherche, catégories, aperçus en graisses / modes / échelles) ; **Symbol Editor** (import SVG en couches et rôles, grille keyline, aperçu des graisses, couches variables) ; éditeur de **mesh gradient** (points, couleurs) ; sélecteurs dans l'inspecteur | 3b (indépendant de 3c / 3d) | un SVG importé en `UVekaSymbol` et utilisé dans une vue ; un mesh gradient édité à la souris |
+| **3g Composants et migration** | composants composés en asset (`@Param` / `@Slot`) ajoutés automatiquement à la palette, à la complétion et à l'inspecteur ; `UVekaComponentLibrary` (composants et styles partagés) ; **migration des thèmes Alpha 13** (structs Colora de la branche `Blueprint`, en lecture seule) vers `UVekaTheme` | 3d | un composant asset utilisé depuis la palette ; les thèmes Alpha 13 reproduits |
+
+Ordre conseillé : **3.0 → 3a → 3b → 3c → 3d → 3e → 3f → 3g** (3f peut venir juste après 3b ; le code passe avant le
+Mode Simple parce que le parser et le printer sont la base de l'aller-retour).
+
+**Questions pour TheMiniBoss** :
+1. **Syntaxe du DSL** : celle de la Phase 0 (`Stack(.vertical, spacing: 12) { … }`, `$isOn`, `.padding(16)`), avec
+   `VStack` / `HStack` / `ZStack` en raccourcis comme dans le C++ ? Ou une autre préférence ?
+2. **Langue de l'éditeur** (libellés, messages d'erreur, doc) : anglais comme Unreal, ou français ?
+3. **Priorité** : garder le code avant le Mode Simple (proposé), ou voir le Mode Simple plus tôt quitte à le refaire
+   un peu ?
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 2g UVekaView + bridge Blueprint (fin de la Phase 2)
 
