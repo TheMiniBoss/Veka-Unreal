@@ -99,6 +99,13 @@ public:
 	/** View model the Veka Editor previews this view with (`model.X` values in the viewport). Editor only. */
 	UPROPERTY(EditAnywhere, Category = "Preview")
 	TSubclassOf<UVekaViewModel> PreviewModelClass;
+
+	/**
+	 * Veka code as last written in the Code tab (its layout and blank lines). Shown again only while it still parses to
+	 * Document; otherwise the Code tab prints the document. Editor only.
+	 */
+	UPROPERTY()
+	FString SourceText;
 #endif
 
 	/** Element of the view bound to a store (state, model and events). */
