@@ -1,6 +1,48 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "View/VekaDocument.h"
+#include "View/VekaViewAsset.h"
+
+bool FVekaDocument::Upgrade()
+{
+	bool bChanged = false;
+	if (!Events.IsEmpty())
+	{
+		for (const FName Name : Events)
+		{
+			// Only the new list: HasEvent also looks in the old one.
+			if (!EventDeclarations.ContainsByPredicate([Name](const FVekaEventDeclaration& Event) { return Event.Name == Name; }))
+			{
+				FVekaEventDeclaration& Declaration = EventDeclarations.AddDefaulted_GetRef();
+				Declaration.Name = Name;
+				Declaration.PayloadType = EVekaValueType::None;
+			}
+		}
+		Events.Reset();
+		bChanged = true;
+	}
+	if (FormatVersion != CurrentFormatVersion)
+	{
+		FormatVersion = CurrentFormatVersion;
+		bChanged = true;
+	}
+	return bChanged;
+}
+
+bool FVekaDocument::HasEvent(FName Name) const
+{
+	return EventDeclarations.ContainsByPredicate([Name](const FVekaEventDeclaration& Event) { return Event.Name == Name; }) || Events.Contains(Name);
+}
+
+const FVekaParamDeclaration* FVekaDocument::FindParam(FName Name) const
+{
+	return Params.FindByPredicate([Name](const FVekaParamDeclaration& Param) { return Param.Name == Name; });
+}
+
+bool FVekaDocument::HasSlot(FName Name) const
+{
+	return Slots.ContainsByPredicate([Name](const FVekaSlotDeclaration& Slot) { return Slot.Name == Name; });
+}
 
 TArray<FString> FVekaDocument::Validate() const
 {
@@ -14,7 +56,6 @@ TArray<FString> FVekaDocument::Validate() const
 		}
 		StateNames.Add(State.Name);
 	}
-	const TSet<FName> EventNames(Events);
 	auto CheckExpr = [&](int32 Index, const TCHAR* Where)
 	{
 		if (Index != INDEX_NONE && !Expressions.IsValidIndex(Index))
@@ -36,6 +77,10 @@ TArray<FString> FVekaDocument::Validate() const
 		{
 			Problems.Add(FString::Printf(TEXT("Expression %d reads unknown state '%s'"), Index, *Expr.Name.ToString()));
 		}
+		if (Expr.Kind == EVekaExprKind::Param && !FindParam(Expr.Name))
+		{
+			Problems.Add(FString::Printf(TEXT("Expression %d reads unknown param '%s'"), Index, *Expr.Name.ToString()));
+		}
 	}
 	auto CheckActions = [&](const TArray<FVekaAstAction>& Actions, int32 Node)
 	{
@@ -44,7 +89,7 @@ TArray<FString> FVekaDocument::Validate() const
 			CheckExpr(Action.Expr, TEXT("Action"));
 			if (Action.Kind == EVekaActionKind::Emit)
 			{
-				if (!EventNames.Contains(Action.Target))
+				if (!HasEvent(Action.Target))
 				{
 					Problems.Add(FString::Printf(TEXT("Node %d emits undeclared event '%s'"), Node, *Action.Target.ToString()));
 				}
@@ -89,11 +134,46 @@ TArray<FString> FVekaDocument::Validate() const
 			CheckActions(Modifier.Actions, Index);
 		}
 		CheckActions(Node.Actions, Index);
-		if (Node.Kind != EVekaAstNodeKind::Element)
+		if (Node.Kind == EVekaAstNodeKind::If || Node.Kind == EVekaAstNodeKind::ForEach)
 		{
 			if (!Expressions.IsValidIndex(Node.Expr))
 			{
 				Problems.Add(FString::Printf(TEXT("Node %d: missing condition / count"), Index));
+			}
+		}
+		if (Node.Kind == EVekaAstNodeKind::Slot && !HasSlot(Node.Type))
+		{
+			Problems.Add(FString::Printf(TEXT("Node %d shows undeclared slot '%s'"), Index, *Node.Type.ToString()));
+		}
+		if (const UVekaView* Used = Node.Component.Get())
+		{
+			for (const FVekaAstArgument& Argument : Node.Arguments)
+			{
+				if (!Used->Document.FindParam(Argument.Name))
+				{
+					Problems.Add(FString::Printf(TEXT("Node %d: component %s has no param '%s'"), Index, *Used->GetName(), *Argument.Name.ToString()));
+				}
+			}
+			for (const int32 Child : Node.Children)
+			{
+				if (Nodes.IsValidIndex(Child) && !Used->Document.HasSlot(Nodes[Child].SlotName))
+				{
+					Problems.Add(FString::Printf(TEXT("Node %d: component %s has no slot '%s'"), Index, *Used->GetName(), *Nodes[Child].SlotName.ToString()));
+				}
+			}
+			for (const FVekaAstModifier& Modifier : Node.Modifiers)
+			{
+				if (Modifier.Name == TEXT("on"))
+				{
+					for (const FVekaAstArgument& Argument : Modifier.Arguments)
+					{
+						if (Argument.Name == TEXT("event") && Expressions.IsValidIndex(Argument.Expr)
+							&& !Used->Document.HasEvent(FName(*Expressions[Argument.Expr].Value.AsString())))
+						{
+							Problems.Add(FString::Printf(TEXT("Node %d: component %s has no event '%s'"), Index, *Used->GetName(), *Expressions[Argument.Expr].Value.AsString()));
+						}
+					}
+				}
 			}
 		}
 	}
@@ -144,6 +224,24 @@ FVekaDocumentBuilder::FNode& FVekaDocumentBuilder::FNode::Children(TArray<FNode>
 	return *this;
 }
 
+FVekaDocumentBuilder::FNode& FVekaDocumentBuilder::FNode::InSlot(FName Name)
+{
+	Get().SlotName = Name;
+	return *this;
+}
+
+FVekaDocumentBuilder::FNode& FVekaDocumentBuilder::FNode::Comment(const FString& Line)
+{
+	Get().Comments.Add(Line);
+	return *this;
+}
+
+FVekaDocumentBuilder::FNode& FVekaDocumentBuilder::FNode::IndexVariable(FName Name)
+{
+	Get().IndexVariable = Name;
+	return *this;
+}
+
 FVekaDocumentBuilder::FNode& FVekaDocumentBuilder::FNode::Else(TArray<FNode> InChildren)
 {
 	for (const FNode& Child : InChildren)
@@ -155,14 +253,53 @@ FVekaDocumentBuilder::FNode& FVekaDocumentBuilder::FNode::Else(TArray<FNode> InC
 
 void FVekaDocumentBuilder::State(FName Name, const FVekaValue& Initial)
 {
+	Document.FormatVersion = FVekaDocument::CurrentFormatVersion;
 	FVekaStateDeclaration& State = Document.States.AddDefaulted_GetRef();
 	State.Name = Name;
 	State.Initial = Initial;
 }
 
-void FVekaDocumentBuilder::Event(FName Name)
+void FVekaDocumentBuilder::Event(FName Name, EVekaValueType PayloadType)
 {
-	Document.Events.AddUnique(Name);
+	if (!Document.HasEvent(Name))
+	{
+		FVekaEventDeclaration& Event = Document.EventDeclarations.AddDefaulted_GetRef();
+		Event.Name = Name;
+		Event.PayloadType = PayloadType;
+	}
+}
+
+void FVekaDocumentBuilder::Param(FName Name, EVekaValueType Type, const FVekaValue& Default)
+{
+	FVekaParamDeclaration& Param = Document.Params.AddDefaulted_GetRef();
+	Param.Name = Name;
+	Param.Type = Type;
+	Param.Default = Default;
+}
+
+void FVekaDocumentBuilder::Slot(FName Name)
+{
+	if (!Document.HasSlot(Name))
+	{
+		Document.Slots.AddDefaulted_GetRef().Name = Name;
+	}
+}
+
+FVekaDocumentBuilder::FNode FVekaDocumentBuilder::Component(UVekaView* View)
+{
+	FVekaAstNode& Node = Document.Nodes.AddDefaulted_GetRef();
+	Node.Kind = EVekaAstNodeKind::Element;
+	Node.Type = View ? View->GetFName() : NAME_None;
+	Node.Component = View;
+	return FNode(*this, Document.Nodes.Num() - 1);
+}
+
+FVekaDocumentBuilder::FNode FVekaDocumentBuilder::SlotContent(FName Name)
+{
+	FVekaAstNode& Node = Document.Nodes.AddDefaulted_GetRef();
+	Node.Kind = EVekaAstNodeKind::Slot;
+	Node.Type = Name;
+	return FNode(*this, Document.Nodes.Num() - 1);
 }
 
 FVekaDocumentBuilder::FNode FVekaDocumentBuilder::Node(FName Type)
@@ -205,6 +342,32 @@ int32 FVekaDocumentBuilder::Lit(const FVekaValue& Value)
 	FVekaAstExpr& Expr = Document.Expressions.AddDefaulted_GetRef();
 	Expr.Kind = EVekaExprKind::Literal;
 	Expr.Value = Value;
+	return Document.Expressions.Num() - 1;
+}
+
+int32 FVekaDocumentBuilder::FormatText(const FText& Pattern, TArray<int32> Arguments)
+{
+	FVekaAstExpr& Expr = Document.Expressions.AddDefaulted_GetRef();
+	Expr.Kind = EVekaExprKind::Format;
+	Expr.Value = FVekaValue::Text(Pattern);
+	Expr.Operands = MoveTemp(Arguments);
+	return Document.Expressions.Num() - 1;
+}
+
+int32 FVekaDocumentBuilder::ParamRef(FName Name)
+{
+	FVekaAstExpr& Expr = Document.Expressions.AddDefaulted_GetRef();
+	Expr.Kind = EVekaExprKind::Param;
+	Expr.Name = Name;
+	return Document.Expressions.Num() - 1;
+}
+
+int32 FVekaDocumentBuilder::Member(int32 Object, FName Field)
+{
+	FVekaAstExpr& Expr = Document.Expressions.AddDefaulted_GetRef();
+	Expr.Kind = EVekaExprKind::Member;
+	Expr.Name = Field;
+	Expr.Operands = { Object };
 	return Document.Expressions.Num() - 1;
 }
 

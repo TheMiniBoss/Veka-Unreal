@@ -83,8 +83,8 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 |---|---|
 | Phase | **2** ✅ terminée — jalons 2.0, 2a Colora, 2b Anima, 2c Typographie, 2d Symboles, 2e Contrôles, 2f Morph, **2g UVekaView + bridge** fusionnés dans `C++` |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 (Colora, Anima, typo, symboles, contrôles, morph, vues asset interprétées, bridge Blueprint) ; 60/60 tests automation ✅ |
-| Prochaine étape | Phase 3 — Veka Editor : plan proposé (entrée « CLOUD → plan de la Phase 3 »), en attente de validation |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 (paramètres, slots, composants, tableaux / structs, textes localisables) ; 64/64 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3a VekaLang (parser / printer du langage Veka `.vk`) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,60 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 3.0 Document v2
+
+- **Branche** : `cpp/phase-3.0-document` (partie de `C++` @ `f8274d9`), fusionnée dans `C++`.
+- **`FVekaValue`** : nouveaux types **Text** (`FText` localisable : les littéraux des vues sont rassemblés et traduits
+  par le Localization Dashboard), **Array** et **Struct** (`GetItem`, `GetField`, comparaison et hash par contenu).
+  UHT refuse un struct qui contient un tableau de lui-même : les éléments sont stockés en `FInstancedStruct` (chacun un
+  `FVekaValue`), sérialisés pareil. Réflexion : un `TArray` devient un Array, un struct quelconque un Struct de ses
+  champs, un `FText` reste un Text (les items du modèle arrivent dans la vue).
+- **`FVekaDocument` format 2** : `@Param` (`FVekaParamDeclaration` : nom, type, valeur par défaut), `@Slot`
+  (`FVekaSlotDeclaration`), événements typés (`FVekaEventDeclaration` : nom + type du payload), commentaires (document
+  et nœuds), positions source (`FVekaSourceRange` sur nœuds et expressions, remplies par le parser en 3a).
+  Expressions `Param`, `Member` (`item.name`), opérateur `Index` ; format avec motif **Text** → `FText::Format`
+  (motif traduisible, nombres formatés selon la culture). Nœuds : `Slot` (contenu injecté) et nœud **composant**
+  (`Component` = une autre `UVekaView` : arguments → paramètres, enfants → slots via `SlotName`, modificateur `on`
+  → gestion de ses événements avec la variable locale `payload`). `ForEach` sur un tableau (variable = l'élément,
+  `IndexVariable` = l'index).
+- **Version du format** : `FormatVersion` + `Upgrade()` (format 1 → 2 : les noms d'événements deviennent des
+  déclarations), appelé au chargement (`UVekaView::PostLoad`) et à l'interprétation. `Validate()` vérifie aussi
+  paramètres, slots, et pour un composant : ses paramètres, slots et événements.
+- **Interpréteur** : chaque instance de composant est une vue avec **son propre store** (états par instance, gardés
+  quand les paramètres changent), le modèle du parent, ses slots construits dans la portée de l'appelant ; un événement
+  sans `on` remonte au parent (donc à l'hôte). Garde contre la récursion (16 niveaux).
+- **Exemple** : composant `ShopItem` (params title / price / symbol, slot `badge`, événement `buy(Int)`) et boutique
+  `ForEach(model.Items)` : un composant par article, badge « NEW » dans le slot, article désactivé si trop cher,
+  `on buy` qui note « Last bought » puis renvoie `Buy` à l'hôte. Textes en `LOCTEXT` (namespace `VekaSamples`).
+  `Veka.CreateSampleAssets` crée `VV_ShopItem`, `VV_Shop` et `WBP_VekaShop` dont le **graphe Blueprint est câblé** :
+  `VekaHost.OnVekaEvent` → `UVekaSampleLibrary::HandleShopEvent(VekaHost, EventName, Payload)` (retire l'or du modèle).
+  La factory « Veka View » démarre maintenant d'un petit document (titre + compteur).
+- **Tests** : 64/64 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.View.{ValueV2, DocumentV2,
+  Components, Shop, SampleBlueprint}` : tableaux / structs / textes et réflexion du modèle ; mise à niveau (contre-
+  épreuve : document courant intact) ; validation des paramètres, slots et composants ; deux instances d'un composant à
+  état (état séparé, absent du store de l'appelant, gardé quand le paramètre change) ; boutique (3 composants, badge
+  seulement pour l'article nouveau, article désactivé muet, événement géré par l'appelant puis transmis avec le prix,
+  action dans la portée de l'appelant) ; **le vrai `WBP_VekaShop`** créé avec `CreateWidget` : un tap sur « Buy »
+  passe par son graphe Blueprint et retire 25 or (120 → 95). Le bug « Upgrade ne déplaçait rien » a été trouvé par
+  ces tests.
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3.0-components.jpg`) : Designer de `WBP_VekaShop` avec les 3
+  composants, le badge et l'article désactivé. Capture du graphe non faite : une fenêtre invisible (overlay Razer)
+  bloquait les clics sur le haut droit de l'éditeur ; le câblage est prouvé par le test `SampleBlueprint`.
+- **Limites** : composants référencés par pointeur d'asset (le parser 3a les résoudra par nom) ; pas de valeur de
+  retour / binding vers un état du parent (`$value`) pour les paramètres d'un composant.
+
+### 2026-11-21 — CLOUD → décisions pour la Phase 3 (réponses de TheMiniBoss)
+
+- **Plan de la Phase 3 validé** (« go »), ordre 3.0 → 3a → 3b → 3c → 3d → 3e → 3f → 3g.
+- **Nom du langage : « Veka »**, fichiers **`.vk`** (le module C++ reste `VekaLang`).
+- **Syntaxe** : celle de `VEKAUI_PHASE0.md` §14.2, avec `VStack` / `HStack` / `ZStack` en raccourcis (laissé à Claude).
+- **Langue** : anglais d'abord, mais traduisible. L'éditeur et les messages du langage passent par le système de
+  localisation d'Unreal (`LOCTEXT` / `FText`) : ils suivent la langue de l'éditeur dès qu'une traduction existe. Les
+  textes des vues (littéraux du langage) sont stockés en `FText` dans les assets, donc rassemblés et traduits par le
+  Localization Dashboard comme le reste du jeu.
+- **Priorité** : le code avant le Mode Simple (laissé à Claude).
 
 ### 2026-11-21 — CLOUD → plan de la Phase 3 (proposition, à valider)
 

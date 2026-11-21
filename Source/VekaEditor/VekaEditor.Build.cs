@@ -23,6 +23,8 @@ public class VekaEditor : ModuleRules
 			"UMGEditor",
 			"AssetTools",
 			"AssetRegistry",
+			"BlueprintGraph",
+			"Kismet",
 		});
 	}
 }
