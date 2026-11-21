@@ -95,6 +95,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VekaUI")
 	FVekaDocument Document;
 
+#if WITH_EDITORONLY_DATA
+	/** View model the Veka Editor previews this view with (`model.X` values in the viewport). Editor only. */
+	UPROPERTY(EditAnywhere, Category = "Preview")
+	TSubclassOf<UVekaViewModel> PreviewModelClass;
+#endif
+
 	/** Element of the view bound to a store (state, model and events). */
 	FVekaElement BuildRoot(const TSharedRef<FVekaViewStore>& Store) const;
 
