@@ -11,6 +11,7 @@
 #include "Core/VekaEnvironment.h"
 #include "Slate/SVekaHost.h"
 #include "Symbols/VekaSymbol.h"
+#include "Colora/VekaPaintAsset.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
 #include "Modules/ModuleManager.h"
@@ -61,6 +62,10 @@ namespace
 		if (Text.StartsWith(TEXT("#")))
 		{
 			return Veka::Hex(Text);
+		}
+		if (const FVekaPaint* Named = Veka::Paints::Find(FName(*Text)))
+		{
+			return Named->GetAverageColor();
 		}
 		FLinearColor Out = FLinearColor::Transparent;
 		Veka::Colora::GetDefaultColor(FName(*Text), Scheme, Out);
@@ -609,6 +614,13 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 			Veka::Colora::GetDefaultColor(Token, EVekaColorScheme::Dark, Color);
 			Swatches.Add(Color);
 		}
+		// The project's paint assets (mesh gradients...), shown with their average color.
+		for (const FName PaintName : Veka::Paints::GetAllNames())
+		{
+			Tokens.Add(PaintName.ToString());
+			Labels.Add(FText::Format(LOCTEXT("PaintAssetEntry", "{0}  (paint)"), FText::FromName(PaintName)));
+			Swatches.Add(Veka::Paints::Find(PaintName) ? Veka::Paints::Find(PaintName)->GetAverageColor() : FLinearColor::White);
+		}
 		const FLinearColor Current = Expr ? PaintColor(Value, EVekaColorScheme::Dark) : FLinearColor::Transparent;
 		return SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 4.f, 0.f))
@@ -727,7 +739,7 @@ TSharedRef<SWidget> SVekaInspector::MakeSymbolPicker(TFunction<void(FName)> OnPi
 		TSharedPtr<SListView<TSharedPtr<FName>>> List;
 	};
 	TSharedRef<FState> State = MakeShared<FState>();
-	for (const FName Name : Veka::Symbols::GetBuiltInNames())
+	for (const FName Name : Veka::Symbols::GetAllNames())
 	{
 		State->All.Add(MakeShared<FName>(Name));
 	}

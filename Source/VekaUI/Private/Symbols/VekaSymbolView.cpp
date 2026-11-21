@@ -76,10 +76,12 @@ namespace
 		FVekaPaint Knockout;
 		FVekaSymbolStyle Style;
 		float VariableValue = -1.f;
+		/** Veka::Symbols::GetRevision: an edited symbol is drawn again. */
+		uint32 Revision = 0;
 
 		bool operator==(const FSymbolCacheKey& Other) const
 		{
-			return Definition == Other.Definition && Variant == Other.Variant && BoxPosition.Equals(Other.BoxPosition, 1e-4) && BoxSize.Equals(Other.BoxSize, 1e-4)
+			return Definition == Other.Definition && Revision == Other.Revision && Variant == Other.Variant && BoxPosition.Equals(Other.BoxPosition, 1e-4) && BoxSize.Equals(Other.BoxSize, 1e-4)
 				&& StrokePixels == Other.StrokePixels && RenderScale == Other.RenderScale && Foreground == Other.Foreground && Knockout == Other.Knockout
 				&& Style == Other.Style && VariableValue == Other.VariableValue;
 		}
@@ -630,6 +632,7 @@ int32 FVekaSymbolView::Paint(FVekaPaintContext& Context, const FVekaRect& Bounds
 		Key.Knockout = Painter.Knockout;
 		Key.Style = Style;
 		Key.VariableValue = VariableValue;
+		Key.Revision = Veka::Symbols::GetRevision();
 		const bool bStatic = State.EffectStart < 0.0;
 		if (bStatic && State.bHasCache && State.CachedKey == Key)
 		{

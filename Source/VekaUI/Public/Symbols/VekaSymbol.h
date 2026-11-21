@@ -92,7 +92,10 @@ struct VEKAUI_API FVekaSymbolDefinition
 	FVector2D Anchor = FVector2D(12.0, 12.0);
 };
 
-/** A user symbol (made with the Symbol Editor in Phase 3, or imported from SVG). */
+/**
+ * A user symbol (imported from SVG, edited in the Symbol Editor). Used by name like a built-in symbol
+ * (`Symbol(#"logo")`): loaded symbols register themselves (Definition.Name, or the asset name), the editor loads all.
+ */
 UCLASS(BlueprintType)
 class VEKAUI_API UVekaSymbol : public UPrimaryDataAsset
 {
@@ -101,6 +104,17 @@ class VEKAUI_API UVekaSymbol : public UPrimaryDataAsset
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Veka|Symbol")
 	FVekaSymbolDefinition Definition;
+
+	/** Name views use: Definition.Name, or the asset name. */
+	FName GetSymbolName() const { return Definition.Name.IsNone() ? GetFName() : Definition.Name; }
+
+	virtual void PostInitProperties() override;
+	virtual void PostLoad() override;
+	virtual void BeginDestroy() override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& Event) override;
+	virtual void PostEditUndo() override;
+#endif
 };
 
 /** A set of symbols, registered with Veka::Symbols::RegisterLibrary (looked up before the built-in ones). */
@@ -227,6 +241,16 @@ namespace Veka::Symbols
 
 	VEKAUI_API void RegisterLibrary(UVekaSymbolLibrary* Library);
 	VEKAUI_API void UnregisterLibrary(UVekaSymbolLibrary* Library);
+
+	/** A standalone symbol asset (looked up after the libraries, before the built-in symbols). */
+	VEKAUI_API void RegisterSymbol(UVekaSymbol* Symbol);
+	VEKAUI_API void UnregisterSymbol(UVekaSymbol* Symbol);
+	/** A definition changed (Symbol Editor): drops its cached geometry; views draw it again. */
+	VEKAUI_API void NotifyChanged(const FVekaSymbolDefinition& Definition);
+	/** Bumped by NotifyChanged (part of the symbol drawing cache key). */
+	VEKAUI_API uint32 GetRevision();
+	/** Every symbol name: libraries, registered symbols, built-in. */
+	VEKAUI_API TArray<FName> GetAllNames();
 
 	/** Names of the built-in symbols, in library order. */
 	VEKAUI_API TArray<FName> GetBuiltInNames();

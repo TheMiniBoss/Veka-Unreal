@@ -8,6 +8,7 @@
 #include "Core/VekaPaint.h"
 #include "Anima/VekaImplicit.h"
 #include "Anima/VekaTimeline.h"
+#include "Colora/VekaPaintAsset.h"
 #include "Anima/VekaTransition.h"
 #include "Controls/VekaControls.h"
 #include "Symbols/VekaSymbolView.h"
@@ -219,7 +220,16 @@ namespace
 		}
 		if (Value.Type == EVekaValueType::String)
 		{
-			return Value.StringValue.StartsWith(TEXT("#")) ? FVekaPaint(Hex(Value.StringValue)) : FVekaPaint::FromToken(FName(*Value.StringValue));
+			if (Value.StringValue.StartsWith(TEXT("#")))
+			{
+				return FVekaPaint(Hex(Value.StringValue));
+			}
+			// A paint asset of the project (`.background(.Aurora)`), else a Colora token.
+			if (const FVekaPaint* Named = Veka::Paints::Find(FName(*Value.StringValue)))
+			{
+				return *Named;
+			}
+			return FVekaPaint::FromToken(FName(*Value.StringValue));
 		}
 		return FVekaPaint(FLinearColor::White);
 	}

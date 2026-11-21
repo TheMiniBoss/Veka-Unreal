@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple et **3e Mode Test + Timeline** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline et **3f Symboles et peintures** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) ; 88 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3f Symboles et peintures |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) ; 91 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3g Composants et migration |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,59 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 3f Symboles et peintures
+
+- **Branche** : `cpp/phase-3f-symbols` (partie de `C++` @ `e19eb3f`), fusionnée dans `C++`.
+- **Runtime** :
+  - `UVekaSymbol` autonome : s'enregistre au chargement (`Veka::Symbols::RegisterSymbol`, nom = `Definition.Name` ou
+    nom d'asset) et se trouve par son nom comme un symbole intégré (`Symbol(#"VekaRocket")`, variantes `.fill`,
+    `.circle`...) ; `NotifyChanged` vide le cache de géométrie et incrémente une **révision** incluse dans la clé du cache
+    de tessellation des symboles (une édition est redessinée) ; `GetAllNames`.
+  - **`UVekaPaintAsset`** (« Veka Paint ») : une `FVekaPaint` nommée (mesh gradient, dégradé, image...) utilisable là où
+    va un jeton Colora : `.background(.Aurora)` (interpréteur, analyse « not a Colora token nor a paint asset »,
+    complétion, menu de couleurs de l'inspecteur avec la couleur moyenne).
+- **Import SVG** (`Veka::Editor::Svg::ImportSymbol`, factory « Veka Symbol (from SVG) ») : path / rect / circle /
+  ellipse / line / polyline / polygon, groupes (style et transform translate / scale / matrix hérités ; rotation /
+  skew ignorés avec warning), ajusté dans la grille 24 × 24 (viewBox centrée) ; élément rempli → couche Fill, trait seul
+  → couche Stroke (épaisseur → `StrokeScale` relatif au poids Regular : suit le poids) ; rôles `data-role` / classe ou
+  opacité ; couches variables `data-variable` ; couleur explicite gardée pour Multicolor ; text / image / use ignorés
+  avec warning ; commentaires et DOCTYPE retirés avant le parseur XML. Exemple : `Samples/Svg/VekaRocket.svg`.
+- **Symbol Editor** (double-clic sur une Veka Symbol) : canevas sur la **grille keyline** (unités, zone vive 3..21,
+  cercle, axes) au poids choisi, couches teintées par rôle (sélection en orange) ; liste des couches (réordonner,
+  supprimer) ; propriétés (type, rôle, couche variable → `VariableSteps`, fillable, stroke scale, couleur Multicolor) ;
+  **aperçus** : 9 graisses, 4 modes de rendu, 3 échelles, variantes, valeur variable. Chaque édition = un undo.
+  Création : Add > User Interface > Veka Symbol.
+- **Éditeur de peinture** (double-clic sur une Veka Paint ; Add > Veka Paint démarre en mesh 3 × 3) : le mesh gradient
+  dessiné en direct, **points déplacés à la souris** sur le treillis (aperçu pendant le glisser, écriture au relâcher),
+  double-clic ou pastille = sélecteur de couleur, jeton Colora par point, x / y numériques, + / - colonne et ligne
+  (rééchantillonné : rien ne saute), lisse, espace de couleur, grille régulière ; autres types dans Details (ou
+  convertis en mesh).
+- **Symbol Library** (Window > Tools > Veka Symbol Library, bouton **Symbols** dans l'éditeur de vue) : recherche (nom,
+  mot-clé, catégorie), catégories, tuiles avec aperçu, panneau de détail (graisses, modes, échelles, variantes,
+  couches variables), Copy name (`#"nom"`).
+- **Sélecteurs** : le sélecteur de symboles de l'inspecteur et la complétion listent aussi les symboles du projet ; les
+  peintures du projet dans le menu de couleurs et la complétion. Vignettes des symboles et des peintures. L'éditeur
+  charge toutes les Veka Symbol / Veka Paint au démarrage ; l'éditeur de vue se rafraîchit quand l'une change.
+- **Tests** : 91 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.Editor.Symbols.{Import, Editor}`,
+  `VekaUI.Editor.Paint.Mesh` : import (5 couches, Fill / Stroke, couleur gardée, ajustement à la grille, rôle, stroke
+  scale, tertiaire par opacité, couches variables, warning `<text>`, non-SVG refusé) ; **un SVG importé en
+  `UVekaSymbol` utilisé dans une vue** (trouvé par nom, variantes, mise en page, vignette) ; éditions de couches avec
+  undo, géométrie recalculée, suppression, recherche de la bibliothèque, ouverture du Symbol Editor ; peinture (mesh
+  3 × 3, trouvée par nom, valide dans `.fill`, une vue la dessine en mesh, rééchantillonnage 4 × 3 gardant les coins,
+  déplacement borné, point sous la souris, **glisser = aperçu puis écriture au relâcher**, undo, 4 × 4, vignette,
+  ouverture de l'éditeur).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3f-symbol-editor.jpg`, `phase3f-mesh-editor.jpg`,
+  `phase3f-rocket-card.jpg`, `phase3f-library.jpg`) : `VekaRocket.svg` importé (vignette = la fusée), Symbol Editor
+  (grille, couches par rôle, aperçus graisses / modes / échelles / variantes) ; Veka Paint `Aurora` créée, point
+  central déplacé à la souris (0,74 ; 0,29) ; vue `VV_RocketCard` en code : `Symbol(#"VekaRocket")` sur
+  `.background(.Aurora, radius: 28)` rendue ; bibliothèque (catégorie Imported, détail de la fusée). Assets de
+  démonstration non sauvegardés. Correction : le canevas du Symbol Editor se met à l'échelle (il masquait le curseur
+  de poids dans une petite fenêtre).
+- **Limites** : pas d'édition de tracés point par point dans le Symbol Editor (les formes viennent du SVG ou du code) ;
+  pas de poignées de Bézier dans le mesh gradient (positions et couleurs seulement) ; en jeu, un symbole / une
+  peinture doit être chargé (référencé ou via une bibliothèque) pour être trouvé par nom.
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 3e Mode Test + Timeline
 

@@ -1,6 +1,7 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Symbols/VekaSymbol.h"
+#include "UObject/Package.h"
 #include "UObject/WeakObjectPtrTemplates.h"
 
 namespace Veka::Symbols::Private
@@ -52,6 +53,18 @@ namespace Veka::Symbols
 			return Libraries;
 		}
 
+		TArray<TWeakObjectPtr<UVekaSymbol>>& GetSymbols()
+		{
+			static TArray<TWeakObjectPtr<UVekaSymbol>> Symbols;
+			return Symbols;
+		}
+
+		uint32& GetRevisionCounter()
+		{
+			static uint32 Revision = 1;
+			return Revision;
+		}
+
 		struct FGeometryCache
 		{
 			TMap<const FVekaSymbolDefinition*, TArray<TArray<FVekaPolyline>>> Shapes;
@@ -76,6 +89,16 @@ namespace Veka::Symbols
 						{
 							return &Symbol->Definition;
 						}
+					}
+				}
+			}
+			for (const TWeakObjectPtr<UVekaSymbol>& Item : GetSymbols())
+			{
+				if (const UVekaSymbol* Symbol = Item.Get())
+				{
+					if (Symbol->GetSymbolName() == Name)
+					{
+						return &Symbol->Definition;
 					}
 				}
 			}
@@ -177,6 +200,65 @@ namespace Veka::Symbols
 			Candidate.LeftInline(Dot);
 		}
 		return nullptr;
+	}
+
+	void RegisterSymbol(UVekaSymbol* Symbol)
+	{
+		if (Symbol && !Symbol->HasAnyFlags(RF_ClassDefaultObject))
+		{
+			GetSymbols().AddUnique(Symbol);
+			++GetRevisionCounter();
+		}
+	}
+
+	void UnregisterSymbol(UVekaSymbol* Symbol)
+	{
+		GetSymbols().RemoveAll([Symbol](const TWeakObjectPtr<UVekaSymbol>& Item) { return !Item.IsValid() || Item.Get() == Symbol; });
+		if (Symbol)
+		{
+			GetGeometryCache().Shapes.Remove(&Symbol->Definition);
+		}
+	}
+
+	void NotifyChanged(const FVekaSymbolDefinition& Definition)
+	{
+		GetGeometryCache().Shapes.Remove(&Definition);
+		++GetRevisionCounter();
+	}
+
+	uint32 GetRevision()
+	{
+		return GetRevisionCounter();
+	}
+
+	TArray<FName> GetAllNames()
+	{
+		TArray<FName> Names;
+		for (const TWeakObjectPtr<UVekaSymbolLibrary>& Item : GetLibraries())
+		{
+			if (const UVekaSymbolLibrary* Library = Item.Get())
+			{
+				for (const UVekaSymbol* Symbol : Library->Symbols)
+				{
+					if (Symbol)
+					{
+						Names.AddUnique(Symbol->GetSymbolName());
+					}
+				}
+			}
+		}
+		for (const TWeakObjectPtr<UVekaSymbol>& Item : GetSymbols())
+		{
+			if (const UVekaSymbol* Symbol = Item.Get())
+			{
+				Names.AddUnique(Symbol->GetSymbolName());
+			}
+		}
+		for (const FName Name : GetBuiltInNames())
+		{
+			Names.AddUnique(Name);
+		}
+		return Names;
 	}
 
 	void RegisterLibrary(UVekaSymbolLibrary* Library)
@@ -404,3 +486,39 @@ namespace Veka::Symbols
 		return T >= Duration(Effect.Kind, VariableSteps) + (Effect.bByLayer ? 2.0 * LayerDelay : 0.0);
 	}
 }
+
+void UVekaSymbol::PostInitProperties()
+{
+	Super::PostInitProperties();
+	if (!HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) && GetOuter() && GetOuter() != GetTransientPackage())
+	{
+		Veka::Symbols::RegisterSymbol(this);
+	}
+}
+
+void UVekaSymbol::PostLoad()
+{
+	Super::PostLoad();
+	Veka::Symbols::RegisterSymbol(this);
+	Veka::Symbols::NotifyChanged(Definition);
+}
+
+void UVekaSymbol::BeginDestroy()
+{
+	Veka::Symbols::UnregisterSymbol(this);
+	Super::BeginDestroy();
+}
+
+#if WITH_EDITOR
+void UVekaSymbol::PostEditChangeProperty(FPropertyChangedEvent& Event)
+{
+	Super::PostEditChangeProperty(Event);
+	Veka::Symbols::NotifyChanged(Definition);
+}
+
+void UVekaSymbol::PostEditUndo()
+{
+	Super::PostEditUndo();
+	Veka::Symbols::NotifyChanged(Definition);
+}
+#endif

@@ -28,6 +28,10 @@
 #include "UObject/Package.h"
 #include "ThumbnailRendering/ThumbnailManager.h"
 #include "ViewEditor/VekaViewAssetDefinition.h"
+#include "Symbols/VekaSymbolAssets.h"
+#include "Symbols/SVekaSymbolLibrary.h"
+#include "Symbols/VekaSymbol.h"
+#include "Colora/VekaPaintAsset.h"
 
 #define LOCTEXT_NAMESPACE "VekaEditor"
 
@@ -49,6 +53,25 @@ public:
 
 		// 3b: Veka View thumbnails (the asset editor opens through UAssetDefinition_VekaView).
 		UThumbnailManager::Get().RegisterCustomRenderer(UVekaView::StaticClass(), UVekaViewThumbnailRenderer::StaticClass());
+		// 3f: symbols and paints (thumbnails, library tab; every one loaded so views find them by name).
+		UThumbnailManager::Get().RegisterCustomRenderer(UVekaSymbol::StaticClass(), UVekaSymbolThumbnailRenderer::StaticClass());
+		UThumbnailManager::Get().RegisterCustomRenderer(UVekaPaintAsset::StaticClass(), UVekaPaintThumbnailRenderer::StaticClass());
+		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(Veka::Editor::SymbolLibrary::TabId, FOnSpawnTab::CreateLambda([](const FSpawnTabArgs&)
+		{
+			return SNew(SDockTab).TabRole(ETabRole::NomadTab).Label(LOCTEXT("SymbolLibraryTab", "Veka Symbol Library"))[SNew(SVekaSymbolLibrary)];
+		}))
+			.SetDisplayName(LOCTEXT("SymbolLibraryTab", "Veka Symbol Library"))
+			.SetTooltipText(LOCTEXT("SymbolLibraryTooltip", "Every Veka symbol (built-in and the project's), by category, with previews."))
+			.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		if (Registry.IsLoadingAssets())
+		{
+			Registry.OnFilesLoaded().AddStatic(&FVekaEditorModule::LoadSymbolsAndPaints);
+		}
+		else
+		{
+			LoadSymbolsAndPaints();
+		}
 
 		SampleCommand = IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("Veka.CreateSampleAssets"),
@@ -61,6 +84,8 @@ public:
 		if (UObjectInitialized() && !IsEngineExitRequested())
 		{
 			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaView::StaticClass());
+			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaSymbol::StaticClass());
+			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaPaintAsset::StaticClass());
 		}
 		if (SampleCommand)
 		{
@@ -70,6 +95,22 @@ public:
 		if (FSlateApplication::IsInitialized())
 		{
 			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(PlaygroundTabName);
+			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(Veka::Editor::SymbolLibrary::TabId);
+		}
+	}
+
+	/** Loads the project's symbols and paints: loaded assets register themselves, so views find them by name. */
+	static void LoadSymbolsAndPaints()
+	{
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		for (UClass* Class : { UVekaSymbol::StaticClass(), UVekaPaintAsset::StaticClass() })
+		{
+			TArray<FAssetData> Assets;
+			Registry.GetAssetsByClass(Class->GetClassPathName(), Assets, true);
+			for (const FAssetData& Asset : Assets)
+			{
+				Asset.GetAsset();
+			}
 		}
 	}
 
