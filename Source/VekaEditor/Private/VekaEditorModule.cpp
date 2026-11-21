@@ -26,12 +26,14 @@
 #include "EdGraphSchema_K2.h"
 #include "FileHelpers.h"
 #include "UObject/Package.h"
+#include "ThumbnailRendering/ThumbnailManager.h"
+#include "ViewEditor/VekaViewAssetDefinition.h"
 
 #define LOCTEXT_NAMESPACE "VekaEditor"
 
 /**
  * Phase 1: a "VekaUI Playground" nomad tab (Window > Tools) that hosts the C++ playground view,
- * to check rendering and input inside the editor. Phase 3 adds the UVekaView asset editor and the Hub.
+ * to check rendering and input inside the editor. 3b: the UVekaView asset editor (ViewEditor/). Later: the Hub.
  */
 class FVekaEditorModule : public IModuleInterface
 {
@@ -45,6 +47,9 @@ public:
 			.SetTooltipText(LOCTEXT("PlaygroundTabTooltip", "Phase 1 test view for the VekaUI runtime."))
 			.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
 
+		// 3b: Veka View thumbnails (the asset editor opens through UAssetDefinition_VekaView).
+		UThumbnailManager::Get().RegisterCustomRenderer(UVekaView::StaticClass(), UVekaViewThumbnailRenderer::StaticClass());
+
 		SampleCommand = IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("Veka.CreateSampleAssets"),
 			TEXT("Creates /Game/VekaSamples/VV_Shop (UVekaView) and WBP_VekaShop (a Widget Blueprint with a Veka Host showing it)."),
@@ -53,6 +58,10 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		if (UObjectInitialized() && !IsEngineExitRequested())
+		{
+			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaView::StaticClass());
+		}
 		if (SampleCommand)
 		{
 			IConsoleManager::Get().UnregisterConsoleObject(SampleCommand);
@@ -84,10 +93,13 @@ public:
 		};
 		UVekaView* Item = FindOrCreateView(TEXT("VV_ShopItem"));
 		Item->Document = Veka::Samples::MakeShopItemDocument();
+		Item->PostEditChange(); // open Veka View editors refresh
 		Item->MarkPackageDirty();
 		ToSave.Add(Item->GetPackage());
 		UVekaView* View = FindOrCreateView(TEXT("VV_Shop"));
 		View->Document = Veka::Samples::MakeShopDocument(Item);
+		View->PreviewModelClass = UVekaSampleViewModel::StaticClass();
+		View->PostEditChange();
 		View->MarkPackageDirty();
 		ToSave.Add(View->GetPackage());
 

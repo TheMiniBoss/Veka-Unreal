@@ -27,6 +27,12 @@ public class VekaEditor : ModuleRules
 			"Kismet",
 			// 3a: .vk import (tests read the plugin samples).
 			"Projects",
+			// 3b: asset editor, viewport, thumbnails.
+			"AssetDefinition",
+			"PropertyEditor",
+			"ToolMenus",
+			"InputCore",
+			"RenderCore",
 		});
 	}
 }

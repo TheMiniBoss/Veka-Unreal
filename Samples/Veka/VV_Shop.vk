@@ -53,6 +53,6 @@ view VV_Shop {
     }
     .padding(20)
     .frame(width: 360)
-    .background(#24242BFF, radius: 18)
+    .background(.WindowBackground, radius: 18)
     .animation(gift)
 }

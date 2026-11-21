@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** en cours — 3.0 Document v2 et **3a VekaLang** (langage `.vk`) fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`) et **3b Asset Editor** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) ; 71 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3b Asset Editor (coque) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (viewport, undo, vignettes) ; 75 tests automation ✅ |
+| Prochaine étape | Phase 3 — jalon 3c Mode Avancé (onglet Code) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,44 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-21 — CLOUD + LOCAL → jalon 3b Asset Editor (coque)
+
+- **Branche** : `cpp/phase-3b-editor` (partie de `C++` @ `da1ab39`), fusionnée dans `C++`.
+- **Ouverture** : `UAssetDefinition_VekaView` (nom « Veka View », couleur, catégorie User Interface) — double-clic sur
+  une Veka View → `FVekaViewEditorToolkit` (fenêtre d'éditeur d'asset standard, onglets dockables **Viewport** et
+  **Details**, barre d'outils Refresh / Reset state / Fit).
+- **Viewport** (`SVekaViewPreview`) : la vue tourne en vrai (boutons, toggles, états ; le dernier événement émis est
+  affiché dans la barre d'état) sur un **écran** au choix — 1080p, 1440p, 4K, Ultrawide (3440×1440), Mobile
+  (1170×2532) — mis en page à pixels / **DPI** (« auto » = la courbe DPI du projet, comme le jeu, ou 0,5 à 3 fixe) ;
+  **zoom** à la molette autour du curseur, **pan** clic droit / milieu, F ou Fit pour cadrer (l'écran suit la taille du
+  viewport tant qu'on n'a pas zoomé à la main) ; **Light / Dark** et **thème Colora** (sélecteur d'asset `UVekaTheme`) ;
+  overlays **Bounds** (contour de chaque vue) et **Padding** (zones de padding en vert). Réglages gardés dans
+  `EditorPerProjectUserSettings`.
+- **Modèle de prévisualisation** : `UVekaView::PreviewModelClass` (editor-only) — le viewport et la vignette
+  instancient ce view model, donc `model.X` a des valeurs (la boutique montre Aria, 3 articles). `VV_Shop` l'a
+  (`UVekaSampleViewModel`). Les états modifiés à la main dans le viewport sont gardés quand le document change ; un état
+  resté à sa valeur déclarée suit la nouvelle valeur déclarée.
+- **Undo / redo** : `Veka::Editor::ApplyDocument(View, Document, Description)` = une transaction (`FScopedTransaction`
+  + `Modify`) ; toutes les éditions des outils 3c / 3d passeront par là. Le toolkit est un `FEditorUndoClient` et
+  écoute `OnObjectPropertyChanged` (la vue ou une vue utilisée comme composant) → viewport rafraîchi. Les vues sont
+  marquées `RF_Transactional` à l'ouverture.
+- **Vignettes** : `UVekaViewThumbnailRenderer` — la vue elle-même (avec son modèle de prévisualisation, en sombre),
+  rendue par `FWidgetRenderer` à sa taille naturelle puis mise à l'échelle.
+- **Exemple** : le fond de la boutique est maintenant le jeton Colora `WindowBackground` (au lieu de `#24242B`) pour être
+  lisible en clair ; `Veka.CreateSampleAssets` notifie les éditeurs ouverts.
+- **Tests** : 75 ✅ (1 avec le warning attendu « unknown component ») — nouveaux `VekaUI.Editor.{Preview, Undo, Toolkit,
+  Thumbnail}` : 5 écrans (taille logique = pixels / DPI du projet, vue mise en page à cette taille, écran cadré dans le
+  viewport), DPI fixe, schéma clair / sombre jusqu'à la couleur du texte, overlays (contours, bandes de padding), états
+  gardés / suivis / remis à zéro ; undo / redo d'une édition ; ouverture par le même chemin que le double-clic, édition
+  et undo qui rafraîchissent le viewport ; vignette rendue (plus de 20 couleurs).
+- **BuildPlugin** Win64 : ✅ `BUILD SUCCESSFUL`, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3b-editor-light.jpg`, `phase3b-editor-dark-overlays.jpg`) :
+  double-clic sur `VV_Shop`, les 5 écrans, clair / sombre, overlays, recadrage au redimensionnement, clic sur « Buy »
+  (« Last bought: Health potion », barre d'état « last event: Buy(25) »), case cochée dans Details puis Ctrl+Z
+  (la case et le viewport reviennent). Vignettes de `VV_Shop` / `VV_ShopItem` visibles dans le Content Browser.
+- **Limites** : le panneau Details montre le document brut (l'arbre et le code arrivent en 3c / 3d) ; pas de
+  sélection dans le viewport ; l'écran Mobile suit la courbe DPI du projet (1,08), pas une densité de téléphone.
 
 ### 2026-11-21 — CLOUD + LOCAL → jalon 3a VekaLang (langage Veka `.vk`)
 

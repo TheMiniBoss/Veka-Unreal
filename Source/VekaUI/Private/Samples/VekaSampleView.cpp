@@ -124,7 +124,7 @@ namespace Veka::Samples
 		})
 			.Modifier(TEXT("padding"), { { TEXT("value"), B.Lit(20) } })
 			.Modifier(TEXT("frame"), { { TEXT("width"), B.Lit(360) } })
-			.Modifier(TEXT("background"), { { TEXT("paint"), B.Lit(TEXT("#24242BFF")) }, { TEXT("radius"), B.Lit(18) } })
+			.Modifier(TEXT("background"), { { TEXT("paint"), B.Lit(TEXT("WindowBackground")) }, { TEXT("radius"), B.Lit(18) } })
 			.Modifier(TEXT("animation"), { { TEXT("value"), B.Var(TEXT("gift")) } });
 		B.SetRoot(Root);
 		FVekaDocument Document = B.Release();
