@@ -484,7 +484,14 @@ void FVekaImplicitAnimator::ApplyLeaf(FLeaf& Leaf)
 		{
 			WriteScalar(Ptr, Leaf.Kind == ELeafKind::Float, Leaf.Scalar);
 		}
-		Touch(*Node);
+		// Only an environment modifier (or the primitive, to be safe) can change what the subtree inherits, and only a
+		// layout modifier (or the primitive) a size.
+		const FVekaModifier* Modifier = Leaf.Slot >= 0 ? Slot->GetPtr<FVekaModifier>() : nullptr;
+		Touch(*Node, Leaf.Slot < 0 || !Modifier || Modifier->AffectsLayout());
+		if (Leaf.Slot < 0 || !Modifier || Modifier->ModifiesEnvironment())
+		{
+			TouchedEnvironment.Add(Node.Get());
+		}
 	}
 }
 
@@ -530,12 +537,17 @@ void FVekaImplicitAnimator::CancelSlot(const FVekaNode& Node, int32 Slot, const 
 	}
 }
 
-void FVekaImplicitAnimator::Touch(FVekaNode& Node)
+void FVekaImplicitAnimator::Touch(FVekaNode& Node, bool bLayout)
 {
-	const TWeakPtr<FVekaNode> Weak = Node.AsShared();
-	if (!Touched.Contains(Weak))
+	if (bLayout)
 	{
-		Touched.Add(Weak);
+		TouchedLayout.Add(&Node);
+	}
+	bool bAlready = false;
+	TouchedSet.Add(&Node, &bAlready);
+	if (!bAlready)
+	{
+		Touched.Add(Node.AsShared());
 	}
 }
 
@@ -684,13 +696,29 @@ void FVekaImplicitAnimator::FlushTouched()
 {
 	TArray<TWeakPtr<FVekaNode>> Nodes = MoveTemp(Touched);
 	Touched.Reset();
+	TouchedSet.Reset();
+	const TSet<const FVekaNode*> Environments = MoveTemp(TouchedEnvironment);
+	TouchedEnvironment.Reset();
+	const TSet<const FVekaNode*> Layouts = MoveTemp(TouchedLayout);
+	TouchedLayout.Reset();
 	for (const TWeakPtr<FVekaNode>& Weak : Nodes)
 	{
 		if (TSharedPtr<FVekaNode> Node = Weak.Pin())
 		{
-			Node->RefreshEnvironment();
-			Node->InvalidateLayout();
-			Node->SyncWidget();
+			const bool bEnvironment = Environments.Contains(Node.Get());
+			if (bEnvironment)
+			{
+				Node->RefreshEnvironment();
+			}
+			if (bEnvironment || Layouts.Contains(Node.Get()))
+			{
+				Node->InvalidateLayout();
+				Node->SyncWidget();
+			}
+			else
+			{
+				Node->SyncPresentation();
+			}
 		}
 	}
 }

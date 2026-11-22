@@ -1,6 +1,7 @@
 // Copyright TheMiniBoss. All Rights Reserved.
 
 #include "Core/VekaRuntime.h"
+#include "VekaUIStats.h"
 #include "Morph/VekaMorph.h"
 #include "Core/VekaNode.h"
 #include "Core/VekaView.h"
@@ -389,8 +390,15 @@ void FVekaRuntime::RequestUpdate()
 	}
 }
 
+DEFINE_STAT(STAT_VekaRuntimeTick);
+DEFINE_STAT(STAT_VekaEvaluate);
+DEFINE_STAT(STAT_VekaAnimations);
+DEFINE_STAT(STAT_VekaPaint);
+DEFINE_STAT(STAT_VekaHostsPainted);
+
 bool FVekaRuntime::Flush()
 {
+	SCOPE_CYCLE_COUNTER(STAT_VekaEvaluate);
 	if (bFlushing)
 	{
 		return false;
@@ -448,9 +456,13 @@ bool FVekaRuntime::Flush()
 
 bool FVekaRuntime::Tick(double DeltaSeconds)
 {
+	SCOPE_CYCLE_COUNTER(STAT_VekaRuntimeTick);
 	Flush();
-	Scheduler.Tick(DeltaSeconds);
-	Implicit->FlushTouched();
+	{
+		SCOPE_CYCLE_COUNTER(STAT_VekaAnimations);
+		Scheduler.Tick(DeltaSeconds);
+		Implicit->FlushTouched();
+	}
 	TickTimelines(DeltaSeconds);
 	Flush();
 	return HasPendingWork();

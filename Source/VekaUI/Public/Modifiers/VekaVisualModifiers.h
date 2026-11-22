@@ -13,6 +13,8 @@ struct VEKAUI_API FVekaBackgroundModifier : public FVekaModifier
 {
 	GENERATED_BODY()
 
+	virtual bool AffectsLayout() const override { return false; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Appearance")
 	FVekaPaint Paint;
 
@@ -30,6 +32,8 @@ USTRUCT(BlueprintType, meta = (VekaName = "border", VekaCategory = "Appearance")
 struct VEKAUI_API FVekaBorderModifier : public FVekaModifier
 {
 	GENERATED_BODY()
+
+	virtual bool AffectsLayout() const override { return false; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Appearance")
 	FVekaPaint Paint;
@@ -54,6 +58,8 @@ USTRUCT(BlueprintType, meta = (VekaName = "shadow", VekaCategory = "Appearance")
 struct VEKAUI_API FVekaShadowModifier : public FVekaModifier
 {
 	GENERATED_BODY()
+
+	virtual bool AffectsLayout() const override { return false; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Appearance")
 	FLinearColor Color = FLinearColor(0.f, 0.f, 0.f, 0.33f);
@@ -80,6 +86,8 @@ struct VEKAUI_API FVekaOpacityModifier : public FVekaModifier
 {
 	GENERATED_BODY()
 
+	virtual bool AffectsLayout() const override { return false; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Appearance", meta = (ClampMin = "0", ClampMax = "1"))
 	float Opacity = 1.f;
 
@@ -91,6 +99,8 @@ struct VEKAUI_API FVekaClipModifier : public FVekaModifier
 {
 	GENERATED_BODY()
 
+	virtual bool AffectsLayout() const override { return false; }
+
 	virtual bool ClipsContent() const override { return true; }
 };
 
@@ -99,6 +109,8 @@ USTRUCT(BlueprintType, meta = (VekaName = "offset", VekaCategory = "Transform"))
 struct VEKAUI_API FVekaOffsetModifier : public FVekaModifier
 {
 	GENERATED_BODY()
+
+	virtual bool AffectsLayout() const override { return false; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Transform")
 	FVector2D Offset = FVector2D::ZeroVector;
@@ -112,6 +124,8 @@ struct VEKAUI_API FVekaScaleModifier : public FVekaModifier
 {
 	GENERATED_BODY()
 
+	virtual bool AffectsLayout() const override { return false; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Transform")
 	FVector2D Scale = FVector2D(1.0, 1.0);
 
@@ -123,6 +137,8 @@ USTRUCT(BlueprintType, meta = (VekaName = "rotation", VekaCategory = "Transform"
 struct VEKAUI_API FVekaRotationModifier : public FVekaModifier
 {
 	GENERATED_BODY()
+
+	virtual bool AffectsLayout() const override { return false; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Transform")
 	float Degrees = 0.f;

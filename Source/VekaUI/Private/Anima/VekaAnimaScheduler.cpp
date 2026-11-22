@@ -22,8 +22,8 @@ FVekaAnimationHandle FVekaAnimaScheduler::Animate(const FVekaAnimationSpec& Spec
 			Existing->Velocity = bKeepVelocity ? CurrentVelocity : Spec.InitialVelocity;
 			Existing->Iteration = 0;
 			Existing->bReversed = false;
-			Existing->OnUpdate = MoveTemp(OnUpdate);
-			Existing->OnComplete = MoveTemp(OnComplete);
+			Existing->OnUpdate = OnUpdate ? TSharedPtr<TFunction<void(double)>>(MakeShared<TFunction<void(double)>>(MoveTemp(OnUpdate))) : TSharedPtr<TFunction<void(double)>>();
+			Existing->OnComplete = OnComplete ? TSharedPtr<TFunction<void()>>(MakeShared<TFunction<void()>>(MoveTemp(OnComplete))) : TSharedPtr<TFunction<void()>>();
 			FVekaAnimationHandle Handle;
 			Handle.Id = Existing->Id;
 			return Handle;
@@ -38,8 +38,8 @@ FVekaAnimationHandle FVekaAnimaScheduler::Animate(const FVekaAnimationSpec& Spec
 	Animation.To = To;
 	Animation.Value = From;
 	Animation.Velocity = Spec.InitialVelocity;
-	Animation.OnUpdate = MoveTemp(OnUpdate);
-	Animation.OnComplete = MoveTemp(OnComplete);
+	Animation.OnUpdate = OnUpdate ? TSharedPtr<TFunction<void(double)>>(MakeShared<TFunction<void(double)>>(MoveTemp(OnUpdate))) : TSharedPtr<TFunction<void(double)>>();
+	Animation.OnComplete = OnComplete ? TSharedPtr<TFunction<void()>>(MakeShared<TFunction<void()>>(MoveTemp(OnComplete))) : TSharedPtr<TFunction<void()>>();
 
 	FVekaAnimationHandle Handle;
 	Handle.Id = Animation.Id;
@@ -148,16 +148,16 @@ bool FVekaAnimaScheduler::Tick(double DeltaSeconds)
 		uint64 Id;
 		double Value;
 		bool bFinished;
-		TFunction<void(double)> OnUpdate;
-		TFunction<void()> OnComplete;
+		TSharedPtr<TFunction<void(double)>> OnUpdate;
+		TSharedPtr<TFunction<void()>> OnComplete;
 	};
-	TArray<FPendingCall> Calls;
+	TArray<FPendingCall, TInlineAllocator<128>> Calls;
 	Calls.Reserve(Active.Num());
 
 	for (FActiveAnimation& Animation : Active)
 	{
 		Advance(Animation, DeltaSeconds);
-		Calls.Add({ Animation.Id, Animation.Value, Animation.bFinished, Animation.OnUpdate, Animation.bFinished ? Animation.OnComplete : nullptr });
+		Calls.Add({ Animation.Id, Animation.Value, Animation.bFinished, Animation.OnUpdate, Animation.bFinished ? Animation.OnComplete : TSharedPtr<TFunction<void()>>() });
 	}
 
 	// Remove finished ones before callbacks so a callback can start a new animation on the same channel.
@@ -165,13 +165,13 @@ bool FVekaAnimaScheduler::Tick(double DeltaSeconds)
 
 	for (FPendingCall& Call : Calls)
 	{
-		if (Call.OnUpdate)
+		if (Call.OnUpdate.IsValid() && *Call.OnUpdate)
 		{
-			Call.OnUpdate(Call.Value);
+			(*Call.OnUpdate)(Call.Value);
 		}
-		if (Call.bFinished && Call.OnComplete)
+		if (Call.bFinished && Call.OnComplete.IsValid() && *Call.OnComplete)
 		{
-			Call.OnComplete();
+			(*Call.OnComplete)();
 		}
 	}
 

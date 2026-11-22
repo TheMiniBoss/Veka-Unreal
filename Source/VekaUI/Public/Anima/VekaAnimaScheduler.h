@@ -50,8 +50,9 @@ private:
 		int32 Iteration = 0;
 		bool bReversed = false;
 		bool bFinished = false;
-		TFunction<void(double)> OnUpdate;
-		TFunction<void()> OnComplete;
+		/** Shared, so the per-frame calls copy a pointer, not the function (TFunction allocates). */
+		TSharedPtr<TFunction<void(double)>> OnUpdate;
+		TSharedPtr<TFunction<void()>> OnComplete;
 	};
 
 	void Advance(FActiveAnimation& Animation, double DeltaSeconds) const;

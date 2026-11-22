@@ -78,7 +78,8 @@ private:
 	void CancelLeaf(const FString& Key);
 	void CancelSlot(const FVekaNode& Node, int32 Slot, const TArray<FPathStep>* Prefix = nullptr);
 	void ApplyLeaf(FLeaf& Leaf);
-	void Touch(FVekaNode& Node);
+	/** Node changed this frame; bLayout: its size may have changed too (else it only repaints). */
+	void Touch(FVekaNode& Node, bool bLayout = true);
 
 	static FString MakeKey(const FVekaNode& Node, int32 Slot, const TArray<FPathStep>& Path);
 	static uint8* ResolvePath(uint8* Container, TConstArrayView<FPathStep> Path);
@@ -89,4 +90,10 @@ private:
 	TMap<const FVekaNode*, TSharedPtr<FRectAnimation>> Rects;
 	TMap<const FVekaNode*, TSharedPtr<FTransitionAnimation>> Transitions;
 	TArray<TWeakPtr<FVekaNode>> Touched;
+	/** The nodes of Touched (dedup without a linear search). */
+	TSet<const FVekaNode*> TouchedSet;
+	/** Touched nodes whose animated value can change their environment (the others skip RefreshEnvironment). */
+	TSet<const FVekaNode*> TouchedEnvironment;
+	/** Touched nodes whose layout may have changed (the others get SyncPresentation). */
+	TSet<const FVekaNode*> TouchedLayout;
 };

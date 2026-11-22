@@ -153,6 +153,8 @@ private:
 	TArray<FVekaLayoutChild> MakeChildProxies() const;
 	TOptional<EVekaAxis> GetParentStackAxis() const;
 	void SyncWidget();
+	/** The widget's render transform and a repaint only (see SVekaNodeWidget::SyncPresentation). */
+	void SyncPresentation();
 
 	FVekaRuntime& Runtime;
 	FName Key;

@@ -26,6 +26,8 @@ public:
 
 	/** Child widgets, render transform and hit-test visibility from the node. */
 	void SyncFromNode();
+	/** Render transform and a repaint (an animated visual value: no child list, no layout). */
+	void SyncPresentation();
 
 	// SWidget
 	virtual FVector2D ComputeDesiredSize(float LayoutScaleMultiplier) const override;

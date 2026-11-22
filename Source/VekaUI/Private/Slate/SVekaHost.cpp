@@ -4,6 +4,7 @@
 #include "Modifiers/VekaEffectModifiers.h"
 #include "VekaBackdrop.h"
 #include "Rendering/DrawElements.h"
+#include "VekaUIStats.h"
 #include "Core/VekaRuntime.h"
 #include "Core/VekaNode.h"
 #include "Widgets/SNullWidget.h"
@@ -100,6 +101,8 @@ EActiveTimerReturnType SVekaHost::HandleActiveTimer(double InCurrentTime, float 
 int32 SVekaHost::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
 	int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
+	SCOPE_CYCLE_COUNTER(STAT_VekaPaint);
+	INC_DWORD_STAT(STAT_VekaHostsPainted);
 	const TSharedRef<FVekaBackdropLayer> Backdrops = Veka::Render::MakeBackdropLayer();
 	int32 MaxLayer;
 	{

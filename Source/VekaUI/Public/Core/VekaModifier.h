@@ -87,6 +87,10 @@ struct VEKAUI_API FVekaModifier
 
 	/** Changes the environment seen by the content and the children. */
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const {}
+	/** True for the modifiers that override ModifyEnvironment (an animated value of the others never changes the environment). */
+	virtual bool ModifiesEnvironment() const { return false; }
+	/** False for purely visual modifiers (offset, opacity, background...): an animated value of theirs only repaints. */
+	virtual bool AffectsLayout() const { return true; }
 
 	/** Changes the widget style (opacity, tint) used for everything inside this modifier. */
 	virtual void ModifyWidgetStyle(FWidgetStyle& Style) const {}

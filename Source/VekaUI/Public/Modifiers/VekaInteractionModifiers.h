@@ -84,6 +84,7 @@ struct VEKAUI_API FVekaDisabledModifier : public FVekaModifier
 	bool bDisabled = true;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 namespace VekaEnv
