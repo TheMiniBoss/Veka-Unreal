@@ -6,7 +6,7 @@ The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a re
 - Performance budgets met: 100 springs in under 0.1 ms per frame, full-screen glass in 0.26 ms on the GPU (1080p, High), no Veka work at rest.
 - Animated visual values (offset, opacity, scale, background...) only repaint, without a new layout.
 - stat VekaUI: the Veka cost on the game thread (runtime tick, views, animations, paint).
-- In-game Liquid Glass HUD demo: Veka.HudDemo, or the VekaDemoGameMode game mode.
+- In-game Liquid Glass HUD demo: Veka.HudDemo, the VekaDemoGameMode game mode, or -VekaHudDemo on the command line (Shipping too).
 
 ## 4e — Hub: examples, documentation, changelog (2026-11-22)
 - Examples in the Hub: live previews, "Open as asset" creates the view in /Game/VekaExamples and opens it.

@@ -84,7 +84,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 | Phase | **4** ✅ terminée (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn, 4f Perf + démo in-game fusionnés ; budgets §13 tenus) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` ; 102 tests automation ✅ |
-| Prochaine étape | Phases 0–4 de §16.2 terminées : suite à décider avec TheMiniBoss (démo jouable en Shipping non faite, BuildPlugin non lancé depuis 4.0) |
+| Prochaine étape | Phases 0–4 de §16.2 terminées : suite à décider avec TheMiniBoss (démo Shipping faite : `Packaged/Windows`, `-VekaHudDemo`) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -155,9 +155,17 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 - **Validé** : build éditeur, **102 tests** (101 verts + 1 avec l'avertissement attendu). Vérifié en jeu
   (`-game`, 1080p) : `Docs/Sync/Screens/phase4f-hud.jpg` (HUD sur la scène 3D, sélection qui glisse, goutte qui
   se détache), `phase4f-glass-full.jpg`.
-- **Non fait** : « démo jouable en Shipping » du plan 4f — pas de paquet Shipping, selon la règle de TheMiniBoss
-  (pas de BuildPlugin / Shipping sauf demande ou besoin). À lancer sur demande.
-- **Phase 4 terminée** : Liquid Glass in-game sur scène 3D ✅, Hub complet ✅, budgets §13 tenus ✅.
+- **Démo jouable en Shipping** (lancée à la demande de TheMiniBoss) : `BuildCookRun` Win64 **Shipping**, carte
+  `/Engine/Maps/Templates/OpenWorld`, archivé dans `VekaHost/Packaged/Windows` (936 Mo, hors dépôt) ; build 4 min 22 s,
+  0 warning de compilation. Lancer **`Play Veka HUD Demo.bat`** (= `VekaHost.exe -VekaHudDemo`).
+  - Piège : en Shipping, l'URL de carte de la ligne de commande est ignorée, donc `?game=…VekaDemoGameMode` aussi
+    (le jeu démarrait sans HUD ; le même paquet en Development l'affichait). Ajout de l'option **`-VekaHudDemo`**
+    (`FDelayedAutoRegisterHelper` + `PostLoadMapWithWorld`) : le HUD sur toute carte de jeu, sans game mode.
+  - Les polices LT Flode Neue sont bien dans le paquet (`RuntimeDependencies` de `VekaUI.Build.cs`).
+  - Vérifié : `Docs/Sync/Screens/phase4f-shipping.jpg` (HUD complet sur la scène, sélection et goutte animées).
+  - L'éditeur doit être fermé pour packager (Live Coding bloque le build de la cible éditeur que lance UAT).
+  - Licence LT Flode Neue toujours à vérifier avant de diffuser ce paquet.
+- **Phase 4 terminée** : Liquid Glass in-game sur scène 3D ✅ (Shipping compris), Hub complet ✅, budgets §13 tenus ✅.
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4e Hub : Exemples, Doc, Changelog (+ retours sur 4d)
 
