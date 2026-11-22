@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop fusionné) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | à définir avec TheMiniBoss (Phase 4) |
+| Prochaine étape | Phase 4 — jalon 4a Backdrop + flou (voie B retenue au spike 4.0) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,54 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4.0 Spike backdrop
+
+- **Branche** : `cpp/phase-4.0-backdrop` (partie de `C++` @ `fafd658`), fusionnée dans `C++`. Rapport complet :
+  [`Docs/Spikes/4.0-backdrop.md`](Docs/Spikes/4.0-backdrop.md).
+- **Construit** : modificateur `backdropBlur` (`FVekaBackdropModifier`, `Modifiers/VekaEffectModifiers.h`) avec les
+  deux méthodes, et la commande **`Veka.BackdropSpike [rayon] [full]`** (PIE ou `-game`) qui les montre côte à côte
+  sur la scène 3D.
+  - **A** — post-buffers Slate du moteur (`SPostBufferUpdate` + processeur gaussien, render target échantillonnée).
+  - **B** — élément Slate custom + render graph (`VekaUIRender`, `VekaBackdrop.h` / `VekaBackdrop.usf`) : copie de la
+    zone, pyramide **dual Kawase**, composite dans le **SDF du rectangle arrondi** (teinte, saturation) ; stat GPU
+    `Veka Backdrop`.
+- **Résultats** : A ne capture rien dans l'éditeur (gris uni) et ne floute pas en jeu (copie nette) ; B floute
+  partout. **B coûte 0,09 ms GPU** pour un panneau 380 × 240 et **0,20–0,22 ms en plein écran 1080p** (rayon 24) —
+  budget §13 du glass : < 1 ms.
+- **Décision : B.** Pièges corrigés : Slate ne garde qu'un **pointeur faible** vers un élément custom (on le garde
+  vivant jusqu'au rendu, libéré par une commande de rendu) ; la matrice des éléments couvre **toute la texture de
+  sortie** ; `RDG_EVENT_SCOPE_STAT` remplace `RDG_GPU_STAT_SCOPE` (5.8).
+- **Test** : `VekaUI.Render.Backdrop` (niveaux de flou, un élément custom vivant par peinture).
+- **Validé** : build éditeur, **95 tests** (94 verts + 1 avec l'avertissement attendu), BuildPlugin non-unity
+  Editor + Shipping, 0 warning ; vérifié en PIE et en jeu (`Docs/Sync/Screens/phase4-0-*.jpg`).
+- **Suite (4a)** : une capture + pyramide **par couche et par frame** partagée, niveaux de qualité, repli sans
+  backdrop, `backdropBlur` / `frostedGlass` dans le langage ; retrait de la piste A et de la dépendance
+  `SlateRHIRenderer`.
+
+### 2026-11-22 — CLOUD → plan de la Phase 4 (proposition)
+
+Phase 4 de `VEKAUI_PHASE0.md` §16.2 (Rendu + Hub), découpée comme les Phases 2 et 3 : **une branche par jalon**
+(`cpp/phase-4x-…`), fusionnée dans `C++` quand elle est verte (build Editor + Shipping, tests, vérif dans l'éditeur).
+Critère final (§16.2) : **Liquid Glass in-game sur une scène 3D**, **Hub complet**, **budgets perf §13 tenus**
+(écran de 500 nœuds au repos = 0 coût CPU Veka ; 100 ressorts < 0,1 ms Game Thread ; glass plein écran < 1 ms GPU en
+« High »).
+
+État de départ : le rendu Veka est **tessellé sur CPU** (`FSlateDrawElement::MakeCustomVerts` + brush blanc,
+`Colora/VekaPaintRenderer.cpp`) ; `VekaUIRender` ne fait que déclarer le dossier `Shaders/` ; blend modes Normal et
+Add seulement.
+
+| Jalon | Contenu | Dépend de | Critère « vert » |
+|---|---|---|---|
+| **4.0 Spike backdrop** | §12.1 : **A** post-buffers Slate du moteur (5.8 : `ESlatePostRT` 0–4, `USlatePostBufferProcessor`, `SPostBufferUpdate`, rendu dans un `UTextureRenderTarget2D`) contre **B** élément Slate custom (`ICustomSlateElement`) + RDG (copie de la zone, pyramide dual Kawase, composite) ; mesures GPU, comportement éditeur / PIE / jeu packagé, DPI, plusieurs fenêtres ; décision écrite | 3g | les deux pistes affichent un flou derrière un panneau Veka sur une scène 3D ; coût mesuré ; choix motivé |
+| **4a Backdrop + flou** | voie choisie industrialisée : **une capture + une pyramide de flou par frame et par couche**, partagée par tous les widgets de la couche ; `.backdropBlur(radius)`, `.frostedGlass(tint, blur, noise)` ; scalabilité (Low / Medium / High / Epic) et repli sans backdrop (teinte unie) ; animable | 4.0 | panneau givré sur la scène 3D en éditeur et en jeu ; 0 capture si aucun widget n'en a besoin |
+| **4b Glass** | `.glass(...)` façon Liquid Glass : **réfraction depuis la normale du SDF** de la forme (nos SDF de 2a / 2f), reflet spéculaire du bord, aberration chromatique, teinte ; **glass fusionné / goutte** via `ShapeGroup` ; réaction au pointeur / au scroll | 4a | une barre d'onglets glass qui se déforme et fusionne ; < 1 ms GPU plein écran en High |
+| **4c Blend modes + distorsion** | Multiply, Screen, Overlay, SoftLight, Difference, Color… (avec le backdrop) ; `.liquidDistortion(time, strength)` ; `.blendMode` dans le langage, l'inspecteur et la complétion | 4a | chaque blend mode comparé à une référence ; distorsion animée |
+| **4d Hub + DesignLab** | onglet nomade **Veka Hub** + bouton de toolbar, **écrit en VekaUI** ; DesignLab : tous les composants, palettes Colora (thèmes, dont `VT_Alpha13`), symboles, typographie, animations, effets, avec réglages en direct | 4b | le Hub s'ouvre ; chaque composant et effet visible et réglable |
+| **4e Hub : Exemples, Doc, Changelog** | exemples ouvrables (crée l'asset), **doc générée en partie depuis le schéma** (composants, modificateurs, arguments) + pages écrites, changelog ; anglais d'abord, langue suivant l'éditeur | 4d | la doc couvre tout le catalogue ; un exemple devient un asset modifiable |
+| **4f Perf + démo in-game** | niveau de démo (HUD Liquid Glass sur scène 3D), mesures des budgets §13 (Unreal Insights + `stat` dédiés), corrections | 4b, 4c | budgets tenus et notés ici ; démo jouable en Shipping |
+
+Ordre conseillé : **4.0 → 4a → 4b → 4c → 4d → 4e → 4f** (4d peut commencer après 4a si on veut voir le Hub plus tôt).
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 3g Composants et migration
 
