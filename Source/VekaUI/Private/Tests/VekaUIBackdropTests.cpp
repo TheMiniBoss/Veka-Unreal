@@ -21,6 +21,10 @@
 #include "Input/HittestGrid.h"
 #include "Rendering/DrawElements.h"
 #include "Types/PaintArgs.h"
+#include "Slate/WidgetRenderer.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "TextureResource.h"
+#include "Modifiers/VekaColoraModifiers.h"
 
 namespace
 {
@@ -202,6 +206,85 @@ bool FVekaGlassTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT(".glassGroup(smoothness: 24)"), GroupModifier && GroupModifier->Smoothness == 24.f);
 	TestTrue(TEXT(".glass(cornerRadius: 20, refraction: 10)"), GlassModifier && GlassModifier->CornerRadii.TopLeft == 20.f && GlassModifier->Material.Refraction == 10.f);
+	return true;
+}
+
+namespace
+{
+	/** Renders Root (with Slate, custom elements included) and returns its pixels. */
+	TArray<FColor> RenderPixels(const FVekaElement& Root, const FIntPoint Size)
+	{
+		const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+		Host->SetRoot(Root);
+		UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(FVector2D(Size), TF_Nearest, false);
+		Target->AddToRoot();
+		ON_SCOPE_EXIT { Target->RemoveFromRoot(); };
+		FWidgetRenderer Renderer(false, true);
+		Renderer.DrawWidget(Target, Host, FVector2D(Size), 0.f);
+		Renderer.DrawWidget(Target, Host, FVector2D(Size), 0.f);
+		TArray<FColor> Pixels;
+		Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels);
+		return Pixels;
+	}
+
+	float Channel(uint8 Value) { return Value / 255.f; }
+
+	FVector3f ToVector(const FColor& Color) { return FVector3f(Channel(Color.R), Channel(Color.G), Channel(Color.B)); }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaBlendModeTest, "VekaUI.Render.BlendModes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaBlendModeTest::RunTest(const FString& Parameters)
+{
+	using namespace Veka;
+	// Elements: a blend paints Begin, Between and End around its content (painted twice); Normal / Add: none.
+	TestEqual(TEXT("multiply: three steps"), PaintAndCount(Rectangle().Fill(FLinearColor::Red).Frame(40.f, 40.f).BlendMode(EVekaBlendMode::Multiply)).Custom, 3);
+	TestEqual(TEXT("normal: nothing"), PaintAndCount(Rectangle().Fill(FLinearColor::Red).Frame(40.f, 40.f).BlendMode(EVekaBlendMode::Normal)).Custom, 0);
+	TestEqual(TEXT("add: drawn directly"), PaintAndCount(Rectangle().Fill(FLinearColor::Red).Frame(40.f, 40.f).BlendMode(EVekaBlendMode::Add)).Custom, 0);
+	TestEqual(TEXT("liquid distortion: composite + capture"), PaintAndCount(Text(TEXT("Haze")).Padding(20.f).AddModifier(FInstancedStruct::Make(FVekaLiquidDistortionModifier()))).Custom, 2);
+
+	// Pixels against the W3C formulas, on the stored (display) values: a background, a plain swatch of the source
+	// color, then swatches of the same color blended with the background.
+	const FLinearColor Back(0.70f, 0.35f, 0.15f);
+	const FLinearColor Source(0.20f, 0.55f, 0.80f);
+	struct FCase
+	{
+		EVekaBlendMode Mode;
+		TFunction<float(float, float)> Formula;
+	};
+	const TArray<FCase> Cases = {
+		{ EVekaBlendMode::Multiply, [](float B, float S) { return B * S; } },
+		{ EVekaBlendMode::Screen, [](float B, float S) { return B + S - B * S; } },
+		{ EVekaBlendMode::Darken, [](float B, float S) { return FMath::Min(B, S); } },
+		{ EVekaBlendMode::Lighten, [](float B, float S) { return FMath::Max(B, S); } },
+		{ EVekaBlendMode::Difference, [](float B, float S) { return FMath::Abs(B - S); } },
+		{ EVekaBlendMode::Exclusion, [](float B, float S) { return B + S - 2.f * B * S; } },
+		{ EVekaBlendMode::Overlay, [](float B, float S) { return B <= 0.5f ? 2.f * B * S : 1.f - 2.f * (1.f - B) * (1.f - S); } },
+	};
+	TArray<FVekaElement> Swatches = { Rectangle().Fill(Source).Frame(20.f, 20.f) };
+	for (const FCase& Case : Cases)
+	{
+		Swatches.Add(Rectangle().Fill(Source).Frame(20.f, 20.f).BlendMode(Case.Mode));
+	}
+	const FIntPoint Size(400, 60);
+	const TArray<FColor> Pixels = RenderPixels(ZStack(FVekaAlignment::TopLeading())(
+		Rectangle().Fill(Back).Frame(400.f, 60.f),
+		HStack(10.f).Children(MoveTemp(Swatches)).Padding(FMargin(10.f, 20.f))
+	), Size);
+	if (!TestEqual(TEXT("pixels read"), Pixels.Num(), Size.X * Size.Y))
+	{
+		return false;
+	}
+	auto At = [&](int32 X, int32 Y) { return ToVector(Pixels[Y * Size.X + X]); };
+	const FVector3f B = At(5, 5);
+	const FVector3f S = At(20, 30);
+	TestTrue(FString::Printf(TEXT("background and source differ (%s / %s)"), *B.ToString(), *S.ToString()), !B.Equals(S, 0.05f));
+	for (int32 Index = 0; Index < Cases.Num(); ++Index)
+	{
+		const FVector3f Got = At(20 + (Index + 1) * 30, 30);
+		const FVector3f Expected(Cases[Index].Formula(B.X, S.X), Cases[Index].Formula(B.Y, S.Y), Cases[Index].Formula(B.Z, S.Z));
+		const FString Mode = StaticEnum<EVekaBlendMode>()->GetNameStringByValue(static_cast<int64>(Cases[Index].Mode));
+		TestTrue(FString::Printf(TEXT("%s: got %s, expected %s (B %s, S %s)"), *Mode, *Got.ToString(), *Expected.ToString(), *B.ToString(), *S.ToString()), Got.Equals(Expected, 3.f / 255.f));
+	}
 	return true;
 }
 

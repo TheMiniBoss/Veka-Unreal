@@ -215,6 +215,12 @@ int32 SVekaNodeWidget::PaintLevel(const FPaintPass& Pass, FVekaNode& InNode, int
 		Pass.DrawElements.PushClip(FSlateClippingZone(BehindContext.MakePaintGeometry(Rect)));
 	}
 	MaxLayer = FMath::Max(MaxLayer, PaintLevel(Pass, InNode, Level - 1, MaxLayer + 1, InnerStyle));
+	if (Modifier->PaintsContentTwice())
+	{
+		FVekaPaintContext BetweenContext{ Pass.Geometry, Pass.DrawElements, MaxLayer + 1, Style, Effects, InNode.GetEnvironment(), InNode.GetPrimitiveState() };
+		MaxLayer = FMath::Max(MaxLayer, Modifier->PaintBetween(BetweenContext, Rect));
+		MaxLayer = FMath::Max(MaxLayer, PaintLevel(Pass, InNode, Level - 1, MaxLayer + 1, InnerStyle));
+	}
 	if (bClip)
 	{
 		Pass.DrawElements.PopClip();

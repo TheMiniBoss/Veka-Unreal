@@ -4,6 +4,7 @@
 #include "View/VekaDocument.h"
 #include "View/VekaComponentLibrary.h"
 #include "Modifiers/VekaEffectModifiers.h"
+#include "Modifiers/VekaColoraModifiers.h"
 #include "Core/VekaView.h"
 #include "Core/VekaNode.h"
 #include "Core/VekaSchema.h"
@@ -855,6 +856,21 @@ namespace
 				Backdrop.Saturation = static_cast<float>(Float(TEXT("saturation"), Backdrop.Saturation));
 				Backdrop.Noise = static_cast<float>(Float(TEXT("noise"), Backdrop.Noise));
 				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Backdrop));
+			}
+			if (Name == TEXT("blendMode"))
+			{
+				FVekaBlendModeModifier Blend;
+				Blend.Mode = EnumFrom(Value(TEXT("mode")), EVekaBlendMode::Normal);
+				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Blend));
+			}
+			if (Name == TEXT("liquidDistortion"))
+			{
+				FVekaLiquidDistortionModifier Distortion;
+				Distortion.Strength = static_cast<float>(Float(TEXT("strength"), Distortion.Strength));
+				Distortion.Scale = static_cast<float>(Float(TEXT("scale"), Distortion.Scale));
+				Distortion.Speed = static_cast<float>(Float(TEXT("speed"), Distortion.Speed));
+				Distortion.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(TEXT("cornerRadius"), 0.0)));
+				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Distortion));
 			}
 			if (Name == TEXT("glass") || Name == TEXT("glassGroup"))
 			{

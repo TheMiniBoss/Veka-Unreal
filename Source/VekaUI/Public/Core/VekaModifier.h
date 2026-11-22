@@ -106,4 +106,8 @@ struct VEKAUI_API FVekaModifier
 
 	/** Everything inside this modifier is clipped to its rect. */
 	virtual bool ClipsContent() const { return false; }
+
+	/** The inside of this modifier is painted twice, with PaintBetween in between (blend modes against the backdrop). */
+	virtual bool PaintsContentTwice() const { return false; }
+	virtual int32 PaintBetween(FVekaPaintContext& Context, const FVekaRect& Rect) const { return Context.LayerId; }
 };

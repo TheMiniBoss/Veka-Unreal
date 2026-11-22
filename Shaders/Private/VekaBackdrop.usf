@@ -55,6 +55,8 @@ float4 CornerRadii;
 float4 Tint;
 float Saturation;
 float Noise;
+// Liquid distortion: strength (pixels), 1 / wave size (pixels), time (seconds).
+float4 Distortion;
 float Opacity;
 
 float RoundedRectDistance(float2 P, float2 HalfSize, float4 Radii)
@@ -79,7 +81,17 @@ void CompositePS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosit
 	const float Distance = RoundedRectDistance(Pixel - (ElementRect.xy + HalfSize), HalfSize, CornerRadii);
 	const float Coverage = saturate(0.5 - Distance);
 
-	const float2 BlurUV = (Pixel - CaptureRect.xy) * CaptureRect.zw;
+	// Flowing waves (two layers of crossed sines), faded out at the edge of the shape.
+	float2 Flow = 0;
+	if (Distortion.x > 0.0)
+	{
+		const float2 Q = Pixel * Distortion.y;
+		const float T = Distortion.z;
+		Flow.x = sin(Q.y * 6.2832 + T * 1.3) + 0.5 * sin((Q.x + Q.y) * 9.1 - T * 2.1);
+		Flow.y = cos(Q.x * 6.2832 - T * 1.7) + 0.5 * cos((Q.x - Q.y) * 8.3 + T * 1.9);
+		Flow *= Distortion.x * 0.66 * saturate(-Distance / max(Distortion.x * 2.0, 1.0));
+	}
+	const float2 BlurUV = (Pixel + Flow - CaptureRect.xy) * CaptureRect.zw;
 	const float3 Lower = LowerTexture.SampleLevel(InputSampler, BlurUV, 0).rgb;
 	const float3 Upper = UpperTexture.SampleLevel(InputSampler, BlurUV, 0).rgb;
 	float3 Color = lerp(Lower, Upper, LevelMix);
@@ -169,4 +181,82 @@ void GlassPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition 
 	Color += Highlight * pow(Rim, 3.0) * (0.25 + 0.75 * Facing);
 
 	OutColor = float4(max(Color, 0.0), Coverage * Opacity);
+}
+
+// Blend modes against the backdrop. FillPS clears a region; BlendPS rebuilds the content's color and coverage from its
+// two paints (over black: a*C, over white: a*C + 1 - a) and blends it with what was behind (W3C compositing formulas).
+float4 FillColor;
+
+void FillPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	OutColor = FillColor;
+}
+
+Texture2D BehindTexture;
+Texture2D OverBlackTexture;
+Texture2D OverWhiteTexture;
+int2 RegionMin;
+int Mode;
+
+float BlendLum(float3 C) { return dot(C, float3(0.3, 0.59, 0.11)); }
+
+float3 ClipColor(float3 C)
+{
+	const float L = BlendLum(C);
+	const float N = min(C.r, min(C.g, C.b));
+	const float X = max(C.r, max(C.g, C.b));
+	if (N < 0.0) C = L + (C - L) * L / max(L - N, 1e-5);
+	if (X > 1.0) C = L + (C - L) * (1.0 - L) / max(X - L, 1e-5);
+	return C;
+}
+
+float3 SetLum(float3 C, float L) { return ClipColor(C + (L - BlendLum(C))); }
+float BlendSat(float3 C) { return max(C.r, max(C.g, C.b)) - min(C.r, min(C.g, C.b)); }
+
+float3 SetSat(float3 C, float S)
+{
+	const float N = min(C.r, min(C.g, C.b));
+	const float X = max(C.r, max(C.g, C.b));
+	return X > N ? (C - N) * S / (X - N) : 0.0.xxx;
+}
+
+float Dodge(float B, float S) { return B <= 0.0 ? 0.0 : (S >= 1.0 ? 1.0 : min(1.0, B / (1.0 - S))); }
+float Burn(float B, float S) { return B >= 1.0 ? 1.0 : (S <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - B) / S)); }
+
+float3 HardLight(float3 B, float3 S) { return lerp(B * 2.0 * S, 1.0 - (1.0 - B) * (1.0 - (2.0 * S - 1.0)), step(0.5, S)); }
+
+float3 SoftLightD(float3 B) { return lerp(((16.0 * B - 12.0) * B + 4.0) * B, sqrt(B), step(0.25, B)); }
+
+float3 BlendColors(float3 B, float3 S, int M)
+{
+	switch (M)
+	{
+	case 0: return B * S;                                                   // Multiply
+	case 1: return B + S - B * S;                                           // Screen
+	case 2: return HardLight(S, B);                                         // Overlay
+	case 3: return min(B, S);                                               // Darken
+	case 4: return max(B, S);                                               // Lighten
+	case 5: return float3(Dodge(B.r, S.r), Dodge(B.g, S.g), Dodge(B.b, S.b));       // ColorDodge
+	case 6: return float3(Burn(B.r, S.r), Burn(B.g, S.g), Burn(B.b, S.b));          // ColorBurn
+	case 7: return HardLight(B, S);                                         // HardLight
+	case 8: return lerp(B - (1.0 - 2.0 * S) * B * (1.0 - B), B + (2.0 * S - 1.0) * (SoftLightD(B) - B), step(0.5, S)); // SoftLight
+	case 9: return abs(B - S);                                              // Difference
+	case 10: return B + S - 2.0 * B * S;                                    // Exclusion
+	case 11: return SetLum(SetSat(S, BlendSat(B)), BlendLum(B));            // Hue
+	case 12: return SetLum(SetSat(B, BlendSat(S)), BlendLum(B));            // Saturation
+	case 13: return SetLum(S, BlendLum(B));                                 // Color
+	default: return SetLum(B, BlendLum(S));                                 // Luminosity
+	}
+}
+
+void BlendPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const int3 Texel = int3(int2(SvPosition.xy) - RegionMin, 0);
+	const float3 Behind = BehindTexture.Load(Texel).rgb;
+	const float3 OverBlack = OverBlackTexture.Load(Texel).rgb;
+	const float3 OverWhite = OverWhiteTexture.Load(Texel).rgb;
+	const float Coverage = saturate(1.0 - dot(OverWhite - OverBlack, 1.0 / 3.0));
+	const float3 Source = Coverage > 1e-3 ? saturate(OverBlack / Coverage) : 0.0.xxx;
+	const float3 Blended = saturate(BlendColors(saturate(Behind), Source, Mode));
+	OutColor = float4(lerp(Behind, Blended, Coverage), 1.0);
 }

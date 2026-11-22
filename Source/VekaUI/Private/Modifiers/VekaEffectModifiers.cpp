@@ -126,6 +126,28 @@ int32 FVekaBackdropModifier::PaintBehind(FVekaPaintContext& Context, const FVeka
 	return Context.LayerId + 1;
 }
 
+int32 FVekaLiquidDistortionModifier::PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const
+{
+	FVekaBackdropLayer* Layer = Veka::Backdrop::CurrentLayer();
+	if (!Layer || Strength <= 0.f || Rect.Size.X <= 0.0 || Rect.Size.Y <= 0.0 || Veka::Render::GetBackdropQuality() == EVekaBackdropQuality::Off)
+	{
+		return Context.LayerId;
+	}
+	FVekaBackdropParams Params;
+	float Scale_ = 1.f;
+	ToAbsolute(Context, Rect, Params.Min, Params.Max, Scale_);
+	Params.BlurRadius = 0.f;
+	Params.CornerRadii = FVector4f(CornerRadii.TopLeft, CornerRadii.TopRight, CornerRadii.BottomRight, CornerRadii.BottomLeft) * Scale_;
+	Params.Tint = FLinearColor::Transparent;
+	Params.Saturation = 1.f;
+	Params.DistortionStrength = Strength * Scale_;
+	Params.DistortionScale = Scale * Scale_;
+	Params.DistortionTime = static_cast<float>(FMath::Fmod(FPlatformTime::Seconds() * Speed, 3600.0));
+	Params.Opacity = Context.WidgetStyle.GetColorAndOpacityTint().A;
+	FSlateDrawElement::MakeCustom(Context.DrawElements, Context.LayerId, Layer->Add(Params));
+	return Context.LayerId + 1;
+}
+
 int32 FVekaGlassModifier::PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const
 {
 	if (Rect.Size.X <= 0.0 || Rect.Size.Y <= 0.0)

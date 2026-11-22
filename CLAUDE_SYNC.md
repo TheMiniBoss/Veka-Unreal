@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4c Blend modes + distorsion |
+| Prochaine étape | Phase 4 — jalon 4d Hub + DesignLab |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,37 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4c Blend modes + distorsion
+
+- **Branche** : `cpp/phase-4c-blend` (partie de `C++` @ `a0abce0`), fusionnée dans `C++`. BuildPlugin non lancé
+  (règle du 2026-11-22).
+- **Blend modes contre le backdrop** : `EVekaBlendMode` gagne Multiply, Screen, Overlay, Darken, Lighten,
+  ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion, Hue, Saturation, Color, Luminosity (formules
+  W3C, `BlendPS`). Normal et Add restent dessinés directement (2a).
+  - **Difficulté** : le back buffer est en **10:10:10:2** (`PF_A2B10G10R10`), son alpha est inutilisable pour retrouver
+    la couverture du contenu. **Solution** : le contenu est **peint deux fois** — sur noir (N0 = a·C), puis sur blanc
+    (N1 = a·C + 1 − a) — d'où `a = 1 − (N1 − N0)`, `C = N0 / a`, résultat `(1 − a)·B + a·Blend(B, C)`. Nouveau crochet
+    de modificateur `PaintsContentTwice()` / `PaintBetween()` dans `SVekaNodeWidget::PaintLevel`.
+  - Rendu : trois éléments par blend (`MakeBlendElements` : Begin = copie de B + remplissage noir, Between = copie de
+    N0 + remplissage blanc, End = composite) ; zone = le rectangle du nœud ; à la qualité 0, dessin normal.
+  - Langage : `.blendMode(.Multiply)` (catalogue, énumération complète dans l'inspecteur et la complétion).
+- **Distorsion liquide** : `FVekaLiquidDistortionModifier` / `.liquidDistortion(strength, scale:, speed:,
+  cornerRadius:)` — un backdrop sans flou dont le composite déplace l'échantillonnage par des vagues animées (deux
+  couches de sinus croisés, atténuées au bord), dans la capture partagée de la couche.
+- **Démos** : `Veka.BlendDemo` (une pastille par mode sur la scène) ; panneau « Distortion » ajouté à
+  `Veka.BackdropDemo`.
+- **Tests** : `VekaUI.Render.BlendModes` — éléments (3 par blend, aucun pour Normal / Add, 2 pour la distorsion) et
+  **pixels réels** (rendu `FWidgetRenderer` dans une cible **linéaire**, relu) : Multiply, Screen, Darken, Lighten,
+  Difference, Exclusion et Overlay égaux à la formule sur les valeurs stockées, à 3/255 près. (Avec une cible sRGB la
+  relecture ré-encode les valeurs : piège noté.)
+- **Validé** : build éditeur, **98 tests** (97 verts + 1 avec l'avertissement attendu). Vérifié en jeu
+  (`Docs/Sync/Screens/phase4c-blend-game.jpg` : Multiply assombrit sur le ciel, Screen éclaircit, Difference / Hue /
+  Saturation / Luminosity cohérents ; `phase4c-distortion-a/b.jpg` : le bord du nuage ondule d'une image à l'autre,
+  effet discret à la force 14).
+- **Limites** : le contenu d'un nœud en blend est peint deux fois (coût CPU / GPU double pour ce sous-arbre) ; ce qui
+  dépasse du rectangle du nœud (ombres) n'est pas mélangé ; la distorsion ne redemande pas d'images d'elle-même (Slate
+  repeint chaque image en jeu ; dans un éditeur au repos elle peut se figer).
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4b Glass (Liquid Glass)
 

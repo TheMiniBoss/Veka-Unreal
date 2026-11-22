@@ -40,7 +40,11 @@ struct VEKAUI_API FVekaColorAdjustModifier : public FVekaModifier
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
 };
 
-/** Normal or additive blending for the shapes and gradients of the subtree. */
+/**
+ * How the subtree is composited with what is under it. Normal / Add: the shapes and gradients draw directly. Multiply
+ * ... Luminosity: the subtree is blended with its backdrop, inside the node's rect (needs backdrops on; at
+ * r.Veka.Backdrop.Quality 0 it draws normally).
+ */
 USTRUCT(BlueprintType, meta = (VekaName = "blendMode", VekaCategory = "Colora"))
 struct VEKAUI_API FVekaBlendModeModifier : public FVekaModifier
 {
@@ -50,4 +54,15 @@ struct VEKAUI_API FVekaBlendModeModifier : public FVekaModifier
 	EVekaBlendMode Mode = EVekaBlendMode::Normal;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool PaintsContentTwice() const override;
+	virtual int32 PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+	virtual int32 PaintBetween(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+	virtual int32 PaintFront(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+
+	/** Blended with the backdrop (not Normal or Add). */
+	static bool UsesBackdrop(EVekaBlendMode Mode) { return Mode > EVekaBlendMode::Add; }
+
+private:
+	/** Elements of this frame's blend (made in PaintBehind, used by PaintBetween / PaintFront). */
+	mutable TSharedPtr<struct FVekaBlendElements> Elements;
 };
