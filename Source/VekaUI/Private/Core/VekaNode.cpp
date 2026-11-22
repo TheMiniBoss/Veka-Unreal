@@ -440,6 +440,14 @@ TSharedRef<SWidget> FVekaNode::GetOrCreateWidget()
 	return Widget.ToSharedRef();
 }
 
+void FVekaNode::SyncPresentation()
+{
+	if (Widget.IsValid())
+	{
+		Widget->SyncPresentation();
+	}
+}
+
 void FVekaNode::SyncWidget()
 {
 	if (Widget.IsValid())

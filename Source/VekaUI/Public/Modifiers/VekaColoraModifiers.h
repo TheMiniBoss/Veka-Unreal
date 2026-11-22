@@ -19,6 +19,7 @@ struct VEKAUI_API FVekaThemeModifier : public FVekaModifier
 	TObjectPtr<UVekaTheme> Theme;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 /**
@@ -38,6 +39,7 @@ struct VEKAUI_API FVekaColorAdjustModifier : public FVekaModifier
 	float Amount = 1.f;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 /**
@@ -54,6 +56,7 @@ struct VEKAUI_API FVekaBlendModeModifier : public FVekaModifier
 	EVekaBlendMode Mode = EVekaBlendMode::Normal;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 	virtual bool PaintsContentTwice() const override;
 	virtual int32 PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
 	virtual int32 PaintBetween(FVekaPaintContext& Context, const FVekaRect& Rect) const override;

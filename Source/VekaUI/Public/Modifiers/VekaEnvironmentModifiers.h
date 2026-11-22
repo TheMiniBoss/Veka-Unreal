@@ -18,6 +18,7 @@ struct VEKAUI_API FVekaForegroundModifier : public FVekaModifier
 	FVekaPaint Paint = FVekaPaint(FLinearColor::White);
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 USTRUCT(BlueprintType, meta = (VekaName = "font", VekaCategory = "Environment"))
@@ -29,6 +30,7 @@ struct VEKAUI_API FVekaFontModifier : public FVekaModifier
 	FSlateFontInfo Font;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 USTRUCT(BlueprintType, meta = (VekaName = "colorScheme", VekaCategory = "Environment"))
@@ -40,4 +42,5 @@ struct VEKAUI_API FVekaColorSchemeModifier : public FVekaModifier
 	EVekaColorScheme Scheme = EVekaColorScheme::Dark;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };

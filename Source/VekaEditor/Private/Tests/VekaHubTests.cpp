@@ -125,7 +125,10 @@ bool FVekaHubLearnTest::RunTest(const FString& Parameters)
 	// Changelog: releases with entries, newest first.
 	const TArray<FChangelogRelease> Changelog = GetChangelog();
 	TestTrue(FString::Printf(TEXT("changelog releases (%d)"), Changelog.Num()), Changelog.Num() >= 10);
-	TestTrue(TEXT("newest first (4e)"), Changelog.Num() > 0 && Changelog[0].Title.StartsWith(TEXT("4e")) && Changelog[0].Entries.Num() >= 3);
+	const int32 Index4e = Changelog.IndexOfByPredicate([](const FChangelogRelease& Release) { return Release.Title.StartsWith(TEXT("4e")); });
+	const int32 Index4d = Changelog.IndexOfByPredicate([](const FChangelogRelease& Release) { return Release.Title.StartsWith(TEXT("4d")); });
+	TestTrue(TEXT("newest first (4e before 4d)"), Index4e != INDEX_NONE && Index4d != INDEX_NONE && Index4e < Index4d);
+	TestTrue(TEXT("the newest release has entries"), Changelog.Num() > 0 && Changelog[0].Entries.Num() >= 3);
 	return true;
 }
 

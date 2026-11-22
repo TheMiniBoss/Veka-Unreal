@@ -79,6 +79,7 @@ struct VEKAUI_API FVekaShapeGroupScopeModifier : public FVekaModifier
 	GENERATED_BODY()
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 /**

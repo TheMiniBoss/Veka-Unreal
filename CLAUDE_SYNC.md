@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** ✅ terminée (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn, 4f Perf + démo in-game fusionnés ; budgets §13 tenus) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4f Perf + démo in-game |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` ; 102 tests automation ✅ |
+| Prochaine étape | Phases 0–4 de §16.2 terminées : suite à décider avec TheMiniBoss (démo jouable en Shipping non faite, BuildPlugin non lancé depuis 4.0) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,45 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4f Perf + démo in-game (fin de la Phase 4)
+
+- **Branche** : `cpp/phase-4f-perf` (partie de `C++` @ `f3f4ebf`), fusionnée dans `C++`. BuildPlugin non lancé.
+- **Budgets §13, mesurés** (PC Local, UE 5.8.4, Development, 1920×1080) :
+
+  | Budget | Mesure | Comment |
+  |---|---|---|
+  | écran de 500 nœuds au repos = 0 CPU Veka | **0** : pas de tick (l'hôte s'arrête au repos ; tick forcé 0,0001 ms) ; peinture **0,002 ms** si Slate met l'hôte en cache (`SInvalidationPanel` / invalidation globale) | test `VekaUI.Perf.Budgets` |
+  | 100 ressorts < 0,1 ms Game Thread | **0,074–0,088 ms** en moyenne (pire image 0,12–0,15 ms), au départ 0,337 ms | test `VekaUI.Perf.Budgets` (assertion < 0,1 ms) |
+  | glass plein écran < 1 ms GPU en High | **0,26 ms** (max 0,28) — `Veka.GlassDemo full`, qualité 3 = High par défaut | `stat gpu`, ligne « Veka Backdrop » |
+  | (info) HUD de démo complet | GPU 0,17 ms ; Game Thread : Paint 0,54 ms, Runtime tick 0,02 ms | `stat gpu` + `stat VekaUI` |
+
+  Limite connue : sans cache Slate, un hôte est repeint à chaque image par le viewport (500 Text ≈ 4,3 ms de
+  prépasse + peinture). Le tick Veka reste à 0 ; c'est le coût Slate habituel d'un widget non invalidé. Un hôte
+  avec du glass doit de toute façon repeindre (la scène derrière bouge).
+- **Corrections du chemin d'animation** (ressorts 0,337 → ~0,08 ms) :
+  - planificateur : callbacks `OnUpdate` / `OnComplete` partagés (`TSharedPtr<TFunction>`) au lieu d'une copie par
+    image, appels en `TInlineAllocator<128>` ;
+  - animations implicites : nœuds touchés dédupliqués (`TSet`) ; `RefreshEnvironment` seulement si un modificateur
+    d'environnement change (`FVekaModifier::ModifiesEnvironment()`, vrai sur les 11 modificateurs concernés) ;
+  - **modificateurs visuels** (`Background`, `Border`, `Shadow`, `Opacity`, `Clip`, `Offset`, `Scale`, `Rotation`) :
+    `AffectsLayout()` = faux, une valeur animée ne refait plus la mise en page : `FVekaNode::SyncPresentation()`
+    (transformation de rendu + repeinte) au lieu de `InvalidateLayout` + `SyncWidget`.
+- **Stats** : `stat VekaUI` (`VekaUIStats.h`) — Runtime tick, Evaluate views, Animations, Paint, Hosts painted.
+  GPU : `stat gpu`, « Veka Backdrop ».
+- **Démo in-game** (`Samples/VekaDemoHUD.*`) : `Veka::Samples::LiquidGlassHud()` — état (glass), boussole (glass),
+  mini-carte et objectif (frosted), munitions (glass), barre d'onglets en `GlassGroup` dont la sélection glisse
+  en ressort et une goutte « + » qui se détache et se recolle (pilotée par un ticker toutes les 1,6 s).
+  `AVekaDemoHUD` + `AVekaDemoGameMode` (GameMode Override d'un niveau, ou `?game=/Script/VekaUI.VekaDemoGameMode`),
+  commande `Veka.HudDemo` (PIE / jeu). `Veka.GlassDemo full` : une vitre plein écran pour la mesure GPU.
+- **Tests** : `VekaUI.Perf.Budgets` (nouveau) ; `VekaUI.Editor.HubLearn` vérifie l'ordre du changelog (4e avant
+  4d) au lieu d'exiger « 4e » en tête (cassait à chaque nouveau jalon).
+- **Validé** : build éditeur, **102 tests** (101 verts + 1 avec l'avertissement attendu). Vérifié en jeu
+  (`-game`, 1080p) : `Docs/Sync/Screens/phase4f-hud.jpg` (HUD sur la scène 3D, sélection qui glisse, goutte qui
+  se détache), `phase4f-glass-full.jpg`.
+- **Non fait** : « démo jouable en Shipping » du plan 4f — pas de paquet Shipping, selon la règle de TheMiniBoss
+  (pas de BuildPlugin / Shipping sauf demande ou besoin). À lancer sur demande.
+- **Phase 4 terminée** : Liquid Glass in-game sur scène 3D ✅, Hub complet ✅, budgets §13 tenus ✅.
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4e Hub : Exemples, Doc, Changelog (+ retours sur 4d)
 

@@ -236,6 +236,7 @@ struct VEKAUI_API FVekaTypographyModifier : public FVekaModifier
 	FVekaTypography Value;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 namespace VekaEnv

@@ -303,6 +303,7 @@ struct VEKAUI_API FVekaControlStyleModifier : public FVekaModifier
 	FVekaControlStyle Value;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 namespace VekaEnv

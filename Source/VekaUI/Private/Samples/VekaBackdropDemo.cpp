@@ -107,8 +107,17 @@ namespace
 			return;
 		}
 		using namespace Veka;
-		const float Gap = Args.IsEmpty() ? 150.f : FCString::Atof(*Args[0]);
 		const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+		if (Args.Contains(TEXT("full")))
+		{
+			// One glass over the whole viewport (§13 budget: full-screen glass < 1 ms GPU in High).
+			Host->SetRoot(Text(TEXT("Full-screen glass")).Font(EVekaTextStyle::LargeTitle)
+				.FlexFrame(0.0, TNumericLimits<double>::Max(), 0.0, TNumericLimits<double>::Max()).Glass(FVekaCornerRadii(40.f)));
+			Viewport->AddViewportWidgetContent(Host, 100);
+			GGlassHost = Host;
+			return;
+		}
+		const float Gap = Args.IsEmpty() ? 150.f : FCString::Atof(*Args[0]);
 		Host->SetRoot(VStack(40.f, EVekaHAlign::Leading)(
 			VStack(8.f, EVekaHAlign::Leading)(
 				Text(TEXT("Liquid Glass")).Font(EVekaTextStyle::LargeTitle),
@@ -137,7 +146,7 @@ namespace
 		GGlassHost = Host;
 	}
 
-	FAutoConsoleCommand GGlassCommand(TEXT("Veka.GlassDemo"), TEXT("Toggles the liquid glass demo over the game viewport (Veka.GlassDemo [gap])."),
+	FAutoConsoleCommand GGlassCommand(TEXT("Veka.GlassDemo"), TEXT("Toggles the liquid glass demo over the game viewport (Veka.GlassDemo [gap] | full)."),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&ToggleGlassDemo));
 }
 

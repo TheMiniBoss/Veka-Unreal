@@ -85,6 +85,25 @@ void SVekaNodeWidget::SyncFromNode()
 	}
 }
 
+void SVekaNodeWidget::SyncPresentation()
+{
+	TSharedPtr<FVekaNode> Pinned = Node.Pin();
+	if (!Pinned.IsValid())
+	{
+		return;
+	}
+	if (Pinned->HasRenderTransform())
+	{
+		SetRenderTransformPivot(FVector2D(0.5, 0.5));
+		SetRenderTransform(Pinned->ComputeRenderTransform(Pinned->GetArrangedRect().Size));
+	}
+	else if (GetRenderTransform().IsSet())
+	{
+		SetRenderTransform(TOptional<FSlateRenderTransform>());
+	}
+	Invalidate(EInvalidateWidgetReason::Paint);
+}
+
 FVector2D SVekaNodeWidget::ComputeDesiredSize(float LayoutScaleMultiplier) const
 {
 	if (TSharedPtr<FVekaNode> Pinned = Node.Pin())

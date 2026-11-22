@@ -101,6 +101,7 @@ struct VEKAUI_API FVekaSymbolStyleModifier : public FVekaModifier
 	FVekaSymbolStyle Value;
 
 	virtual void ModifyEnvironment(FVekaEnvironment& Environment) const override;
+	virtual bool ModifiesEnvironment() const override { return true; }
 };
 
 namespace VekaEnv
