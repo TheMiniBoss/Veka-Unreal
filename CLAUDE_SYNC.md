@@ -83,7 +83,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 |---|---|
 | Phase | **4** ✅ terminée (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn, 4f Perf + démo in-game fusionnés ; budgets §13 tenus) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` ; 102 tests automation ✅ |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` + composant `Fireworks` ; 103 tests automation ✅ |
 | Prochaine étape | Phases 0–4 de §16.2 terminées : suite à décider avec TheMiniBoss (démo Shipping faite : `Packaged/Windows`, `-VekaHudDemo`) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
@@ -119,6 +119,38 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → défi : carte d'anniversaire « feux d'artifice » (iOS 27) refaite en Veka
+
+- **Demande de TheMiniBoss** : refaire avec Veka la vidéo Kavsoft « Apple's Birthday Card Fireworks Animation Using
+  SwiftUI » (iOS 27 : une carte givrée « Birthday · Found in Contacts / Today, Mar 13 » où de petits feux d'artifice
+  éclatent ; le bouton « Show Birthday Card » la fait apparaître). En SwiftUI : `Canvas` + `TimelineView`.
+- **Branche** : `cpp/challenge-fireworks` (partie de `C++` @ `25521ce`), fusionnée dans `C++`. BuildPlugin non lancé.
+- **Composant `Fireworks`** (`Primitives/VekaFireworks.*`), écrit avec l'API d'extension (`FVekaPrimitive`, comme Text
+  ou Shape) — l'équivalent Veka de `Canvas` + `TimelineView` : son état (`FVekaPrimitiveState`) garde les gerbes et
+  demande une image à chaque frame (`NeedsAnimationFrame`). Gerbes à des endroits et intervalles aléatoires (≈ `rate`
+  par seconde), éclair blanc, étincelles en sphère projetée (plus denses au bord), blanches puis colorées (6 paires de
+  couleurs), qui ralentissent, flottent, scintillent, tombent un peu (`gravity`) et s'éteignent ; halo + petite traînée.
+  Arguments : `rate`, `particles`, `radius`, `size`, `duration`, `gravity`, `seed`. Schéma : `Fireworks(...)` en `.vk`
+  sans autre câblage, palette > Effects. Ne prend pas les clics. Builder C++ `Veka::Fireworks(Rate, Particles)`.
+  - Piège Slate : un `FSlateRoundedBoxBrush` dont le rayon dépasse la moitié de la boîte **ne dessine rien** (pas de
+    bornage) → une brosse par quart de pixel de rayon (128 brosses statiques).
+- **Exemple** `Samples/Veka/Examples/VV_ExampleBirthdayCard.vk` (Hub > Learn > Examples) : fond « plis violets »
+  flouté (`backdropBlur`), carte `frostedGlass` + bordure avec le texte et `Fireworks` par-dessus, bouton `glass`
+  « Show / Hide Birthday Card » (`withAnimation { shown.toggle() }`, la carte entre et sort par le haut).
+- **Transitions `.vk`** : `.move` (opacité + arrivée par le haut) et `.blur` (flou + échelle 0,9 + opacité), aussi
+  dans l'inspecteur du Mode Simple.
+- **Tests** : `VekaUI.Effects.Fireworks` (schéma, pas de clic, image par frame ; pixels : rien au départ, étincelles
+  colorées un instant plus tard) ; l'exemple passe `VekaUI.Editor.HubLearn` (analyse propre).
+- **Validé** : build éditeur, **103 tests** (102 verts + 1 avec l'avertissement attendu). Vérifié dans l'éditeur de vue
+  (`Docs/Sync/Screens/challenge-fireworks.jpg`) : gerbes or, cyan, vertes, roses sur la carte givrée ; Hide → la carte
+  sort par le haut, Show → elle revient et les feux repartent. Teintes du fond assombries ensuite (non revérifiées à
+  l'œil, l'exemple passe les tests).
+- **Limite trouvée (avant ce défi)** : dans la galerie d'exemples du Hub, le verre de la carte apparaît sombre. Tous les
+  aperçus sont dans **un seul hôte**, qui ne prend **qu'une capture par image** (au premier effet dessiné) : un effet
+  d'un autre aperçu (GlassHud) sur une couche Slate plus basse la déclenche probablement avant que le fond de la carte
+  soit dessiné. Correct dans l'éditeur de vue (un hôte par vue). Piste : une capture par « groupe » (modificateur qui
+  isole un sous-arbre) ou une nouvelle capture quand un effet est sur une couche au-dessus de la précédente.
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4f Perf + démo in-game (fin de la Phase 4)
 

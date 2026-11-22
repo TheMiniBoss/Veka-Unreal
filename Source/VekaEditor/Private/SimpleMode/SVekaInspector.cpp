@@ -722,9 +722,9 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 		}
 		if (Owner == TEXT("transition"))
 		{
-			const TArray<FString> Kinds = { TEXT("opacity"), TEXT("scale"), TEXT("slide") };
+			const TArray<FString> Kinds = { TEXT("opacity"), TEXT("scale"), TEXT("slide"), TEXT("move"), TEXT("blur") };
 			return MakeChoice(Expr ? FText::FromString(TEXT(".") + Value.StringValue) : LOCTEXT("Unset", "default"),
-				{ FText::FromString(TEXT(".opacity")), FText::FromString(TEXT(".scale")), FText::FromString(TEXT(".slide")) },
+				{ FText::FromString(TEXT(".opacity")), FText::FromString(TEXT(".scale")), FText::FromString(TEXT(".slide")), FText::FromString(TEXT(".move")), FText::FromString(TEXT(".blur")) },
 				[this, Node, Modifier, Name, Kinds](int32 Index) { ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Kinds[Index])); });
 		}
 		if (Owner == TEXT("on"))

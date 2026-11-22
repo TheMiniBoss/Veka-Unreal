@@ -957,7 +957,12 @@ namespace
 			{
 				const FString Kind = Value(TEXT("kind")).AsString();
 				const FVekaTransition Transition = Kind == TEXT("scale") ? FVekaTransition::Combined(FVekaTransition::Opacity(), FVekaTransition::Scale(0.6f))
-					: Kind == TEXT("slide") ? FVekaTransition::Slide() : FVekaTransition::Opacity();
+					: Kind == TEXT("slide") ? FVekaTransition::Slide()
+					// From (and back to) above, fading: a card that drops in.
+					: Kind == TEXT("move") ? FVekaTransition::Combined(FVekaTransition::Opacity(), FVekaTransition::Move(EVekaEdge::Top))
+					// Comes into focus: blurred, slightly smaller and transparent at first.
+					: Kind == TEXT("blur") ? FVekaTransition::Combined(FVekaTransition::Opacity(), FVekaTransition::Combined(FVekaTransition::Blur(14.f), FVekaTransition::Scale(0.9f)))
+					: FVekaTransition::Opacity();
 				return MoveTemp(Element).Transition(Transition);
 			}
 
