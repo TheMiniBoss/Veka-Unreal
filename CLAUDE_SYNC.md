@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4e Hub : Exemples, Doc, Changelog |
+| Prochaine étape | Phase 4 — jalon 4f Perf + démo in-game |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,36 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4e Hub : Exemples, Doc, Changelog (+ retours sur 4d)
+
+- **Branche** : `cpp/phase-4e-hub-learn` (partie de `C++` @ `22600ab`), fusionnée dans `C++`. BuildPlugin non lancé.
+- **Retours de TheMiniBoss sur 4d, corrigés** :
+  - **pickers segmentés qui coupaient leurs libellés** (« Monochro/me », « Regula/r ») : libellés sur une ligne
+    (`LineLimit(1)`) et largeur naturelle dans le Hub (plus de largeur fixe trop étroite).
+  - **rangement** : chaque galerie est en **cartes titrées** dans une grille adaptative (`Card` / `Cards` dans
+    `VekaPlayground.cpp`) — Controls (Buttons, Toggles, Sliders…, Pickers and menus, Text fields, Color, Labels…),
+    Colora, Typography, Symbols, Anima, Morph ; les sections du Hub aussi (`HubCard`). Les couleurs des galeries
+    suivent maintenant les tokens (fond, cartes, texte secondaire) : Light / Dark et thèmes s'y appliquent.
+  - **blend modes « faux »** : la démo mettait `.blendMode` sur le **groupe** des deux cercles (le bleu se peignait
+    normalement sur le rouge, puis le groupe se multipliait avec le fond). Le mode est maintenant sur **chaque
+    cercle** (comme `mix-blend-mode` en CSS) : le chevauchement Multiply devient quasi noir (rouge × bleu). Testé en
+    pixels : deux carrés Multiply superposés = fond × couleur 1 × couleur 2 (à 4/255).
+  - libellés des pastilles de couleur et des symboles sur une ligne (réduits au besoin).
+- **Exemples** (Learn > Examples) : `VV_Starter` + `Samples/Veka/Examples/` (`VV_ExampleSettings`,
+  `VV_ExampleGlassHud`, `VV_ExamplePlayer`) ; aperçus **vivants** (document parsé, un store par exemple : les
+  boutons et interrupteurs marchent dans l'aperçu), description = premier commentaire du fichier ; **« Open as
+  asset »** crée la vue dans `/Game/VekaExamples` (non sauvegardée) et l'ouvre dans l'éditeur de vue.
+- **Documentation** (Learn > Documentation) : **Guide** (première vue, états et actions, composants, effets,
+  couleurs et thèmes, avec du code) et **référence générée depuis le catalogue** (Components, Modifiers : appel,
+  arguments, nature — nombre, texte, peinture, état, valeurs d'enum —, conteneur / actions), avec recherche.
+- **Changelog** (Learn > Changelog) : lu dans **`Docs/CHANGELOG.md`** (nouveau, en anglais, une entrée par jalon).
+- **Tests** : `VekaUI.Editor.HubLearn` (exemples trouvés, tous propres à l'analyse, « Open as asset » crée la vue au
+  bon endroit puis la retrouve, changelog lu) ; `VekaUI.Render.BlendModes` étendu (chevauchement).
+- **Validé** : build éditeur, **101 tests** (100 verts + 1 avec l'avertissement attendu). Vérifié dans l'éditeur
+  (`Docs/Sync/Screens/phase4e-*.jpg`) : cartes, pickers sur une ligne, Multiply sombre au chevauchement, quatre
+  exemples (Play → Pause dans l'aperçu), guide, référence (20 composants), changelog.
+- **Reste de la Phase 4** : 4f (démo in-game + budgets perf §13).
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4d Hub + DesignLab
 

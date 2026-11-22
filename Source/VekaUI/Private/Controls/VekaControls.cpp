@@ -439,7 +439,7 @@ namespace
 				for (int32 Index = 0; Index < Count; ++Index)
 				{
 					const bool bOn = Index == Selected;
-					Segments.Add(OptionContent(Options[Index]).Font(M.TextStyle)
+					Segments.Add(OptionContent(Options[Index]).Font(M.TextStyle).LineLimit(1)
 						.Padding(FMargin(10.f, 0.f))
 						.FlexFrame(-1.0, Veka::Infinity, M.Height - 4.f, M.Height - 4.f)
 						.Background(bOn ? FVekaPaint(SelectedFill) : FVekaPaint(FLinearColor::Transparent), M.Radius - 2.f)
