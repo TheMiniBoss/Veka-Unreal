@@ -43,13 +43,18 @@ void KawaseUpPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPositi
 }
 
 // Composite (output = the window's back buffer, pixel coordinates).
-// Element rect in pixels (Min, Size) and the captured rect the blur covers (Min, 1 / Size).
+// The two pyramid levels around the backdrop's radius, mixed by LevelMix (any radius, smooth when animated).
+Texture2D LowerTexture;
+Texture2D UpperTexture;
+float LevelMix;
+// Element rect in pixels (Min, Size) and the captured rect the levels cover (Min, 1 / Size).
 float4 ElementRect;
 float4 CaptureRect;
 // Corner radii in pixels: top left, top right, bottom right, bottom left.
 float4 CornerRadii;
 float4 Tint;
 float Saturation;
+float Noise;
 float Opacity;
 
 float RoundedRectDistance(float2 P, float2 HalfSize, float4 Radii)
@@ -61,6 +66,12 @@ float RoundedRectDistance(float2 P, float2 HalfSize, float4 Radii)
 	return min(max(Q.x, Q.y), 0.0) + length(max(Q, 0.0)) - R;
 }
 
+// Stable per-pixel grain in [-0.5, 0.5].
+float Grain(float2 Pixel)
+{
+	return frac(sin(dot(floor(Pixel), float2(12.9898, 78.233))) * 43758.5453) - 0.5;
+}
+
 void CompositePS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
 {
 	const float2 Pixel = SvPosition.xy;
@@ -69,9 +80,12 @@ void CompositePS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosit
 	const float Coverage = saturate(0.5 - Distance);
 
 	const float2 BlurUV = (Pixel - CaptureRect.xy) * CaptureRect.zw;
-	float3 Color = InputTexture.SampleLevel(InputSampler, BlurUV, 0).rgb;
+	const float3 Lower = LowerTexture.SampleLevel(InputSampler, BlurUV, 0).rgb;
+	const float3 Upper = UpperTexture.SampleLevel(InputSampler, BlurUV, 0).rgb;
+	float3 Color = lerp(Lower, Upper, LevelMix);
 	const float Luma = dot(Color, float3(0.2126, 0.7152, 0.0722));
 	Color = lerp(Luma.xxx, Color, Saturation);
 	Color = lerp(Color, Tint.rgb, Tint.a);
-	OutColor = float4(Color, Coverage * Opacity);
+	Color += Grain(Pixel) * Noise;
+	OutColor = float4(max(Color, 0.0), Coverage * Opacity);
 }

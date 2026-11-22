@@ -3,6 +3,7 @@
 #include "View/VekaViewAsset.h"
 #include "View/VekaDocument.h"
 #include "View/VekaComponentLibrary.h"
+#include "Modifiers/VekaEffectModifiers.h"
 #include "Core/VekaView.h"
 #include "Core/VekaNode.h"
 #include "Core/VekaSchema.h"
@@ -839,6 +840,21 @@ namespace
 			if (Name == TEXT("border"))
 			{
 				return MoveTemp(Element).Border(PaintFrom(Value(TEXT("paint"))), static_cast<float>(Float(TEXT("width"), 1.0)), FVekaCornerRadii(static_cast<float>(Float(TEXT("radius"), 0.0))));
+			}
+			if (Name == TEXT("backdropBlur") || Name == TEXT("frostedGlass"))
+			{
+				const bool bFrosted = Name == TEXT("frostedGlass");
+				FVekaBackdropModifier Backdrop = bFrosted ? FVekaBackdropModifier::FrostedGlass() : FVekaBackdropModifier();
+				Backdrop.Radius = static_cast<float>(Float(bFrosted ? TEXT("blur") : TEXT("radius"), Backdrop.Radius));
+				Backdrop.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(TEXT("cornerRadius"), 0.0)));
+				if (HasArg(A, TEXT("tint")))
+				{
+					Backdrop.Tint = PaintFrom(Value(TEXT("tint")));
+				}
+				Backdrop.TintAmount = static_cast<float>(Float(TEXT("tintAmount"), Backdrop.TintAmount));
+				Backdrop.Saturation = static_cast<float>(Float(TEXT("saturation"), Backdrop.Saturation));
+				Backdrop.Noise = static_cast<float>(Float(TEXT("noise"), Backdrop.Noise));
+				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Backdrop));
 			}
 			if (Name == TEXT("opacity"))
 			{
