@@ -13,10 +13,32 @@
 
 namespace VekaPlaygroundPrivate
 {
-	const FLinearColor Background = Veka::Hex(TEXT("#16161AFF"));
-	const FLinearColor Card = Veka::Hex(TEXT("#24242BFF"));
+	// Theme-aware: the galleries follow Light / Dark and the theme of the subtree (the Veka Hub switches them).
+	const FVekaPaint Background = FVekaPaint::FromToken(TEXT("Background"));
+	const FVekaPaint CardFill = FVekaPaint::FromToken(TEXT("Fill"), EVekaHierarchy::Quaternary);
 	const FLinearColor Accent = Veka::Hex(TEXT("#4C7DFFFF"));
-	const FLinearColor Muted = Veka::Hex(TEXT("#9A9AA8FF"));
+	const FVekaPaint Muted = FVekaPaint::FromToken(TEXT("Foreground"), EVekaHierarchy::Secondary);
+
+	/** A titled card of a gallery. */
+	FVekaElement Card(const FText& Title, FVekaElement Content)
+	{
+		using namespace Veka;
+		return VStack(12, EVekaHAlign::Leading)(
+			Text(Title).Font(EVekaTextStyle::Headline),
+			MoveTemp(Content)
+		)
+		.Padding(18)
+		.FlexFrame(0.0, Veka::Infinity, 0.0, -1.0, FVekaAlignment::TopLeading())
+		.Background(CardFill, 16)
+		.Border(FVekaPaint::FromToken(TEXT("Separator")), 1, 16);
+	}
+
+	/** Cards in as many columns as fit (each at least MinWidth wide). */
+	FVekaElement Cards(TArray<FVekaElement> Items, float MinWidth)
+	{
+		using namespace Veka;
+		return Grid({ FVekaGridItem::Adaptive(MinWidth) }, 16.f, 16.f, FVekaAlignment::TopLeading()).Children(MoveTemp(Items)).FillWidth(FVekaAlignment::TopLeading());
+	}
 
 	FVekaElement Section(const FText& Title, FVekaElement Content)
 	{
@@ -27,7 +49,7 @@ namespace VekaPlaygroundPrivate
 		)
 		.Padding(16)
 		.FillWidth(FVekaAlignment::TopLeading())
-		.Background(Card, 14);
+		.Background(CardFill, 14);
 	}
 
 
@@ -135,28 +157,28 @@ namespace VekaPlaygroundPrivate
 
 		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
 
-		return VStack(16, EVekaHAlign::Leading)(
-			HStack(14)(
+		return Cards({
+			Card(INVTEXT("Paints"), HStack(14)(
 				Tile(Hero, INVTEXT("Linear 2D")),
 				Tile(FVekaPaint::Radial({ Stop(TEXT("#FFFFFFFF"), 0.f), Stop(TEXT("#4C7DFFFF"), 0.45f), Stop(TEXT("#16161AFF"), 1.f) }, 0.f, 60.f, FVector2D(0.3, 0.3)), INVTEXT("Radial")),
 				Tile(FVekaPaint::Elliptical({ Stop(TEXT("#FFD84CFF"), 0.f), Stop(TEXT("#FF5CB8FF"), 1.f) }), INVTEXT("Elliptical")),
 				Tile(FVekaPaint::Angular(Rainbow), INVTEXT("Angular"), 38.f),
 				Tile(Texture ? FVekaPaint::FromImage(Texture) : FVekaPaint(Muted), INVTEXT("Image"))
-			),
-			VStack(6, EVekaHAlign::Leading)(
+			)),
+			Card(INVTEXT("Color spaces"), VStack(6, EVekaHAlign::Leading)(
 				Capsule().Fill(FVekaPaint::Linear(Hex(TEXT("#FF0000FF")), Hex(TEXT("#0000FFFF"))).InSpace(EVekaColorSpace::SRGB)).Frame(320, 16),
 				Capsule().Fill(FVekaPaint::Linear(Hex(TEXT("#FF0000FF")), Hex(TEXT("#0000FFFF"))).InSpace(EVekaColorSpace::OkLab)).Frame(320, 16),
 				Capsule().Fill(FVekaPaint::Linear(Hex(TEXT("#FF0000FF")), Hex(TEXT("#0000FFFF"))).InSpace(EVekaColorSpace::OkLCH)).Frame(320, 16),
 				Text(INVTEXT("Red to blue in sRGB, Oklab, OkLCH")).Foreground(Muted).Font(Fonts::Caption())
-			),
-			HStack(14)(
+			)),
+			Card(INVTEXT("Adjustments"), HStack(14)(
 				Tile(Hero, INVTEXT("Original")),
 				Tile(Hero, INVTEXT("Saturation 0")).Saturation(0.f),
 				Tile(Hero, INVTEXT("Hue +120")).HueRotation(120.f),
 				Tile(Hero, INVTEXT("Brightness +0.2")).Brightness(0.2f),
 				Tile(Hero, INVTEXT("Contrast 1.6")).Contrast(1.6f)
-			),
-			HStack(24)(
+			)),
+			Card(INVTEXT("Additive blend, angular stroke, mesh gradient"), HStack(24)(
 				ZStack()(
 					Circle().Fill(Hex(TEXT("#FF0000FF"))).Frame(70, 70).Offset(FVector2D(-20, 12)),
 					Circle().Fill(Hex(TEXT("#00FF00FF"))).Frame(70, 70).Offset(FVector2D(20, 12)),
@@ -164,9 +186,9 @@ namespace VekaPlaygroundPrivate
 				).BlendMode(EVekaBlendMode::Add).Frame(130, 120),
 				Circle().Stroke(FVekaPaint::Angular(Rainbow), 8).Frame(100, 100),
 				View<FMeshView>()
-			),
-			View<FSchemeView>()
-		);
+			)),
+			Card(INVTEXT("Tokens in a subtree"), View<FSchemeView>())
+		}, 640.f);
 	}
 
 
@@ -459,13 +481,14 @@ namespace VekaPlaygroundPrivate
 		}
 
 		const FString Long = TEXT("The quick brown fox jumps over the lazy dog near the riverbank");
-		return VStack(18, EVekaHAlign::Leading)(
-			HStack(40, EVekaVAlign::Top)(
-				VStack(4, EVekaHAlign::Leading).Children(MoveTemp(StyleRows)),
-				VStack(14, EVekaHAlign::Leading)(
-					HStack(14).Children(MoveTemp(Weights)),
-					HStack(22).Children(MoveTemp(Italics)),
-					Text(INVTEXT("LT Flode Neue: 12 weights + italics. Default family of Veka.")).Foreground(Muted).Font(EVekaTextStyle::Caption1),
+		return Cards({
+			Card(INVTEXT("Text styles"), VStack(4, EVekaHAlign::Leading).Children(MoveTemp(StyleRows))),
+			Card(INVTEXT("Weights and italics"), VStack(14, EVekaHAlign::Leading)(
+				HStack(14).Children(MoveTemp(Weights)),
+				HStack(22).Children(MoveTemp(Italics)),
+				Text(INVTEXT("LT Flode Neue: 12 weights + italics. Default family of Veka.")).Foreground(Muted).Font(EVekaTextStyle::Caption1)
+			)),
+			Card(INVTEXT("Tracking, gradient, truncation, scaling"), VStack(14, EVekaHAlign::Leading)(
 					Text(INVTEXT("Tracking 0.25 uppercase")).TextCase(EVekaTextCase::Uppercase).Tracking(0.25f).Font(EVekaTextStyle::Footnote).FontWeight(EVekaFontWeight::SemiBold),
 					Text(INVTEXT("Gradient text")).Font(EVekaTextStyle::LargeTitle).FontWeight(EVekaFontWeight::Black)
 						.Foreground(FVekaPaint::Linear(Hex(TEXT("#FF5E57FF")), Hex(TEXT("#8E5CFFFF")))),
@@ -477,10 +500,9 @@ namespace VekaPlaygroundPrivate
 					Text(INVTEXT("Head / middle / tail truncation, then minimumScaleFactor(0.6):")).Foreground(Muted).Font(EVekaTextStyle::Caption1),
 					Text(INVTEXT("This line shrinks to fit before it truncates")).LineLimit(1).MinimumScaleFactor(0.6f).Frame(250, 20, FVekaAlignment::Leading())
 						.Background(FLinearColor(1, 1, 1, 0.05f), 4)
-				)
-			),
-			HStack(40, EVekaVAlign::Top)(View<FCounterRollView>(), View<FTextEffectsView>(), View<FTextScaleView>())
-		);
+			)),
+			Card(INVTEXT("Animated text"), HStack(40, EVekaVAlign::Top)(View<FCounterRollView>(), View<FTextEffectsView>(), View<FTextScaleView>()))
+		}, 600.f);
 	}
 
 	// --- Symbols ---------------------------------------------------------------------------------------------------
@@ -642,37 +664,33 @@ namespace VekaPlaygroundPrivate
 			Aliases.Add(Captioned(Symbol(Alias).Font(EVekaTextStyle::Title2).SymbolRenderingMode(EVekaSymbolRenderingMode::Hierarchical), *Alias.ToString()));
 		}
 
-		return VStack(18, EVekaHAlign::Leading)(
-			Text(FText::Format(INVTEXT("{0} built-in symbols (stroke skeletons on a 24 grid: any weight, no masters)"), FText::AsNumber(Names.Num())))
-				.Font(EVekaTextStyle::Caption1).Foreground(Muted),
-			Grid({ FVekaGridItem::Adaptive(34.f) }, 6.f, 6.f).Children(MoveTemp(Gallery)).Font(EVekaTextStyle::Title3),
-			HStack(14).Children(MoveTemp(Weights)),
-			HStack(28, EVekaVAlign::Bottom)(
+		return Cards({
+			Card(FText::Format(INVTEXT("Library: {0} built-in symbols"), FText::AsNumber(Names.Num())), VStack(10, EVekaHAlign::Leading)(
+				Text(INVTEXT("Stroke skeletons on a 24 grid: any weight, no masters.")).Font(EVekaTextStyle::Caption1).Foreground(Muted),
+				Grid({ FVekaGridItem::Adaptive(34.f) }, 6.f, 6.f).Children(MoveTemp(Gallery)).Font(EVekaTextStyle::Title3)
+			)),
+			Card(INVTEXT("Weights follow the font"), HStack(14).Children(MoveTemp(Weights))),
+			Card(INVTEXT("Scales, labels, badges"), HStack(28, EVekaVAlign::Bottom)(
 				Captioned(HStack(4)(Symbol(TEXT("cloud")).SymbolScale(EVekaSymbolScale::Small), Text(TEXT("Small"))), TEXT("SymbolScale")),
 				HStack(4)(Symbol(TEXT("cloud")), Text(TEXT("Medium"))),
 				HStack(4)(Symbol(TEXT("cloud")).SymbolScale(EVekaSymbolScale::Large), Text(TEXT("Large"))),
 				Label(INVTEXT("Label: symbol + title"), TEXT("paperplane")).Foreground(Accent),
 				Captioned(HStack(18)(Symbol(TEXT("bell")).SymbolBadge(3), Symbol(TEXT("envelope")).SymbolBadge(128), Symbol(TEXT("bubble")).SymbolBadge(-1))
 					.Font(EVekaTextStyle::Title1), TEXT("Badges"))
-			).Font(EVekaTextStyle::Title3),
-			HStack(16).Children(MoveTemp(VariantTiles)),
-			HStack(30).Children(MoveTemp(ModeColumns)),
-			HStack(30, EVekaVAlign::Top)(View<FSymbolValueView>(), View<FSymbolReplaceView>()),
-			View<FSymbolEffectsView>(),
-			Caption(TEXT("Alpha 13 glyphs (names kept as aliases):")),
-			HStack(14).Children(MoveTemp(Aliases))
-		);
+			).Font(EVekaTextStyle::Title3)),
+			Card(INVTEXT("Variants: fill, slash, circle, square"), Grid({ FVekaGridItem::Adaptive(110.f) }, 12.f, 12.f).Children(MoveTemp(VariantTiles)).FillWidth()),
+			Card(INVTEXT("Rendering modes"), Grid({ FVekaGridItem::Adaptive(240.f) }, 20.f, 14.f).Children(MoveTemp(ModeColumns)).FillWidth()),
+			Card(INVTEXT("Variable value, replace"), HStack(30, EVekaVAlign::Top)(View<FSymbolValueView>(), View<FSymbolReplaceView>())),
+			Card(INVTEXT("Effects"), View<FSymbolEffectsView>()),
+			Card(INVTEXT("Alpha 13 glyphs (names kept as aliases)"), Grid({ FVekaGridItem::Adaptive(90.f) }, 12.f, 12.f).Children(MoveTemp(Aliases)).FillWidth())
+		}, 640.f);
 	}
 
 	// --- Controls ----------------------------------------------------------------------------------------------------
 
 	FVekaElement Column(const TCHAR* Title, FVekaElement Content)
 	{
-		using namespace Veka;
-		return VStack(10, EVekaHAlign::Leading)(
-			Text(Title).Font(EVekaTextStyle::Caption1).FontWeight(EVekaFontWeight::SemiBold).Foreground(Muted),
-			MoveTemp(Content)
-		);
+		return Card(FText::FromString(Title), MoveTemp(Content));
 	}
 
 	class FControlsView : public FVekaView
@@ -706,7 +724,7 @@ namespace VekaPlaygroundPrivate
 
 			auto Log = [LastAction](const TCHAR* Action) { return [LastAction, Value = FString(Action)]() { LastAction.Set(Value); }; };
 
-			const FVekaElement Buttons = Column(TEXT("BUTTONS"), VStack(10, EVekaHAlign::Leading)(
+			const FVekaElement Buttons = Column(TEXT("Buttons"), VStack(10, EVekaHAlign::Leading)(
 				HStack(10)(
 					Veka::Button(INVTEXT("Plain"), [Clicks]() { Clicks.Set(Clicks.Get() + 1); }).ButtonStyle(EVekaButtonStyleKind::Plain),
 					Veka::Button(INVTEXT("Borderless"), [Clicks]() { Clicks.Set(Clicks.Get() + 1); }).ButtonStyle(EVekaButtonStyleKind::Borderless),
@@ -728,7 +746,7 @@ namespace VekaPlaygroundPrivate
 				HStack(10)(Text(TEXT("Jump key")), KeyBindButton(Jump))
 			));
 
-			const FVekaElement Toggles = Column(TEXT("TOGGLES"), VStack(10, EVekaHAlign::Leading)(
+			const FVekaElement Toggles = Column(TEXT("Toggles"), VStack(10, EVekaHAlign::Leading)(
 				Toggle(Label(INVTEXT("Wi-Fi"), TEXT("wifi")), WiFi).Frame(240, -1),
 				Toggle(Label(INVTEXT("Bluetooth"), TEXT("bluetooth")), Bluetooth).Frame(240, -1),
 				Toggle(INVTEXT("Checkbox"), Bold).ToggleStyle(EVekaToggleStyleKind::Checkbox),
@@ -738,7 +756,7 @@ namespace VekaPlaygroundPrivate
 				)
 			));
 
-			const FVekaElement Values = Column(TEXT("SLIDERS, STEPPER, GAUGES, PROGRESS"), VStack(10, EVekaHAlign::Leading)(
+			const FVekaElement Values = Column(TEXT("Sliders, stepper, gauges, progress"), VStack(10, EVekaHAlign::Leading)(
 				HStack(10)(Symbol(TEXT("speaker")), Slider(Volume).Frame(200, -1), Symbol(TEXT("speaker.wave.3"), Volume.Get()),
 					Text(FText::AsPercent(Volume.Get())).MonospacedDigit().Foreground(Muted).Frame(44, 18, FVekaAlignment::Trailing())),
 				HStack(10)(Text(TEXT("Steps of 0.25")).Foreground(Muted), Slider(Rating, 0.f, 1.f, 0.25f).Frame(160, -1)),
@@ -779,7 +797,7 @@ namespace VekaPlaygroundPrivate
 				FVekaMenuItem::Button(INVTEXT("Archive"), Log(TEXT("Archive")), TEXT("archivebox")).Enabled(false),
 				FVekaMenuItem::Button(INVTEXT("Delete"), Log(TEXT("Delete")), TEXT("trash")).Destructive() };
 
-			const FVekaElement Choices = Column(TEXT("PICKERS, MENUS"), VStack(12, EVekaHAlign::Leading)(
+			const FVekaElement Choices = Column(TEXT("Pickers and menus"), VStack(12, EVekaHAlign::Leading)(
 				Picker(INVTEXT("View"), View, Views).PickerStyle(EVekaPickerStyle::Segmented).Frame(400, -1),
 				HStack(30, EVekaVAlign::Top)(
 					Picker(INVTEXT("Size"), Size, Sizes).PickerStyle(EVekaPickerStyle::Radio),
@@ -796,7 +814,7 @@ namespace VekaPlaygroundPrivate
 				)
 			));
 
-			const FVekaElement Fields = Column(TEXT("TEXT FIELDS"), VStack(8, EVekaHAlign::Leading)(
+			const FVekaElement Fields = Column(TEXT("Text fields"), VStack(8, EVekaHAlign::Leading)(
 				HStack(8)(
 					TextField(INVTEXT("Plain"), Name).TextFieldStyle(EVekaTextFieldStyle::Plain).Frame(120, -1),
 					TextField(INVTEXT("Rectangle"), Name).TextFieldStyle(EVekaTextFieldStyle::Rectangle).Frame(120, -1),
@@ -811,7 +829,7 @@ namespace VekaPlaygroundPrivate
 				)
 			));
 
-			const FVekaElement Colors = Column(TEXT("COLOR"), HStack(24, EVekaVAlign::Top)(
+			const FVekaElement Colors = Column(TEXT("Color"), HStack(24, EVekaVAlign::Top)(
 				VStack(10, EVekaHAlign::Leading)(
 					ColorPicker(INVTEXT("Accent"), Color).Frame(200, -1),
 					RoundedRectangle(12).Fill(Color.Get()).Frame(200, 60)
@@ -820,7 +838,7 @@ namespace VekaPlaygroundPrivate
 				ColorPanel(Color, EVekaColorPickerMode::OkLCH, false, EVekaColorChannelRange::Unit)
 			));
 
-			const FVekaElement Misc = Column(TEXT("LABELS, DIVIDER, EMPTY STATE, MEDIA"), HStack(24, EVekaVAlign::Top)(
+			const FVekaElement Misc = Column(TEXT("Labels, divider, empty state, media"), HStack(24, EVekaVAlign::Top)(
 				VStack(8, EVekaHAlign::Leading)(
 					Label(INVTEXT("Title and icon"), TEXT("star")),
 					Label(INVTEXT("Title only"), TEXT("star")).LabelStyle(EVekaLabelStyle::Title),
@@ -834,13 +852,7 @@ namespace VekaPlaygroundPrivate
 
 			// "Disable all" disables every control but its own toggle column.
 			const bool bOff = Disabled.Get();
-			return VStack(22, EVekaHAlign::Leading)(
-				HStack(40, EVekaVAlign::Top)(Buttons.Disabled(bOff), Toggles),
-				Values.Disabled(bOff),
-				HStack(40, EVekaVAlign::Top)(Choices.Disabled(bOff), Fields.Disabled(bOff)),
-				Colors.Disabled(bOff),
-				Misc
-			);
+			return Cards({ Buttons.Disabled(bOff), Toggles, Values.Disabled(bOff), Choices.Disabled(bOff), Fields.Disabled(bOff), Colors.Disabled(bOff), Misc }, 600.f);
 		}
 	};
 
@@ -984,17 +996,24 @@ namespace VekaPlaygroundPrivate
 	FVekaElement MorphSection()
 	{
 		using namespace Veka;
-		return HStack(36, EVekaVAlign::Top)(View<FMorphCardView>(), VStack(18, EVekaHAlign::Leading)(View<FMorphDropView>(), View<FMorphIslandView>()), View<FMorphDragView>());
+		return Cards({
+			Card(INVTEXT("Matched geometry: button to card"), View<FMorphCardView>()),
+			Card(INVTEXT("ShapeGroup: shapes that melt"), View<FMorphDropView>()),
+			Card(INVTEXT("Island"), View<FMorphIslandView>()),
+			Card(INVTEXT("Drag: merged hit-test"), View<FMorphDragView>())
+		}, 420.f);
 	}
 
 	FVekaElement AnimaSection()
 	{
 		using namespace Veka;
-		return VStack(18, EVekaHAlign::Leading)(
-			HStack(30, EVekaVAlign::Top)(View<FImplicitCardView>(), View<FAnimatedListView>()),
-			View<FTransitionGalleryView>(),
-			HStack(30, EVekaVAlign::Top)(View<FCurvesView>(), View<FTimelineView>())
-		);
+		return Cards({
+			Card(INVTEXT("Implicit animation"), View<FImplicitCardView>()),
+			Card(INVTEXT("Animated list"), View<FAnimatedListView>()),
+			Card(INVTEXT("Transitions"), View<FTransitionGalleryView>()),
+			Card(INVTEXT("Curves and springs"), View<FCurvesView>()),
+			Card(INVTEXT("Timeline"), View<FTimelineView>())
+		}, 480.f);
 	}
 
 	/** Counter with @State and a tap gesture. */

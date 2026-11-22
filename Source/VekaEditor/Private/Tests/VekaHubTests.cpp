@@ -15,6 +15,8 @@
 #include "Input/HittestGrid.h"
 #include "Rendering/DrawElements.h"
 #include "Types/PaintArgs.h"
+#include "View/VekaViewAsset.h"
+#include "VekaLanguage.h"
 
 namespace
 {
@@ -76,6 +78,54 @@ bool FVekaHubTest::RunTest(const FString& Parameters)
 		FVekaSymbolVariant Variant;
 		TestNotNull(FString::Printf(TEXT("symbol %s"), Name), Veka::Symbols::Resolve(FName(Name), Variant));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaHubLearnTest, "VekaUI.Editor.HubLearn", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaHubLearnTest::RunTest(const FString& Parameters)
+{
+	using namespace Veka::Editor::Hub;
+	// Examples: the starter and the Examples folder; each parses and analyzes without errors.
+	const TArray<FExample> Examples = GetExamples();
+	TestTrue(FString::Printf(TEXT("examples found (%d)"), Examples.Num()), Examples.Num() >= 4);
+	for (const FExample& Example : Examples)
+	{
+		const FVekaParseResult Result = Veka::Lang::Parse(Example.Source);
+		TArray<FString> Problems;
+		for (const FVekaDiagnostic& Diagnostic : Result.Diagnostics)
+		{
+			Problems.Add(Diagnostic.ToString());
+		}
+		if (!Result.HasErrors())
+		{
+			for (const FVekaDiagnostic& Diagnostic : Veka::Lang::Analyze(Result.Document))
+			{
+				Problems.Add(Diagnostic.ToString());
+			}
+		}
+		TestTrue(FString::Printf(TEXT("%s is clean: %s"), *Example.Name.ToString(), *FString::Join(Problems, TEXT(" / "))), Problems.IsEmpty());
+		TestFalse(FString::Printf(TEXT("%s has a description"), *Example.Name.ToString()), Example.Description.IsEmpty());
+	}
+
+	// "Open as asset" makes the view in /Game/VekaExamples (left unsaved), with its source.
+	const FExample* Settings = Examples.FindByPredicate([](const FExample& E) { return E.Name == TEXT("VV_ExampleSettings"); });
+	if (TestNotNull(TEXT("settings example"), Settings))
+	{
+		UVekaView* View = OpenExample(*Settings, false);
+		if (TestNotNull(TEXT("asset made"), View))
+		{
+			TestEqual(TEXT("in /Game/VekaExamples"), View->GetPackage()->GetName(), FString(TEXT("/Game/VekaExamples/VV_ExampleSettings")));
+			TestTrue(TEXT("document filled"), View->Document.Nodes.Num() > 3);
+			TestTrue(TEXT("same asset the second time"), OpenExample(*Settings, false) == View);
+			View->ClearFlags(RF_Public | RF_Standalone);
+			View->MarkAsGarbage();
+		}
+	}
+
+	// Changelog: releases with entries, newest first.
+	const TArray<FChangelogRelease> Changelog = GetChangelog();
+	TestTrue(FString::Printf(TEXT("changelog releases (%d)"), Changelog.Num()), Changelog.Num() >= 10);
+	TestTrue(TEXT("newest first (4e)"), Changelog.Num() > 0 && Changelog[0].Title.StartsWith(TEXT("4e")) && Changelog[0].Entries.Num() >= 3);
 	return true;
 }
 

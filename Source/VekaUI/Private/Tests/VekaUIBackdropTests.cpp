@@ -285,6 +285,29 @@ bool FVekaBlendModeTest::RunTest(const FString& Parameters)
 		const FString Mode = StaticEnum<EVekaBlendMode>()->GetNameStringByValue(static_cast<int64>(Cases[Index].Mode));
 		TestTrue(FString::Printf(TEXT("%s: got %s, expected %s (B %s, S %s)"), *Mode, *Got.ToString(), *Expected.ToString(), *B.ToString(), *S.ToString()), Got.Equals(Expected, 3.f / 255.f));
 	}
+
+	// A mode on each shape blends it with the shapes under it too (CSS mix-blend-mode): two Multiply squares overlap
+	// into Back x Source x Second.
+	const FLinearColor Second(0.90f, 0.30f, 0.60f);
+	const TArray<FColor> Overlap = RenderPixels(ZStack(FVekaAlignment::TopLeading())(
+		Rectangle().Fill(Back).Frame(400.f, 60.f),
+		Rectangle().Fill(Source).Frame(20.f, 20.f).Offset(FVector2D(10.0, 20.0)),
+		Rectangle().Fill(Second).Frame(20.f, 20.f).Offset(FVector2D(40.0, 20.0)),
+		Rectangle().Fill(Source).Frame(30.f, 20.f).BlendMode(EVekaBlendMode::Multiply).Offset(FVector2D(100.0, 20.0)),
+		Rectangle().Fill(Second).Frame(30.f, 20.f).BlendMode(EVekaBlendMode::Multiply).Offset(FVector2D(115.0, 20.0))
+	), Size);
+	if (TestEqual(TEXT("overlap pixels read"), Overlap.Num(), Size.X * Size.Y))
+	{
+		auto OverlapAt = [&](int32 X, int32 Y) { return ToVector(Overlap[Y * Size.X + X]); };
+		const FVector3f B2 = OverlapAt(5, 5);
+		const FVector3f S1 = OverlapAt(20, 30);
+		const FVector3f S2 = OverlapAt(50, 30);
+		const FVector3f Both = OverlapAt(122, 30);
+		const FVector3f Expected = B2 * S1 * S2;
+		TestTrue(FString::Printf(TEXT("overlapping multiplies: got %s, expected %s"), *Both.ToString(), *Expected.ToString()), Both.Equals(Expected, 4.f / 255.f));
+		const FVector3f OnlyFirst = OverlapAt(105, 30);
+		TestTrue(FString::Printf(TEXT("first square alone: got %s, expected %s"), *OnlyFirst.ToString(), *(B2 * S1).ToString()), OnlyFirst.Equals(B2 * S1, 4.f / 255.f));
+	}
 	return true;
 }
 

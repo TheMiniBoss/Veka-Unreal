@@ -20,6 +20,18 @@
 #include "ToolMenus.h"
 #include "Styling/AppStyle.h"
 #include "Framework/Application/SlateApplication.h"
+#include "View/VekaViewAsset.h"
+#include "View/VekaCatalog.h"
+#include "VekaLanguage.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
+#include "UObject/Package.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Editor.h"
+#include "Subsystems/AssetEditorSubsystem.h"
+#include "Styling/CoreStyle.h"
 
 #define LOCTEXT_NAMESPACE "VekaHub"
 
@@ -62,6 +74,17 @@ namespace Veka::Editor::Hub
 				.Background(Token(TEXT("Fill"), EVekaHierarchy::Tertiary), 12.f);
 		}
 
+		/** A titled card (same look as the galleries' cards). */
+		FVekaElement HubCard(const FText& Title, FVekaElement Content)
+		{
+			using namespace Veka;
+			return VStack(12.f, EVekaHAlign::Leading)(Text(Title).Font(EVekaTextStyle::Headline), MoveTemp(Content))
+				.Padding(18.f)
+				.FlexFrame(0.0, Infinity, 0.0, -1.0, FVekaAlignment::TopLeading())
+				.Background(Token(TEXT("Fill"), EVekaHierarchy::Quaternary), 16.f)
+				.Border(Token(TEXT("Separator")), 1.f, 16.f);
+		}
+
 		FVekaElement Labeled(const FText& Title, FVekaElement Control)
 		{
 			using namespace Veka;
@@ -83,7 +106,7 @@ namespace Veka::Editor::Hub
 			using namespace Veka;
 			return VStack(4.f)(
 				RoundedRectangle(10.f).Fill(FVekaPaint::FromToken(Token)).Frame(88.f, 48.f).Border(FVekaPaint::FromToken(TEXT("Separator")), 1.f, 10.f),
-				Text(Caption).Font(EVekaTextStyle::Caption2).Opacity(0.8f)
+				Text(Caption).Font(EVekaTextStyle::Caption2).Opacity(0.8f).LineLimit(1).MinimumScaleFactor(0.6f).Frame(92.0, -1.0)
 			);
 		}
 
@@ -120,6 +143,18 @@ namespace Veka::Editor::Hub
 				{
 					Themes.Add(Theme);
 				}
+				for (const FExample& Example : GetExamples())
+				{
+					FParsedExample& Parsed = Examples.AddDefaulted_GetRef();
+					Parsed.Example = Example;
+					FVekaParseOptions Options;
+					Options.ResolveComponent = Veka::Lang::MakeAssetResolver();
+					const FVekaParseResult Result = Veka::Lang::Parse(Example.Source, Options);
+					Parsed.bValid = !Result.HasErrors();
+					Parsed.Document = Result.Document;
+					Parsed.Store = MakeShared<FVekaViewStore>();
+				}
+				Changelog = GetChangelog();
 			}
 
 			virtual void AddReferencedObjects(FReferenceCollector& Collector) override
@@ -199,9 +234,9 @@ namespace Veka::Editor::Hub
 					Row(ESection::Effects, TEXT("sparkles"), false),
 					Row(ESection::Morph, TEXT("drop"), false),
 					Header(LOCTEXT("Learn", "Learn")),
-					Row(ESection::Examples, TEXT("square.grid.2x2"), true),
-					Row(ESection::Documentation, TEXT("book"), true),
-					Row(ESection::Changelog, TEXT("clock"), true)
+					Row(ESection::Examples, TEXT("square.grid.2x2"), false),
+					Row(ESection::Documentation, TEXT("book"), false),
+					Row(ESection::Changelog, TEXT("clock"), false)
 				)
 				.Padding(8.f)
 				.FlexFrame(230.0, 230.0, 0.0, Infinity, FVekaAlignment::TopLeading())
@@ -222,7 +257,7 @@ namespace Veka::Editor::Hub
 						SettingsCard({
 							Labeled(LOCTEXT("ControlSize", "Control size"), Picker(FText::GetEmpty(), Size,
 								Options({ LOCTEXT("Mini", "Mini"), LOCTEXT("Small", "Small"), LOCTEXT("Regular", "Regular"), LOCTEXT("Large", "Large") }))
-								.PickerStyle(EVekaPickerStyle::Segmented).Frame(360.0, -1.0)),
+								.PickerStyle(EVekaPickerStyle::Segmented)),
 							Labeled(LOCTEXT("State", "State"), Toggle(LOCTEXT("Disabled", "Disabled"), Off).Frame(160.0, -1.0))
 						}),
 						Samples::ControlsGallery().ControlSize(Sizes[FMath::Clamp(Size.Get(), 0, 3)]).Disabled(Off.Get())
@@ -241,11 +276,10 @@ namespace Veka::Editor::Hub
 						Controls.Add(Swatch(Name, Name.ToString()));
 					}
 					return VStack(16.f, EVekaHAlign::Leading)(
-						Text(LOCTEXT("ColorTokens", "Colora tokens (switch Light / Dark and the theme above)")).Font(EVekaTextStyle::Headline),
-						Grid({ FVekaGridItem::Adaptive(96.f) }, 10.f, 10.f).Children(MoveTemp(Tokens)).FillWidth(),
-						Text(LOCTEXT("ControlTokens", "Control tokens (a theme restyles every toggle, slider...)")).Font(EVekaTextStyle::Headline),
-						Grid({ FVekaGridItem::Adaptive(96.f) }, 10.f, 10.f).Children(MoveTemp(Controls)).FillWidth(),
-						Text(LOCTEXT("Paints", "Paints")).Font(EVekaTextStyle::Headline),
+						HubCard(LOCTEXT("ColorTokens", "Colora tokens (switch Light / Dark and the theme above)"),
+							Grid({ FVekaGridItem::Adaptive(96.f) }, 10.f, 10.f).Children(MoveTemp(Tokens)).FillWidth()),
+						HubCard(LOCTEXT("ControlTokens", "Control tokens (a theme restyles every toggle, slider...)"),
+							Grid({ FVekaGridItem::Adaptive(96.f) }, 10.f, 10.f).Children(MoveTemp(Controls)).FillWidth()),
 						Samples::ColoraGallery()
 					);
 				}
@@ -262,7 +296,7 @@ namespace Veka::Editor::Hub
 					{
 						Cells.Add(VStack(6.f)(
 							Veka::Symbol(Name).Font(EVekaTextStyle::Title1).SymbolWeight(Weight.Get()).SymbolRenderingMode(Modes[FMath::Clamp(Mode.Get(), 0, 3)]),
-							Text(Name.ToString()).Font(EVekaTextStyle::Caption2).Opacity(0.7f)
+							Text(Name.ToString()).Font(EVekaTextStyle::Caption2).Opacity(0.7f).LineLimit(1).MinimumScaleFactor(0.6f).Frame(92.0, -1.0)
 						).Frame(96.0, 72.0));
 					}
 					return VStack(16.f, EVekaHAlign::Leading)(
@@ -270,9 +304,10 @@ namespace Veka::Editor::Hub
 							Labeled(LOCTEXT("Weight", "Weight"), Slider(Weight, 0.f, 1.f).Frame(240.0, -1.0)),
 							Labeled(LOCTEXT("RenderingMode", "Rendering mode"), Picker(FText::GetEmpty(), Mode,
 								Options({ LOCTEXT("Monochrome", "Monochrome"), LOCTEXT("Hierarchical", "Hierarchical"), LOCTEXT("Palette", "Palette"), LOCTEXT("Multicolor", "Multicolor") }))
-								.PickerStyle(EVekaPickerStyle::Segmented).Frame(440.0, -1.0))
+								.PickerStyle(EVekaPickerStyle::Segmented))
 						}),
-						Grid({ FVekaGridItem::Adaptive(96.f) }, 8.f, 8.f).Children(MoveTemp(Cells)).FillWidth(),
+						HubCard(LOCTEXT("SymbolGrid", "Symbols of the project and the library (live weight and rendering mode)"),
+							Grid({ FVekaGridItem::Adaptive(96.f) }, 8.f, 8.f).Children(MoveTemp(Cells)).FillWidth()),
 						Samples::SymbolsGallery()
 					);
 				}
@@ -288,9 +323,10 @@ namespace Veka::Editor::Hub
 							Labeled(LOCTEXT("FontWeight", "Weight"), Picker(FText::GetEmpty(), Weight,
 								Options({ LOCTEXT("Thin", "Thin"), LOCTEXT("LightW", "Light"), LOCTEXT("RegularW", "Regular"), LOCTEXT("Medium", "Medium"),
 									LOCTEXT("SemiBold", "SemiBold"), LOCTEXT("Bold", "Bold"), LOCTEXT("Black", "Black") }))
-								.PickerStyle(EVekaPickerStyle::Segmented).Frame(560.0, -1.0))
+								.PickerStyle(EVekaPickerStyle::Segmented))
 						}),
-						Text(LOCTEXT("Pangram", "Sphinx of black quartz, judge my vow.")).FontSize(Size.Get()).FontWeight(Weights[FMath::Clamp(Weight.Get(), 0, 6)]),
+						HubCard(LOCTEXT("LiveSample", "Live sample"),
+							Text(LOCTEXT("Pangram", "Sphinx of black quartz, judge my vow.")).FontSize(Size.Get()).FontWeight(Weights[FMath::Clamp(Weight.Get(), 0, 6)])),
 						Samples::TypographyGallery()
 					);
 				}
@@ -333,9 +369,9 @@ namespace Veka::Editor::Hub
 							.Padding(16.f).Frame(190.0, 150.0, FVekaAlignment::TopLeading()).AddModifier(FInstancedStruct::Make(Liquid)),
 						VStack(8.f)(
 							ZStack()(
-								Circle().Fill(FLinearColor(0.95f, 0.25f, 0.2f)).Frame(90.f, 90.f).Offset(FVector2D(-22.0, 0.0)),
-								Circle().Fill(FLinearColor(0.15f, 0.45f, 0.95f)).Frame(90.f, 90.f).Offset(FVector2D(22.0, 0.0))
-							).Frame(190.0, 110.0).BlendMode(Mode),
+								Circle().Fill(FLinearColor(0.95f, 0.25f, 0.2f)).Frame(90.f, 90.f).BlendMode(Mode).Offset(FVector2D(-22.0, 0.0)),
+								Circle().Fill(FLinearColor(0.15f, 0.45f, 0.95f)).Frame(90.f, 90.f).BlendMode(Mode).Offset(FVector2D(22.0, 0.0))
+							).Frame(190.0, 110.0),
 							Text(FText::FromString(BlendModes->GetNameStringByValue(static_cast<int64>(Mode)))).Font(EVekaTextStyle::Headline).Foreground(FLinearColor::White)
 						)
 					);
@@ -348,24 +384,230 @@ namespace Veka::Editor::Hub
 							Labeled(LOCTEXT("DistortionSetting", "Distortion"), Slider(Distortion, 0.f, 30.f).Frame(150.0, -1.0)),
 							Labeled(LOCTEXT("BlendSetting", "Blend mode"), Picker(FText::GetEmpty(), Blend, BlendOptions).Frame(180.0, -1.0))
 						}),
-						ZStack()(EffectsStage(), Panels),
-						Text(LOCTEXT("EffectsNote", "Every effect of a host shares one capture of what is behind it (r.Veka.Backdrop.Quality, 0 = off)."))
-							.Font(EVekaTextStyle::Footnote).Opacity(0.7f)
+						HubCard(LOCTEXT("EffectsStage", "Backdrop, glass, distortion and blend over a stage"), VStack(10.f, EVekaHAlign::Leading)(
+							ZStack()(EffectsStage(), Panels),
+							Text(LOCTEXT("EffectsNote", "The effects of a host share one capture of what is under them (r.Veka.Backdrop.Quality, 0 = off). A blend mode on a shape blends it with everything under it, the other shapes included."))
+								.Font(EVekaTextStyle::Footnote).Opacity(0.7f)
+						))
 					);
 				}
 				case ESection::Morph:
 					return Samples::MorphGallery();
+				case ESection::Examples:
+					return ExamplesPage();
+				case ESection::Documentation:
+					return DocumentationPage(Ctx);
 				default:
-					return VStack(10.f, EVekaHAlign::Leading)(
-						Text(LOCTEXT("Soon", "Arrives with milestone 4e.")).Font(EVekaTextStyle::Title2),
-						Text(LOCTEXT("SoonDetail", "Examples you can open as assets, documentation generated from the schema, and the changelog.")).Opacity(0.7f)
-					);
+					return ChangelogPage();
 				}
 			}
 
+			struct FParsedExample
+			{
+				FExample Example;
+				FVekaDocument Document;
+				TSharedPtr<FVekaViewStore> Store;
+				bool bValid = false;
+			};
+
+			FVekaElement ExamplesPage() const;
+			FVekaElement DocumentationPage(FVekaContext& Ctx) const;
+			FVekaElement ChangelogPage() const;
+
 			ESection InitialSection = ESection::Components;
 			TArray<TObjectPtr<UVekaTheme>> Themes;
+			TArray<FParsedExample> Examples;
+			TArray<FChangelogRelease> Changelog;
 		};
+
+		FSlateFontInfo CodeFont()
+		{
+			return FCoreStyle::GetDefaultFontStyle("Mono", 11);
+		}
+
+		/** A block of Veka code. */
+		FVekaElement Code(const FString& Source)
+		{
+			using namespace Veka;
+			return Text(Source).Font(CodeFont())
+				.Padding(FMargin(14.f, 10.f))
+				.FillWidth(FVekaAlignment::Leading())
+				.Background(Token(TEXT("Fill"), EVekaHierarchy::Tertiary), 10.f);
+		}
+
+		FString KindName(const FVekaCatalogArgument& Argument)
+		{
+			switch (Argument.Kind)
+			{
+			case EVekaArgumentKind::Number: return TEXT("Number");
+			case EVekaArgumentKind::Bool: return TEXT("Bool");
+			case EVekaArgumentKind::Text: return TEXT("Text (localizable)");
+			case EVekaArgumentKind::Name: return TEXT("Name");
+			case EVekaArgumentKind::Paint: return TEXT("Paint (color, hex, Colora token, paint asset)");
+			case EVekaArgumentKind::Binding: return TEXT("State (written back)");
+			case EVekaArgumentKind::Style: return TEXT("Shared style name");
+			case EVekaArgumentKind::Enum:
+			{
+				TArray<FString> Values;
+				for (int32 Index = 0; Argument.Enum && Index < Argument.Enum->NumEnums() - 1; ++Index)
+				{
+					if (!Argument.Enum->HasMetaData(TEXT("Hidden"), Index))
+					{
+						Values.Add(TEXT(".") + Argument.Enum->GetNameStringByIndex(Index));
+					}
+				}
+				return FString::Join(Values, TEXT(" "));
+			}
+			default: return TEXT("Any");
+			}
+		}
+
+		/** One catalog entry: its call, arguments and what it accepts. */
+		FVekaElement ReferenceCard(const FVekaCatalogEntry& Entry, bool bModifier)
+		{
+			using namespace Veka;
+			TArray<FString> Signature;
+			TArray<FVekaElement> Rows;
+			for (const FVekaCatalogArgument& Argument : Entry.Arguments)
+			{
+				const bool bPrimary = Argument.Name == Entry.PrimaryArgument;
+				Signature.Add(bPrimary ? Argument.Name.ToString() : Argument.Name.ToString() + TEXT(":"));
+				Rows.Add(HStack(10.f, EVekaVAlign::Top)(
+					Text(Argument.Name.ToString() + (bPrimary ? TEXT(" (first)") : TEXT(""))).Font(CodeFont()).Frame(150.0, -1.0, FVekaAlignment::TopLeading()),
+					Text(KindName(Argument)).Font(EVekaTextStyle::Footnote).Opacity(0.8f).FlexFrame(0.0, Infinity, -1.0, -1.0, FVekaAlignment::TopLeading())
+				));
+			}
+			const FString Call = (bModifier ? TEXT(".") : TEXT("")) + Entry.Name.ToString() + (Entry.Arguments.IsEmpty() ? FString() : TEXT("(") + FString::Join(Signature, TEXT(", ")) + TEXT(")"))
+				+ (Entry.bContainer ? TEXT(" { ... }") : TEXT("")) + (Entry.bActions && !Entry.bContainer ? TEXT(" { actions }") : TEXT(""));
+			TArray<FString> Notes;
+			if (Entry.bContainer)
+			{
+				Notes.Add(TEXT("holds views"));
+			}
+			if (Entry.bActions)
+			{
+				Notes.Add(TEXT("runs actions"));
+			}
+			TArray<FVekaElement> Parts = { Code(Call) };
+			if (!Notes.IsEmpty())
+			{
+				Parts.Add(Text(FString::Join(Notes, TEXT(" \u00B7 "))).Font(EVekaTextStyle::Caption1).Opacity(0.7f));
+			}
+			Parts.Add(VStack(6.f, EVekaHAlign::Leading).Children(MoveTemp(Rows)));
+			return HubCard(FText::FromName(Entry.Name), VStack(8.f, EVekaHAlign::Leading).Children(MoveTemp(Parts)));
+		}
+
+		FVekaElement FVekaHubView::ExamplesPage() const
+		{
+			using namespace Veka;
+			TArray<FVekaElement> Cards;
+			for (const FParsedExample& Parsed : Examples)
+			{
+				const FExample Example = Parsed.Example;
+				FVekaElement Preview = Parsed.bValid
+					? Veka::Interpreter::MakeView(Parsed.Document, Parsed.Store.ToSharedRef())
+					: Text(LOCTEXT("ExampleBroken", "This example does not parse.")).Foreground(Token(TEXT("Red")));
+				Cards.Add(HubCard(Example.Title, VStack(12.f, EVekaHAlign::Leading)(
+					Text(Example.Description).Font(EVekaTextStyle::Footnote).Opacity(0.75f),
+					MoveTemp(Preview)
+						.FlexFrame(0.0, Infinity, 300.0, 300.0, FVekaAlignment())
+						.Background(Token(TEXT("Fill"), EVekaHierarchy::Tertiary), 12.f)
+						.Clip(),
+					HStack(10.f)(
+						Text(Example.Name.ToString()).Font(CodeFont()).Opacity(0.7f),
+						Spacer(),
+						Veka::Button(LOCTEXT("OpenExample", "Open as asset"), TEXT("square.and.arrow.up"), [Example]() { OpenExample(Example); })
+							.ButtonStyle(EVekaButtonStyleKind::BorderedProminent)
+					)
+				)));
+			}
+			return VStack(16.f, EVekaHAlign::Leading)(
+				Text(LOCTEXT("ExamplesIntro", "Live examples written in Veka. \"Open as asset\" creates the view in /Game/VekaExamples and opens it in the view editor (save it to keep it)."))
+					.Font(EVekaTextStyle::Body).Opacity(0.8f),
+				Grid({ FVekaGridItem::Adaptive(440.f) }, 16.f, 16.f, FVekaAlignment::TopLeading()).Children(MoveTemp(Cards)).FillWidth(FVekaAlignment::TopLeading())
+			);
+		}
+
+		FVekaElement FVekaHubView::DocumentationPage(FVekaContext& Ctx) const
+		{
+			using namespace Veka;
+			const TVekaState<int32> Page = Ctx.State<int32>(TEXT("Docs.Page"), 0);
+			const TVekaState<FString> Search = Ctx.State<FString>(TEXT("Docs.Search"), FString());
+			const FString Query = Search.Get().TrimStartAndEnd();
+
+			FVekaElement Body;
+			if (Page.Get() == 0)
+			{
+				Body = Grid({ FVekaGridItem::Adaptive(520.f) }, 16.f, 16.f, FVekaAlignment::TopLeading())(
+					HubCard(LOCTEXT("GuideFirst", "A first view"), VStack(10.f, EVekaHAlign::Leading)(
+						Text(LOCTEXT("GuideFirstText", "A view is a tree of components, each followed by its modifiers. Create one with Content Browser > Add > User Interface > Veka View, or import a .vk file.")).Font(EVekaTextStyle::Footnote),
+						Code(TEXT("view Hello {\n    VStack(spacing: 12) {\n        Text(\"Hello Veka\")\n            .font(.Title2)\n        Symbol(#\"star.fill\")\n            .foreground(.Yellow)\n    }\n    .padding(24)\n}"))
+					)),
+					HubCard(LOCTEXT("GuideState", "States and actions"), VStack(10.f, EVekaHAlign::Leading)(
+						Text(LOCTEXT("GuideStateText", "@State declares a value of the view; controls bind to it, actions change it, withAnimation animates what depends on it.")).Font(EVekaTextStyle::Footnote),
+						Code(TEXT("@State var count: Int = 0\n\nButton(\"Tapped \\(count) times\") {\n    withAnimation {\n        count += 1\n    }\n}\nToggle(\"Sound\", isOn: sound)"))
+					)),
+					HubCard(LOCTEXT("GuideComponents", "Components"), VStack(10.f, EVekaHAlign::Leading)(
+						Text(LOCTEXT("GuideComponentsText", "Any view is a component of another: @Param gives it arguments, @Slot a place for content, @Event a way to talk back. Component libraries list them in the palette and share styles.")).Font(EVekaTextStyle::Footnote),
+						Code(TEXT("view Badge {\n    @Param var title: Text = \"New\"\n    @Slot default\n    HStack { Text(title)  Slot(default) }\n}\n\nBadge(title: \"Sale\") { Symbol(#\"tag\") }\n    .style(.Card)"))
+					)),
+					HubCard(LOCTEXT("GuideEffects", "Effects"), VStack(10.f, EVekaHAlign::Leading)(
+						Text(LOCTEXT("GuideEffectsText", "Backdrops read what is under the node (the 3D scene, the UI): one capture is shared by the effects of a host. r.Veka.Backdrop.Quality sets the quality (0 = off).")).Font(EVekaTextStyle::Footnote),
+						Code(TEXT(".backdropBlur(24, cornerRadius: 16)\n.frostedGlass(blur: 30)\n.glass(28)\n.glassGroup(16)\n.liquidDistortion(10)\n.blendMode(.Multiply)"))
+					)),
+					HubCard(LOCTEXT("GuideThemes", "Colors and themes"), VStack(10.f, EVekaHAlign::Leading)(
+						Text(LOCTEXT("GuideThemesText", "Colora tokens (.Accent, .WindowBackground...) resolve from the theme and the Light / Dark scheme of the subtree. A UVekaTheme overrides tokens, metrics and text styles; control tokens restyle every control.")).Font(EVekaTextStyle::Footnote),
+						Code(TEXT(".background(.WindowBackground, radius: 12)\n.foreground(.Accent)\n.background(.Aurora)   // a Veka Paint asset"))
+					))
+				).FillWidth(FVekaAlignment::TopLeading());
+			}
+			else
+			{
+				const bool bModifiers = Page.Get() == 2;
+				TArray<FVekaElement> Cards;
+				for (const FVekaCatalogEntry& Entry : bModifiers ? Veka::Catalog::Modifiers() : Veka::Catalog::Components())
+				{
+					if (Query.IsEmpty() || Entry.Name.ToString().Contains(Query))
+					{
+						Cards.Add(ReferenceCard(Entry, bModifiers));
+					}
+				}
+				const int32 Count = Cards.Num();
+				Body = VStack(10.f, EVekaHAlign::Leading)(
+					Text(FText::Format(LOCTEXT("ReferenceCount", "{0} entries, generated from the catalog the language, the inspector and completion use."), FText::AsNumber(Count)))
+						.Font(EVekaTextStyle::Footnote).Opacity(0.7f),
+					Grid({ FVekaGridItem::Adaptive(400.f) }, 14.f, 14.f, FVekaAlignment::TopLeading()).Children(MoveTemp(Cards)).FillWidth(FVekaAlignment::TopLeading())
+				);
+			}
+			return VStack(16.f, EVekaHAlign::Leading)(
+				HStack(16.f)(
+					Picker(FText::GetEmpty(), Page, Options({ LOCTEXT("Guide", "Guide"), LOCTEXT("ComponentsRef", "Components"), LOCTEXT("ModifiersRef", "Modifiers") }))
+						.PickerStyle(EVekaPickerStyle::Segmented),
+					Page.Get() == 0 ? Spacer(0.f) : TextField(LOCTEXT("SearchDocs", "Search"), Search).Frame(240.0, -1.0)
+				),
+				MoveTemp(Body)
+			);
+		}
+
+		FVekaElement FVekaHubView::ChangelogPage() const
+		{
+			using namespace Veka;
+			TArray<FVekaElement> Releases;
+			for (const FChangelogRelease& Release : Changelog)
+			{
+				TArray<FVekaElement> Entries;
+				for (const FString& Entry : Release.Entries)
+				{
+					Entries.Add(HStack(8.f, EVekaVAlign::Top)(Text(TEXT("\u2022")).Opacity(0.6f), Text(Entry).Font(EVekaTextStyle::Footnote).FlexFrame(0.0, Infinity, -1.0, -1.0, FVekaAlignment::TopLeading())));
+				}
+				Releases.Add(HubCard(FText::FromString(Release.Title), VStack(6.f, EVekaHAlign::Leading).Children(MoveTemp(Entries))));
+			}
+			if (Releases.IsEmpty())
+			{
+				Releases.Add(Text(LOCTEXT("NoChangelog", "Docs/CHANGELOG.md was not found in the plugin.")));
+			}
+			return VStack(14.f, EVekaHAlign::Leading).Children(MoveTemp(Releases));
+		}
 
 		TSharedRef<SDockTab> SpawnTab(const FSpawnTabArgs&)
 		{
@@ -390,6 +632,115 @@ namespace Veka::Editor::Hub
 				LOCTEXT("HubButton", "Veka Hub"), LOCTEXT("HubButtonTooltip", "Open the Veka Hub (DesignLab: components, colors, symbols, effects...)"),
 				FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Layout")));
 		}
+	}
+
+	namespace
+	{
+		FString PluginDir()
+		{
+			const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("VekaUI"));
+			return Plugin.IsValid() ? Plugin->GetBaseDir() : FString();
+		}
+	}
+
+	TArray<FExample> GetExamples()
+	{
+		TArray<FExample> Out;
+		const FString Root = PluginDir() / TEXT("Samples/Veka");
+		TArray<FString> Files = { Root / TEXT("VV_Starter.vk") };
+		TArray<FString> Found;
+		IFileManager::Get().FindFiles(Found, *(Root / TEXT("Examples/*.vk")), true, false);
+		Found.Sort();
+		for (const FString& File : Found)
+		{
+			Files.Add(Root / TEXT("Examples") / File);
+		}
+		for (const FString& File : Files)
+		{
+			FString Source;
+			if (!FFileHelper::LoadFileToString(Source, *File))
+			{
+				continue;
+			}
+			FExample& Example = Out.AddDefaulted_GetRef();
+			Example.Name = FName(*FPaths::GetBaseFilename(File));
+			FString Title = Example.Name.ToString();
+			Title.RemoveFromStart(TEXT("VV_Example"));
+			Title.RemoveFromStart(TEXT("VV_"));
+			Example.Title = FText::FromString(Title);
+			Example.Source = Source;
+			// The first comment line describes the example.
+			TArray<FString> Lines;
+			Source.ParseIntoArrayLines(Lines);
+			for (const FString& Line : Lines)
+			{
+				const FString Trimmed = Line.TrimStart();
+				if (Trimmed.StartsWith(TEXT("//")))
+				{
+					Example.Description = FText::FromString(Trimmed.Mid(2).TrimStart());
+					break;
+				}
+			}
+			if (Example.Description.IsEmpty())
+			{
+				Example.Description = LOCTEXT("StarterDescription", "The starter view: a title and a button that counts its taps.");
+			}
+		}
+		return Out;
+	}
+
+	UVekaView* OpenExample(const FExample& Example, bool bOpenEditor)
+	{
+		const FString PackageName = TEXT("/Game/VekaExamples/") + Example.Name.ToString();
+		UVekaView* View = LoadObject<UVekaView>(nullptr, *(PackageName + TEXT(".") + Example.Name.ToString()), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!View)
+		{
+			FVekaParseOptions Options;
+			Options.ResolveComponent = Veka::Lang::MakeAssetResolver();
+			const FVekaParseResult Result = Veka::Lang::Parse(Example.Source, Options);
+			if (Result.HasErrors())
+			{
+				return nullptr;
+			}
+			UPackage* Package = CreatePackage(*PackageName);
+			View = NewObject<UVekaView>(Package, Example.Name, RF_Public | RF_Standalone | RF_Transactional);
+			View->Document = Result.Document;
+#if WITH_EDITORONLY_DATA
+			View->SourceText = Example.Source;
+#endif
+			FAssetRegistryModule::AssetCreated(View);
+			View->MarkPackageDirty();
+		}
+		if (bOpenEditor && GEditor)
+		{
+			GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(View);
+		}
+		return View;
+	}
+
+	TArray<FChangelogRelease> GetChangelog()
+	{
+		TArray<FChangelogRelease> Out;
+		FString Text;
+		if (!FFileHelper::LoadFileToString(Text, *(PluginDir() / TEXT("Docs/CHANGELOG.md"))))
+		{
+			return Out;
+		}
+		TArray<FString> Lines;
+		Text.ParseIntoArrayLines(Lines);
+		for (const FString& Line : Lines)
+		{
+			const FString Trimmed = Line.TrimStartAndEnd();
+			if (Trimmed.StartsWith(TEXT("## ")))
+			{
+				Out.AddDefaulted_GetRef().Title = Trimmed.Mid(3);
+			}
+			else if (Trimmed.StartsWith(TEXT("- ")) && !Out.IsEmpty())
+			{
+				Out.Last().Entries.Add(Trimmed.Mid(2));
+			}
+		}
+		return Out;
 	}
 
 	FVekaElement MakeHub(ESection InitialSection, TArray<UVekaTheme*> Themes)

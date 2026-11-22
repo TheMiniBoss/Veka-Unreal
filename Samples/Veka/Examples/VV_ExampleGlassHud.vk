@@ -1,0 +1,29 @@
+view VV_ExampleGlassHud {
+    @State var health: Float = 0.72
+
+    // A game HUD for the scene: a liquid glass status bar and a frosted objective card.
+    VStack(spacing: 16, alignment: .Leading) {
+        HStack(spacing: 18) {
+            Symbol(#"heart.fill")
+                .foreground(.Red)
+            ProgressView(health)
+                .frame(width: 160)
+            Text("\(health)")
+                .font(.Footnote)
+        }
+        .padding(horizontal: 22, vertical: 14)
+        .glass(28)
+        VStack(spacing: 6, alignment: .Leading) {
+            HStack(spacing: 8) {
+                Symbol(#"flag.fill")
+                Text("Objective")
+                    .font(.Headline)
+            }
+            Text("Reach the lighthouse before dawn")
+                .font(.Footnote)
+        }
+        .padding(18)
+        .frostedGlass(blur: 30, cornerRadius: 18)
+    }
+    .padding(24)
+}

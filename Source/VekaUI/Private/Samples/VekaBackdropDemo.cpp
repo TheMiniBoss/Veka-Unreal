@@ -167,9 +167,9 @@ namespace
 			const EVekaBlendMode Mode = static_cast<EVekaBlendMode>(Modes->GetValueByIndex(Index));
 			Swatches.Add(VStack(6.f)(
 				ZStack()(
-					Circle().Fill(FLinearColor(0.95f, 0.25f, 0.2f)).Frame(70.f, 70.f).Offset(FVector2D(-14.0, 0.0)),
-					Circle().Fill(FLinearColor(0.15f, 0.45f, 0.95f)).Frame(70.f, 70.f).Offset(FVector2D(14.0, 0.0))
-				).Frame(110.0, 80.0).BlendMode(Mode),
+					Circle().Fill(FLinearColor(0.95f, 0.25f, 0.2f)).Frame(70.f, 70.f).BlendMode(Mode).Offset(FVector2D(-14.0, 0.0)),
+					Circle().Fill(FLinearColor(0.15f, 0.45f, 0.95f)).Frame(70.f, 70.f).BlendMode(Mode).Offset(FVector2D(14.0, 0.0))
+				).Frame(110.0, 80.0),
 				Text(Modes->GetNameStringByIndex(Index)).Font(EVekaTextStyle::Footnote)
 			));
 		}

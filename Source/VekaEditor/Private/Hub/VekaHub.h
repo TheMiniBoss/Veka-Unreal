@@ -6,6 +6,7 @@
 #include "Core/VekaElement.h"
 
 class UVekaTheme;
+class UVekaView;
 
 /**
  * Veka Hub (Phase 4d): a nomad tab (Window > Tools, the level editor toolbar, the view editor toolbar), written in
@@ -38,6 +39,29 @@ namespace Veka::Editor::Hub
 	FVekaElement MakeHub(ESection InitialSection, TArray<UVekaTheme*> Themes);
 	/** The project's theme assets (asset registry, loaded). */
 	TArray<UVekaTheme*> GatherThemes();
+
+	/** An example view of the plugin (Samples/Veka): its Veka source, a title and the first comment as description. */
+	struct FExample
+	{
+		FName Name;
+		FText Title;
+		FText Description;
+		FString Source;
+	};
+	TArray<FExample> GetExamples();
+	/**
+	 * Creates the example as a Veka View in /Game/VekaExamples (or finds it there) and opens it in the view editor.
+	 * The new asset is left unsaved (the user saves it). nullptr if its source does not parse.
+	 */
+	UVekaView* OpenExample(const FExample& Example, bool bOpenEditor = true);
+
+	/** A release of Docs/CHANGELOG.md (`## title`, `- entries`). */
+	struct FChangelogRelease
+	{
+		FString Title;
+		TArray<FString> Entries;
+	};
+	TArray<FChangelogRelease> GetChangelog();
 
 	/** Tab spawner and toolbar entries (editor module startup / shutdown). */
 	void Register();
