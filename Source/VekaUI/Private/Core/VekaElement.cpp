@@ -6,6 +6,7 @@
 #include "Core/VekaEnvironment.h"
 #include "Modifiers/VekaLayoutModifiers.h"
 #include "Modifiers/VekaVisualModifiers.h"
+#include "Modifiers/VekaEffectModifiers.h"
 #include "Modifiers/VekaEnvironmentModifiers.h"
 #include "Modifiers/VekaInteractionModifiers.h"
 #include "Modifiers/VekaColoraModifiers.h"
@@ -273,6 +274,39 @@ FVekaElement FVekaElement::Border(const FVekaPaint& Paint, float Width, const FV
 	FVekaBorderModifier Modifier;
 	Modifier.Paint = Paint;
 	Modifier.Width = Width;
+	Modifier.CornerRadii = Radii;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::BackdropBlur(float Radius, const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float TintAmount) &&
+{
+	FVekaBackdropModifier Modifier;
+	Modifier.Radius = Radius;
+	Modifier.CornerRadii = Radii;
+	Modifier.Tint = Tint;
+	Modifier.TintAmount = TintAmount;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::BackdropBlur(float Radius, const FVekaCornerRadii& Radii) &&
+{
+	FVekaBackdropModifier Modifier;
+	return MoveTemp(*this).BackdropBlur(Radius, Radii, Modifier.Tint, Modifier.TintAmount);
+}
+
+FVekaElement FVekaElement::FrostedGlass(const FVekaCornerRadii& Radii) &&
+{
+	FVekaBackdropModifier Modifier = FVekaBackdropModifier::FrostedGlass();
+	Modifier.CornerRadii = Radii;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::FrostedGlass(const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float Blur, float Noise) &&
+{
+	FVekaBackdropModifier Modifier = FVekaBackdropModifier::FrostedGlass(Tint, Blur, Noise);
 	Modifier.CornerRadii = Radii;
 	AddModifierInternal(FInstancedStruct::Make(Modifier));
 	return MoveTemp(*this);

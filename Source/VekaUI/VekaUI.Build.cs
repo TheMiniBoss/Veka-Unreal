@@ -24,9 +24,8 @@ public class VekaUI : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"Projects",
-			// Phase 4 spike: backdrop (B: our render-graph element; A: the engine's Slate post buffers).
+			// Phase 4: backdrops (render graph capture, blur pyramid, composite).
 			"VekaUIRender",
-			"SlateRHIRenderer",
 		});
 
 		// Default font family (LT Flode Neue), loaded by Slate from these files.

@@ -36,6 +36,13 @@ public:
 	void SetEnvironment(const FVekaEnvironment& Environment);
 	TSharedRef<FVekaRuntime> GetRuntime() const;
 
+	/**
+	 * Paints the tree one layer up; when backdrops registered during the paint, their shared capture (what is behind
+	 * the host) goes in the freed layer, before the content.
+	 */
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
+		int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+
 private:
 	void RequestTick();
 	EActiveTimerReturnType HandleActiveTimer(double InCurrentTime, float InDeltaTime);

@@ -2,15 +2,48 @@
 
 #include "Modifiers/VekaEffectModifiers.h"
 #include "VekaBackdrop.h"
+#include "Colora/VekaTheme.h"
 #include "Rendering/DrawElements.h"
-#include "Rendering/SlateRendererTypes.h"
-#include "Slate/SPostBufferUpdate.h"
-#include "Components/PostBufferBlurUpdater.h"
-#include "SlateRHIRendererSettings.h"
-#include "Engine/TextureRenderTarget2D.h"
-#include "Input/HittestGrid.h"
-#include "Types/PaintArgs.h"
-#include "Widgets/SWindow.h"
+
+namespace
+{
+	TArray<FVekaBackdropLayer*>& LayerStack()
+	{
+		static TArray<FVekaBackdropLayer*> Stack;
+		return Stack;
+	}
+}
+
+namespace Veka::Backdrop
+{
+	FVekaBackdropLayer* CurrentLayer()
+	{
+		check(IsInGameThread());
+		return LayerStack().IsEmpty() ? nullptr : LayerStack().Last();
+	}
+
+	FLayerScope::FLayerScope(FVekaBackdropLayer& Layer)
+	{
+		check(IsInGameThread());
+		LayerStack().Push(&Layer);
+	}
+
+	FLayerScope::~FLayerScope()
+	{
+		LayerStack().Pop();
+	}
+}
+
+FVekaBackdropModifier FVekaBackdropModifier::FrostedGlass(const FVekaPaint& InTint, float Blur, float InNoise)
+{
+	FVekaBackdropModifier Modifier;
+	Modifier.Radius = Blur;
+	Modifier.Tint = InTint;
+	Modifier.TintAmount = 0.45f;
+	Modifier.Saturation = 1.6f;
+	Modifier.Noise = InNoise;
+	return Modifier;
+}
 
 int32 FVekaBackdropModifier::PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const
 {
@@ -18,12 +51,20 @@ int32 FVekaBackdropModifier::PaintBehind(FVekaPaintContext& Context, const FVeka
 	{
 		return Context.LayerId;
 	}
-	if (Method == EVekaBackdropMethod::EnginePostBuffer)
+	FLinearColor TintColor = Veka::Colora::Resolve(Tint, Context.Environment).GetAverageColor();
+	const float Opacity = Context.WidgetStyle.GetColorAndOpacityTint().A;
+
+	if (Veka::Render::GetBackdropQuality() == EVekaBackdropQuality::Off)
 	{
-		return PaintEnginePostBuffer(Context, Rect);
+		// No capture: a tinted fill, opaque enough to keep the content readable.
+		TintColor.A = FMath::Max(0.85f, TintAmount) * Opacity;
+		FallbackBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
+		FallbackBrush.OutlineSettings = FSlateBrushOutlineSettings(FVector4(CornerRadii.TopLeft, CornerRadii.TopRight, CornerRadii.BottomRight, CornerRadii.BottomLeft));
+		FSlateDrawElement::MakeBox(Context.DrawElements, Context.LayerId, Context.MakePaintGeometry(Rect), &FallbackBrush, Context.DrawEffects, TintColor);
+		return Context.LayerId + 1;
 	}
 
-	// B: the render graph element gets the rect in absolute (window) pixels.
+	// The rect in absolute (window) pixels.
 	const FSlateRenderTransform& Transform = Context.Geometry.GetAccumulatedRenderTransform();
 	const FVector2f A = Transform.TransformPoint(FVector2f(Rect.Position));
 	const FVector2f B = Transform.TransformPoint(FVector2f(Rect.Position + Rect.Size));
@@ -33,52 +74,13 @@ int32 FVekaBackdropModifier::PaintBehind(FVekaPaintContext& Context, const FVeka
 	Params.Max = FVector2f(FMath::Max(A.X, B.X), FMath::Max(A.Y, B.Y));
 	Params.BlurRadius = Radius * Scale;
 	Params.CornerRadii = FVector4f(CornerRadii.TopLeft, CornerRadii.TopRight, CornerRadii.BottomRight, CornerRadii.BottomLeft) * Scale;
-	Params.Tint = Tint;
+	Params.Tint = FLinearColor(TintColor.R, TintColor.G, TintColor.B, FMath::Clamp(TintAmount, 0.f, 1.f) * TintColor.A);
 	Params.Saturation = Saturation;
-	Params.Opacity = Context.WidgetStyle.GetColorAndOpacityTint().A;
-	FSlateDrawElement::MakeCustom(Context.DrawElements, Context.LayerId, Veka::Render::MakeBackdropElement(Params));
+	Params.Noise = Noise;
+	Params.Opacity = Opacity;
+
+	// Inside a host: one capture for all of its backdrops; elsewhere, a capture of its own.
+	FVekaBackdropLayer* Layer = Veka::Backdrop::CurrentLayer();
+	FSlateDrawElement::MakeCustom(Context.DrawElements, Context.LayerId, Layer ? Layer->Add(Params) : Veka::Render::MakeBackdropElement(Params));
 	return Context.LayerId + 1;
-}
-
-int32 FVekaBackdropModifier::PaintEnginePostBuffer(FVekaPaintContext& Context, const FVekaRect& Rect) const
-{
-	// A: SPostBufferUpdate copies what was drawn so far into post buffer 0 and runs its processor (Gaussian blur).
-	if (!PostBufferUpdate.IsValid())
-	{
-		PostBufferUpdate = SNew(SPostBufferUpdate).bUsePaintGeometry(true);
-		TArray<ESlatePostRT> Buffers = { ESlatePostRT::ESlatePostRT_0 };
-		PostBufferUpdate->SetBuffersToUpdate(MakeArrayView(Buffers));
-		UPostBufferBlurUpdater* Updater = NewObject<UPostBufferBlurUpdater>();
-		Updater->GaussianBlurStrength = Radius;
-		TMap<ESlatePostRT, TSharedPtr<FSlatePostProcessorUpdaterProxy>> Updaters;
-		Updaters.Add(ESlatePostRT::ESlatePostRT_0, Updater->GetRenderThreadProxy());
-		PostBufferUpdate->SetProcessorUpdaters(Updaters);
-	}
-	static FHittestGrid Grid;
-	const FPaintArgs Args(nullptr, Grid, FVector2f::ZeroVector, FPlatformTime::Seconds(), 0.f);
-	const FSlateRect Culling = Context.Geometry.GetLayoutBoundingRect();
-	const FGeometry Geometry = Context.Geometry.MakeChild(FVector2f(Rect.Size), FSlateLayoutTransform(FVector2f(Rect.Position)));
-	int32 Layer = PostBufferUpdate->Paint(Args, Geometry, Culling, Context.DrawElements, Context.LayerId, Context.WidgetStyle, true);
-
-	// The post buffer covers the window: the rect's UVs are its window position over the window size.
-	USlateRHIRendererSettings* Settings = USlateRHIRendererSettings::GetMutable();
-	UTextureRenderTarget2D* Target = Settings ? Settings->LoadGetPostBufferRT(ESlatePostRT::ESlatePostRT_0) : nullptr;
-	const SWindow* Window = Context.DrawElements.GetPaintWindow();
-	if (!Target || !Window)
-	{
-		return Layer;
-	}
-	const FVector2f WindowPosition = Window->GetPositionInScreen();
-	const FVector2f WindowSize = Window->GetSizeInScreen();
-	const FSlateRect Absolute = Geometry.GetRenderBoundingRect();
-	PostBufferBrush.SetResourceObject(Target);
-	PostBufferBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
-	PostBufferBrush.OutlineSettings = FSlateBrushOutlineSettings(FVector4(CornerRadii.TopLeft, CornerRadii.TopRight, CornerRadii.BottomRight, CornerRadii.BottomLeft));
-	PostBufferBrush.SetUVRegion(FBox2f(FVector2f((Absolute.Left - WindowPosition.X) / WindowSize.X, (Absolute.Top - WindowPosition.Y) / WindowSize.Y),
-		FVector2f((Absolute.Right - WindowPosition.X) / WindowSize.X, (Absolute.Bottom - WindowPosition.Y) / WindowSize.Y)));
-	FSlateDrawElement::MakeBox(Context.DrawElements, ++Layer, Geometry.ToPaintGeometry(), &PostBufferBrush, Context.DrawEffects, FLinearColor::White);
-	TintBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
-	TintBrush.OutlineSettings = PostBufferBrush.OutlineSettings;
-	FSlateDrawElement::MakeBox(Context.DrawElements, ++Layer, Geometry.ToPaintGeometry(), &TintBrush, Context.DrawEffects, Tint);
-	return Layer + 1;
 }

@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **4** en cours (4.0 Spike backdrop fusionné) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4a Backdrop + flou (voie B retenue au spike 4.0) |
+| Prochaine étape | Phase 4 — jalon 4b Glass (réfraction SDF, reflet, aberration, fusion) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,42 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4a Backdrop + flou
+
+- **Branche** : `cpp/phase-4a-backdrop` (partie de `C++` @ `44235f9`), fusionnée dans `C++`.
+- **Une capture par couche** (`VekaUIRender/Public/VekaBackdrop.h`) : `FVekaBackdropLayer` réunit tous les backdrops
+  d'un `SVekaHost` pendant une frame. Le host peint son arbre une couche plus haut et, si des backdrops se sont
+  inscrits, pose **un seul élément de capture** dans la couche libérée : copie de l'union des zones (avec marge), une
+  pyramide dual Kawase jusqu'au niveau le plus haut demandé, niveaux convertis en textures externes (poolées). Chaque
+  backdrop dessine ensuite son **composite** en mélangeant les **deux niveaux** autour de son rayon (`BlurLevel(r) =
+  log2(1 + r / 1,5)`) : n'importe quel rayon, continu (animable sans saut). Hors host : capture individuelle.
+- **Qualité** : `r.Veka.Backdrop.Quality` (scalability) 0 off, 1 low (niveaux échantillonnés tels quels, ≤ 4), 2
+  medium (≤ 5), 3 high (défaut, ≤ 6), 4 epic (≤ 7). **Repli** à 0 : remplissage arrondi teinté (opacité ≥ 0,85), aucune
+  capture. Aucune capture non plus si aucun backdrop n'est peint.
+- **Modificateur** `FVekaBackdropModifier` : `Radius`, `CornerRadii`, `Tint` (**peinture Colora**, défaut
+  `.WindowBackground`), `TintAmount`, `Saturation`, `Noise` (grain). Préréglage `FrostedGlass()` (flou 30, teinte 0,45,
+  grain 0,035). Builders `.BackdropBlur(radius, radii[, tint, amount])` et `.FrostedGlass(radii[, tint, blur, noise])`.
+- **Langage** : `.backdropBlur(radius, cornerRadius:, tint:, tintAmount:, saturation:)` et
+  `.frostedGlass(blur:, cornerRadius:, tint:, noise:)` (catalogue → analyse, complétion, inspecteur typé, valeurs par
+  défaut à l'ajout).
+- **Retiré** : la piste A du spike (post-buffers moteur) et la dépendance `SlateRHIRenderer`. Démo renommée
+  **`Veka.BackdropDemo [full]`** (trois rayons + une barre frostedGlass, une seule capture).
+- **Mesures** (jeu 1920 × 1080, `stat gpu`) : 4 backdrops (rayons 6, 24, 60, frosted 30) = **0,12 ms** pour tout
+  (une capture) ; plein écran (4.0) 0,20–0,22 ms.
+- **Tests** : `VekaUI.Render.Backdrop` (niveaux continus, plafonds par qualité, une capture pour trois backdrops,
+  aucune sans backdrop, repli à la qualité 0, préréglage frosted) et `VekaUI.Render.BackdropInViews`
+  (`.frostedGlass(...)` d'une vue → modificateur avec flou, rayon, teinte jeton, grain).
+- **Validé** : build éditeur, **96 tests** (95 verts + 1 avec l'avertissement attendu), BuildPlugin non-unity
+  Editor + Shipping, 0 warning.
+- **Vérifié** (`Docs/Sync/Screens/phase4a-demo-game.jpg`, `phase4a-editor-preview.jpg`) : en jeu, trois panneaux aux
+  flous nettement différents + barre givrée sur le ciel ; dans l'éditeur de vue, `.frostedGlass(tint: .Accent)` tapé
+  dans le code de `VV_Shop` dessine le carré arrondi teinté pile derrière le symbole, au zoom du viewport, et
+  l'inspecteur affiche flou / rayon / teinte / grain. Démo retirée (`VV_Shop` non sauvegardé).
+- **Limites** : un widget mis en cache par l'invalidation Slate (retainer, invalidation panel) rejoue ses éléments
+  sans repeindre : son backdrop disparaît (à traiter avec le glass, 4b) ; les backdrops d'un même host ne se voient
+  pas entre eux (même capture, comme prévu) ; la valeur du rayon n'est pas encore animée par `.animation` (le rendu le
+  permet).
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4.0 Spike backdrop
 

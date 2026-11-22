@@ -96,6 +96,9 @@ namespace Veka::Catalog
 			E(TEXT("animation"), { A(TEXT("value")) }, TEXT("value")),
 			E(TEXT("transition"), { A(TEXT("kind"), EKind::Name) }, TEXT("kind")),
 			E(TEXT("style"), { A(TEXT("name"), EKind::Style) }, TEXT("name")),
+			E(TEXT("backdropBlur"), { A(TEXT("radius"), EKind::Number), A(TEXT("cornerRadius"), EKind::Number), A(TEXT("tint"), EKind::Paint),
+				A(TEXT("tintAmount"), EKind::Number), A(TEXT("saturation"), EKind::Number) }, TEXT("radius")),
+			E(TEXT("frostedGlass"), { A(TEXT("blur"), EKind::Number), A(TEXT("cornerRadius"), EKind::Number), A(TEXT("tint"), EKind::Paint), A(TEXT("noise"), EKind::Number) }),
 		};
 		return Entries;
 	}

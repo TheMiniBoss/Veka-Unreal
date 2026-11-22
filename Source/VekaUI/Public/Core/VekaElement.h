@@ -147,6 +147,17 @@ public:
 
 	FVekaElement Shadow(const FLinearColor& Color, float Radius, const FVector2D& Offset = FVector2D::ZeroVector, const FVekaCornerRadii& Radii = FVekaCornerRadii()) const& { return FVekaElement(*this).Shadow(Color, Radius, Offset, Radii); }
 	FVekaElement Shadow(const FLinearColor& Color, float Radius, const FVector2D& Offset = FVector2D::ZeroVector, const FVekaCornerRadii& Radii = FVekaCornerRadii()) &&;
+	/** What is behind the node, blurred (Radius) and tinted, clipped to the rounded rect (Phase 4 backdrop). */
+	FVekaElement BackdropBlur(float Radius, const FVekaCornerRadii& Radii = FVekaCornerRadii()) const& { return FVekaElement(*this).BackdropBlur(Radius, Radii); }
+	FVekaElement BackdropBlur(float Radius, const FVekaCornerRadii& Radii = FVekaCornerRadii()) &&;
+	/** Same, with a tint (TintAmount 0..1 of it over the blur). */
+	FVekaElement BackdropBlur(float Radius, const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float TintAmount) const& { return FVekaElement(*this).BackdropBlur(Radius, Radii, Tint, TintAmount); }
+	FVekaElement BackdropBlur(float Radius, const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float TintAmount) &&;
+	/** Frosted glass: strong blur, more tint (WindowBackground), a little grain. */
+	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii = FVekaCornerRadii()) const& { return FVekaElement(*this).FrostedGlass(Radii); }
+	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii = FVekaCornerRadii()) &&;
+	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float Blur, float Noise) const& { return FVekaElement(*this).FrostedGlass(Radii, Tint, Blur, Noise); }
+	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float Blur, float Noise) &&;
 
 	FVekaElement Opacity(float Value) const& { return FVekaElement(*this).Opacity(Value); }
 	FVekaElement Opacity(float Value) &&;

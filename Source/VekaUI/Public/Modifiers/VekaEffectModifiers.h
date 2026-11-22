@@ -8,45 +8,60 @@
 #include "Core/VekaPaint.h"
 #include "VekaEffectModifiers.generated.h"
 
-class SPostBufferUpdate;
+class FVekaBackdropLayer;
 
-/** How a backdrop reads what is behind it (Phase 4 spike: both are kept until the decision). */
-UENUM(BlueprintType)
-enum class EVekaBackdropMethod : uint8
-{
-	/** B: our Slate custom element, render graph copy + dual Kawase blur + composite (VekaUIRender). */
-	RenderGraph,
-	/** A: the engine's Slate post buffer 0 (SPostBufferUpdate + its Gaussian blur processor), sampled as a texture. */
-	EnginePostBuffer
-};
-
-/** Frosted backdrop: what is drawn behind the node, blurred, tinted and clipped to the rounded rect. */
+/**
+ * Backdrop: what is drawn behind the node (the 3D scene, the UI under it), blurred, tinted and clipped to the rounded
+ * rect. Every backdrop of a Veka host shares one capture and one blur pyramid per frame (r.Veka.Backdrop.Quality;
+ * at 0 the node gets a tinted fill instead). `.backdropBlur(radius)` and `.frostedGlass()` (grain, stronger tint).
+ */
 USTRUCT(BlueprintType, meta = (VekaName = "backdropBlur", VekaCategory = "Effects"))
 struct VEKAUI_API FVekaBackdropModifier : public FVekaModifier
 {
 	GENERATED_BODY()
 
+	/** Blur radius (Slate units); any value, animatable. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
 	float Radius = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
 	FVekaCornerRadii CornerRadii;
 
+	/** Color mixed over the blur (a Colora token by default). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
-	FLinearColor Tint = FLinearColor(1.f, 1.f, 1.f, 0.12f);
+	FVekaPaint Tint = FVekaPaint::FromToken(TEXT("WindowBackground"));
+
+	/** How much of the tint (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0", ClampMax = "1"))
+	float TintAmount = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
 	float Saturation = 1.4f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
-	EVekaBackdropMethod Method = EVekaBackdropMethod::RenderGraph;
+	/** Grain (frosted glass), 0..1. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0", ClampMax = "1"))
+	float Noise = 0.f;
 
 	virtual int32 PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
 
-private:
-	int32 PaintEnginePostBuffer(FVekaPaintContext& Context, const FVekaRect& Rect) const;
+	/** Frosted glass: a strong blur, more tint and a little grain. */
+	static FVekaBackdropModifier FrostedGlass(const FVekaPaint& Tint = FVekaPaint::FromToken(TEXT("WindowBackground")), float Blur = 30.f, float Noise = 0.035f);
 
-	mutable TSharedPtr<SPostBufferUpdate> PostBufferUpdate;
-	mutable FSlateBrush PostBufferBrush;
-	mutable FSlateBrush TintBrush;
+private:
+	mutable FSlateBrush FallbackBrush;
 };
+
+namespace Veka::Backdrop
+{
+	/** The backdrop layer of the Veka host being painted (game thread), nullptr outside of a host. */
+	VEKAUI_API FVekaBackdropLayer* CurrentLayer();
+
+	/** Makes Layer the current one while a host paints its tree (scopes nest). */
+	struct VEKAUI_API FLayerScope
+	{
+		explicit FLayerScope(FVekaBackdropLayer& Layer);
+		~FLayerScope();
+		FLayerScope(const FLayerScope&) = delete;
+		FLayerScope& operator=(const FLayerScope&) = delete;
+	};
+}
