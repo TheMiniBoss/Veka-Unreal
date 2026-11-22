@@ -6,6 +6,9 @@
 #include "Colora/VekaTheme.h"
 #include "Symbols/VekaSymbol.h"
 #include "Colora/VekaPaintAsset.h"
+#include "View/VekaComponentLibrary.h"
+#include "View/VekaViewAsset.h"
+#include "VekaLanguage.h"
 #include "UObject/Class.h"
 #include "UObject/UnrealType.h"
 
@@ -192,6 +195,22 @@ namespace
 		Item.Insert = Insert;
 		Item.Detail = Detail;
 		Item.Kind = Kind;
+	}
+
+	void AddPaints(TArray<FVekaCompletionItem>& Items)
+	{
+		for (const FName Token : Veka::Colora::DefaultTokenNames())
+		{
+			AddItem(Items, Token.ToString(), Token.ToString(), TEXT("Colora token"), EVekaCompletionKind::Value);
+		}
+		for (const FName Token : Veka::Colora::ControlTokenNames())
+		{
+			AddItem(Items, Token.ToString(), Token.ToString(), TEXT("control token"), EVekaCompletionKind::Value);
+		}
+		for (const FName Paint : Veka::Paints::GetAllNames())
+		{
+			AddItem(Items, Paint.ToString(), Paint.ToString(), TEXT("paint asset"), EVekaCompletionKind::Value);
+		}
 	}
 
 	void AddVariables(TArray<FVekaCompletionItem>& Items, const FVekaCompletionSources& Sources)
@@ -480,14 +499,24 @@ namespace Veka::Editor
 					}
 					else if (Argument->Kind == EVekaArgumentKind::Paint)
 					{
-						for (const FName Token : Veka::Colora::DefaultTokenNames())
+						AddPaints(Out.Items);
+					}
+					else if (Argument->Kind == EVekaArgumentKind::Style)
+					{
+						for (const FName Style : Veka::Components::GetAllStyleNames())
 						{
-							AddItem(Out.Items, Token.ToString(), Token.ToString(), TEXT("Colora token"), EVekaCompletionKind::Value);
+							AddItem(Out.Items, Style.ToString(), Style.ToString(), TEXT("shared style"), EVekaCompletionKind::Value);
 						}
-						for (const FName Paint : Veka::Paints::GetAllNames())
-						{
-							AddItem(Out.Items, Paint.ToString(), Paint.ToString(), TEXT("paint asset"), EVekaCompletionKind::Value);
-						}
+					}
+				}
+				else if (const UVekaView* View = !Call.bModifier && Sources.ResolveView ? Sources.ResolveView(Call.Name) : nullptr)
+				{
+					// A Color parameter of a component.
+					const FName ParamName = !Call.Argument.IsNone() ? Call.Argument : (Call.bFirstUnnamed && View->Document.Params.Num() == 1 ? View->Document.Params[0].Name : NAME_None);
+					const FVekaParamDeclaration* Param = View->Document.FindParam(ParamName);
+					if (Param && Param->Type == EVekaValueType::Color)
+					{
+						AddPaints(Out.Items);
 					}
 				}
 				Filter(Out.Items, Out.Prefix);
@@ -515,7 +544,24 @@ namespace Veka::Editor
 		{
 			if (Call.bNoNameYet)
 			{
-				if (const FVekaCatalogEntry* Entry = FindEntry(Call))
+				const UVekaView* View = !Call.bModifier && !FindEntry(Call) && Sources.ResolveView ? Sources.ResolveView(Call.Name) : nullptr;
+				if (View)
+				{
+					// A view used as a component: its @Param declarations.
+					for (const FVekaParamDeclaration& Param : View->Document.Params)
+					{
+						if (!Call.GivenArguments.Contains(Param.Name) && !(View->Document.Params.Num() == 1 && Call.GivenArguments.Contains(FName(TEXT("__primary")))))
+						{
+							FString Detail = Veka::Lang::TypeName(Param.Type);
+							if (!Param.Default.IsNone())
+							{
+								Detail += TEXT(" = ") + Veka::Lang::PrintValue(Param.Default);
+							}
+							AddItem(Out.Items, Param.Name.ToString() + TEXT(":"), Param.Name.ToString() + TEXT(": "), Detail, EVekaCompletionKind::Argument);
+						}
+					}
+				}
+				else if (const FVekaCatalogEntry* Entry = FindEntry(Call))
 				{
 					for (const FVekaCatalogArgument& Argument : Entry->Arguments)
 					{

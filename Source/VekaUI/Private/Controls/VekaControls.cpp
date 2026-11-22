@@ -276,11 +276,13 @@ namespace
 
 			FVekaTrack T;
 			T.Fraction = Range > 0.f ? (Current - Min) / Range : 0.f;
-			T.Thickness = bColorTrack ? 10.f : 4.f;
-			T.TrackPaint = bColorTrack ? Track : TokenPaint(TEXT("Fill"));
-			T.FillPaint = TintPaint();
+			// Theme metrics (the Alpha 13 slider sizes), the system sizes otherwise.
+			T.Thickness = bColorTrack ? 10.f : Veka::Colora::Metric(TEXT("Slider.Height"), Env, 4.f);
+			T.TrackPaint = bColorTrack ? Track : TokenPaint(TEXT("SliderBackground"));
+			T.FillPaint = TokenPaint(TEXT("SliderAccent"));
+			T.KnobPaint = TokenPaint(TEXT("SliderKnob"));
 			T.bShowsFill = !bColorTrack;
-			T.KnobSize = bColorTrack ? 18.f : 20.f;
+			T.KnobSize = bColorTrack ? 18.f : Veka::Colora::Metric(TEXT("Slider.KnobHeight"), Env, 20.f);
 			T.KnobBorder = 0.f;
 			const float Knob = T.KnobSize;
 
@@ -458,7 +460,7 @@ namespace
 					const bool bOn = Index == Selected;
 					Rows.Add(HStack(7.f)(
 						ZStack()(
-							Circle().Fill(bOn ? TintPaint() : FVekaPaint(FLinearColor::Transparent)).Frame(16.f, 16.f)
+							Circle().Fill(bOn ? TokenPaint(TEXT("PickerAccent")) : FVekaPaint(FLinearColor::Transparent)).Frame(16.f, 16.f)
 								.Border(bOn ? FVekaPaint(FLinearColor::Transparent) : TokenPaint(TEXT("Gray")), 1.5f, 8.f),
 							Circle().Fill(FLinearColor::White).Frame(6.f, 6.f).Opacity(bOn ? 1.f : 0.f)
 						),
@@ -480,7 +482,7 @@ namespace
 						? Circle().Fill(Option.Color).Frame(22.f, 22.f)
 						: OptionContent(Option).Font(M.TextStyle).Frame(22.f, 22.f);
 					Swatches.Add(MoveTemp(Swatch).Padding(3.f)
-						.Border(bOn ? TintPaint() : FVekaPaint(FLinearColor::Transparent), 2.f, 14.f)
+						.Border(bOn ? TokenPaint(TEXT("PickerAccent")) : FVekaPaint(FLinearColor::Transparent), 2.f, 14.f)
 						.OnTap([Select, Index]() { Select(Index); }));
 				}
 				Control = HStack(6.f).Children(MoveTemp(Swatches)).Animation(FVekaAnimationSpec::Snappy(), Selected);
@@ -550,7 +552,7 @@ namespace
 			FVekaElement Row = HStack(8.f)(MoveTemp(Icon), Text(Title), Spacer(16.f), MoveTemp(Accessory))
 				.Padding(FMargin(8.f, 4.f))
 				.FillWidth(FVekaAlignment::Leading())
-				.Background(bHighlight ? TintPaint() : FVekaPaint(FLinearColor::Transparent), 6.f);
+				.Background(bHighlight ? TokenPaint(TEXT("MenuAccent")) : FVekaPaint(FLinearColor::Transparent), 6.f);
 			if (bHighlight)
 			{
 				Row = MoveTemp(Row).Foreground(FLinearColor::White);
@@ -795,12 +797,12 @@ namespace
 			const EVekaGaugeStyle Style = VekaEnv::GetControlStyle(Env).GaugeStyle;
 			const float Fraction = Max > Min ? FMath::Clamp((Value - Min) / (Max - Min), 0.f, 1.f) : 0.f;
 			const FText Current = CurrentValueLabel.IsEmpty() ? FText::AsPercent(Fraction) : CurrentValueLabel;
-			const FVekaPaint Gradient = FVekaPaint::Linear(TArray<FVekaGradientStop>{ FVekaGradientStop::FromToken(TEXT("Tint"), 0.f, EVekaHierarchy::Tertiary), FVekaGradientStop::FromToken(TEXT("Tint"), 1.f) });
+			const FVekaPaint Gradient = FVekaPaint::Linear(TArray<FVekaGradientStop>{ FVekaGradientStop::FromToken(TEXT("GaugeAccent"), 0.f, EVekaHierarchy::Tertiary), FVekaGradientStop::FromToken(TEXT("GaugeAccent"), 1.f) });
 
 			FVekaTrack T;
 			T.Fraction = Fraction;
-			T.TrackPaint = TokenPaint(TEXT("Fill"));
-			T.FillPaint = TintPaint();
+			T.TrackPaint = TokenPaint(TEXT("GaugeBackground"));
+			T.FillPaint = TokenPaint(TEXT("GaugeAccent"));
 			const bool bAlt = Style == EVekaGaugeStyle::LinearAlt || Style == EVekaGaugeStyle::CircularAlt;
 			if (bAlt)
 			{
@@ -864,8 +866,8 @@ namespace
 			FVekaTrack T;
 			T.Fraction = FMath::Clamp(Value, 0.f, 1.f);
 			T.bIndeterminate = bIndeterminate;
-			T.TrackPaint = TokenPaint(TEXT("Fill"));
-			T.FillPaint = TintPaint();
+			T.TrackPaint = TokenPaint(TEXT("ProgressBackground"));
+			T.FillPaint = TokenPaint(TEXT("ProgressAccent"));
 			if (Style == EVekaProgressStyle::Circular)
 			{
 				T.Shape = EVekaTrackShape::Circular;

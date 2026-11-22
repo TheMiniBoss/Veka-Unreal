@@ -90,6 +90,8 @@ struct FVekaPaletteEntry
 	FText Label;
 	FText Category;
 	TWeakObjectPtr<UVekaView> Component;
+	/** Parameters and slots of a component view. */
+	FText Tooltip;
 	bool bHeader = false;
 };
 
@@ -101,8 +103,10 @@ public:
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs, const TSharedRef<FVekaViewEditorContext>& InContext);
+	virtual ~SVekaPalette() override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
-	/** Every entry (catalog + project views), without headers. */
+	/** Every entry (catalog, then component libraries, then the other views of the project), without headers. */
 	static TArray<FVekaPaletteEntry> GatherEntries(const UVekaView* Exclude);
 
 private:
@@ -113,4 +117,11 @@ private:
 	TSharedPtr<SListView<TSharedPtr<FVekaPaletteEntry>>> List;
 	TArray<TSharedPtr<FVekaPaletteEntry>> Entries;
 	FString Filter;
+	/** Views added, removed, renamed or changed, or a library changed: the palette is gathered again. */
+	bool bStale = false;
+	uint32 LibraryRevision = 0;
+	FDelegateHandle AddedHandle;
+	FDelegateHandle RemovedHandle;
+	FDelegateHandle RenamedHandle;
+	FDelegateHandle ChangedHandle;
 };

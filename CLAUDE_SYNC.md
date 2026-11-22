@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** en cours — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline et **3f Symboles et peintures** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) ; 91 tests automation ✅ |
-| Prochaine étape | Phase 3 — jalon 3g Composants et migration |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
+| Prochaine étape | à définir avec TheMiniBoss (Phase 4) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,65 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 3g Composants et migration
+
+- **Branche** : `cpp/phase-3g-components` (partie de `C++` @ `55bd75c`), fusionnée dans `C++`.
+- **Composants en asset** (le langage les gérait depuis 3a) :
+  - **Analyse** : arguments inconnus (`VV_Badge has no parameter 'size' (title, count, tint)`), type d'un littéral
+    contre le type du `@Param`, paramètre sans défaut oublié (avertissement), contenu pour un composant sans
+    `@Slot`, `.inSlot(x)` vers un slot inconnu.
+  - **Complétion** : les `@Param` d'une vue du projet (`title:`, avec type et défaut), sans ceux déjà donnés ; les
+    peintures pour un paramètre `Color` ; les styles après `.style(.`.
+  - **Palette** : composants groupés par bibliothèque (puis « Views of the project »), infobulle « paramètres ·
+    slots » ; se met à jour toute seule (asset registry : vue ajoutée / supprimée / renommée, vue ou bibliothèque
+    modifiée).
+  - **Inspecteur** : sélecteur de style (`.style`) ; les paramètres et slots des composants existaient déjà (3d).
+- **`UVekaComponentLibrary`** (`View/VekaComponentLibrary.h`, runtime) : `DisplayName`, `Components`, `Styles`.
+  Content Browser > Add > User Interface > Veka Component Library (part avec un style `Card`).
+  - **Styles partagés** `FVekaSharedStyle` : des modificateurs écrits en Veka (`.padding(16)` /
+    `.background(.WindowBackground, radius: 16)`), compilés par l'éditeur (`Veka::Components::StyleCompiler`, car
+    VekaLang est editor-only) dans `Compiled` (sérialisé, donc utilisable en jeu packagé), erreurs dans
+    `CompileErrors` avec la ligne du style. Une vue les applique avec **`.style(.Card)`** (modificateur `style`,
+    argument de type `Style`) ; un style peut en utiliser un autre (profondeur 8) ; style inconnu = avertissement.
+- **Tokens de contrôle** (`Colora/VekaTheme.h`) : `ThemeAccent`, `ThemeBackground`, `ThemeText`,
+  `ButtonBackground`, `ToggleAccent/Background`, `SliderAccent/Background/Knob/Text`, `ProgressAccent/Background`,
+  `GaugeAccent/Background`, `MenuAccent/Background`, `PickerAccent/Background`. Ce sont des **alias** (ToggleAccent →
+  ThemeAccent → Tint) tant qu'un thème ne les définit pas : sans thème, rien ne change visuellement. Les contrôles
+  2e les utilisent ; le slider lit aussi les métriques `Slider.Height` / `Slider.KnobHeight`. Noms **sans point**
+  (`.Theme.Background` serait lu comme un accès membre en Veka). `IsKnownToken` accepte aussi les tokens des thèmes
+  chargés (plus d'erreur « not a Colora token » pour un token défini par un thème).
+- **Migration des thèmes Alpha 13** (`Migration/VekaAlpha13Migration.*`) :
+  - la branche `Blueprint` est lue **en lecture seule** : `git archive origin/Blueprint Content Veka.uplugin` vers
+    `VekaHost/Saved/VekaAlpha13/` (hors dépôt), monté en `/Veka/` ; les structs Blueprint sont lus par réflexion
+    (noms de champs sans suffixe GUID).
+  - commande **`Veka.MigrateAlpha13Themes [dossier] [quit]`** → **`/VekaUI/Themes/VT_Alpha13`** (dans le plugin,
+    commité) ; `Veka.DumpAlpha13` affiche les valeurs brutes.
+  - résultat : les **30 presets Colora** de `Colora_System` avec leurs valeurs exactes clair / sombre (Accent
+    #007AFF / #0A84FF, Indigo #6155F5, Primary…Quaternary, WindowBackground blanc / noir…) ; `ThemeBackground =
+    .Background` (Veka_Default) ; `Slider.Width/Height = 256 × 8`, `Slider.KnobWidth/Height = 32 × 16`. Les autres
+    emplacements d'Alpha 13 étaient restés à leurs valeurs par défaut (non surchargés) : ils gardent le défaut du
+    token de contrôle. `Veka_Default` et `Veka_LightDefault` sont identiques dans Alpha 13 (le clair / sombre vient
+    des presets).
+  - non migrés (pas d'emplacement de thème dans VekaUI, listés dans le rapport) : glyphes, badges, police
+    (LT Flode Neue est déjà la police par défaut), formes (`E_VekaShapeMode`).
+  - Lecture des réglages Colora : `ColoraMode` Color / Gradient / Mix, preset + `HierachicalPreset`, couleur
+    manuelle seulement si son « override » est coché ; un réglage resté à la valeur par défaut du struct = non défini.
+- **Tests** (`VekaComponentTests.cpp`, 3 nouveaux) : `Components.Params` (analyse, complétion, palette),
+  `Components.Library` (factory, compilation et erreurs de style, `.style` appliqué = +32 px, avertissement,
+  groupe de palette), `Components.Alpha13Theme` (conversion des noms, alias sans thème, valeurs de `VT_Alpha13`,
+  métriques).
+- **Validé** : build éditeur, **94 tests** (93 verts + 1 avec l'avertissement attendu), BuildPlugin non-unity
+  Editor + Shipping, 0 warning.
+- **Vérifié dans l'éditeur** (`Docs/Sync/Screens/phase3g-palette-library.jpg`, `phase3g-alpha13-dark.jpg`,
+  `phase3g-alpha13-light.jpg`) : bibliothèque `VL_Demo` créée par le menu Add, `VV_ShopItem` ajouté → la palette de
+  `VV_Shop` le range aussitôt sous « Demo Kit » avec l'infobulle des paramètres et du slot ; `.style(.Card)` tapé
+  dans le code encadre le symbole ; le sélecteur de thème du viewport applique `VT_Alpha13` (fonds noir / blanc
+  purs d'Alpha 13 au lieu de #1C1C1E / #F2F2F7). Démo retirée ensuite (`VV_Shop` non sauvegardé, `VL_Demo`
+  supprimé).
+- **Limites** : les modificateurs n'ont pas de position source (une erreur d'analyse dans un style est donnée sans
+  ligne) ; les dégradés Alpha 13 « Matrix » deviendraient linéaires (aucun n'est utilisé par les thèmes) ; les
+  positions de stops Alpha 13 ne sont pas reprises (stops répartis).
 
 ### 2026-11-22 — LOCAL → correctif 3f : plantage en dessinant un symbole `.fill` modifié
 

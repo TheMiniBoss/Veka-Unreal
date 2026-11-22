@@ -3,6 +3,7 @@
 #include "Colora/VekaTheme.h"
 #include "Core/VekaEnvironment.h"
 #include "VekaUILog.h"
+#include "UObject/UObjectIterator.h"
 
 namespace
 {
@@ -45,6 +46,52 @@ namespace
 		{ TEXT("Link"),             0x007AFF, 1.f,  0x0984FF, 1.f },
 		{ TEXT("Fill"),             0x787880, 0.2f, 0x787880, 0.36f },
 	};
+
+	/**
+	 * Control tokens (the Alpha 13 theme slots): each one is another token until a theme sets it, so a theme can restyle
+	 * every toggle, slider... without touching Tint or Fill.
+	 */
+	struct FAliasToken
+	{
+		const TCHAR* Name;
+		const TCHAR* Target;
+	};
+
+	const FAliasToken GAliasTokens[] = {
+		{ TEXT("ThemeAccent"),        TEXT("Tint") },
+		{ TEXT("ThemeBackground"),    TEXT("WindowBackground") },
+		{ TEXT("ThemeText"),          TEXT("Foreground") },
+		{ TEXT("ButtonBackground"),   TEXT("Fill") },
+		{ TEXT("ToggleAccent"),       TEXT("ThemeAccent") },
+		{ TEXT("ToggleBackground"),   TEXT("Fill") },
+		{ TEXT("SliderAccent"),       TEXT("ThemeAccent") },
+		{ TEXT("SliderBackground"),   TEXT("Fill") },
+		{ TEXT("SliderKnob"),         TEXT("White") },
+		{ TEXT("SliderText"),         TEXT("ThemeText") },
+		{ TEXT("ProgressAccent"),     TEXT("ThemeAccent") },
+		{ TEXT("ProgressBackground"), TEXT("Fill") },
+		{ TEXT("GaugeAccent"),        TEXT("ThemeAccent") },
+		{ TEXT("GaugeBackground"),    TEXT("Fill") },
+		{ TEXT("MenuAccent"),         TEXT("ThemeAccent") },
+		{ TEXT("MenuBackground"),     TEXT("WindowBackground") },
+		{ TEXT("PickerAccent"),       TEXT("ThemeAccent") },
+		{ TEXT("PickerBackground"),   TEXT("Fill") },
+	};
+
+	FName FindAlias(FName Token)
+	{
+		static const TMap<FName, FName> Map = []()
+		{
+			TMap<FName, FName> Result;
+			for (const FAliasToken& Alias : GAliasTokens)
+			{
+				Result.Add(FName(Alias.Name), FName(Alias.Target));
+			}
+			return Result;
+		}();
+		const FName* Found = Map.Find(Token);
+		return Found ? *Found : NAME_None;
+	}
 
 	FLinearColor FromHex(uint32 Rgb, float Alpha)
 	{
@@ -96,6 +143,11 @@ namespace
 			{
 				return ResolveImpl(Scheme == EVekaColorScheme::Dark ? Found->Dark : Found->Light, Theme, Scheme, Depth + 1);
 			}
+		}
+		const FName Alias = FindAlias(Token);
+		if (!Alias.IsNone())
+		{
+			return LookupToken(Alias, Theme, Scheme, Depth + 1);
 		}
 		FLinearColor Color;
 		if (Veka::Colora::GetDefaultColor(Token, Scheme, Color))
@@ -244,11 +296,55 @@ namespace Veka::Colora
 
 	bool GetDefaultColor(FName Token, EVekaColorScheme Scheme, FLinearColor& OutColor)
 	{
-		if (const FDefaultToken* const* Found = GetDefaultMap().Find(Token))
+		for (int32 Depth = 0; Depth <= MaxTokenDepth; ++Depth)
 		{
-			const FDefaultToken& Entry = **Found;
-			OutColor = Scheme == EVekaColorScheme::Dark ? FromHex(Entry.Dark, Entry.DarkAlpha) : FromHex(Entry.Light, Entry.LightAlpha);
+			if (const FDefaultToken* const* Found = GetDefaultMap().Find(Token))
+			{
+				const FDefaultToken& Entry = **Found;
+				OutColor = Scheme == EVekaColorScheme::Dark ? FromHex(Entry.Dark, Entry.DarkAlpha) : FromHex(Entry.Light, Entry.LightAlpha);
+				return true;
+			}
+			Token = FindAlias(Token);
+			if (Token.IsNone())
+			{
+				return false;
+			}
+		}
+		return false;
+	}
+
+	TConstArrayView<FName> ControlTokenNames()
+	{
+		static const TArray<FName> Names = []()
+		{
+			TArray<FName> Result;
+			for (const FAliasToken& Alias : GAliasTokens)
+			{
+				Result.Add(FName(Alias.Name));
+			}
+			return Result;
+		}();
+		return Names;
+	}
+
+	FName GetControlTokenTarget(FName Token)
+	{
+		return FindAlias(Token);
+	}
+
+	bool IsKnownToken(FName Token)
+	{
+		FLinearColor Ignored;
+		if (GetDefaultColor(Token, EVekaColorScheme::Dark, Ignored))
+		{
 			return true;
+		}
+		for (TObjectIterator<UVekaTheme> It; It; ++It)
+		{
+			if (!It->HasAnyFlags(RF_ClassDefaultObject) && It->Colors.Contains(Token))
+			{
+				return true;
+			}
 		}
 		return false;
 	}

@@ -52,7 +52,7 @@ FVekaElement FVekaBorderedButtonStyle::MakeBody(const FVekaButtonStyleConfigurat
 	using namespace Veka::Controls;
 	const FSizeMetrics M = GetSizeMetrics(C.ControlSize);
 	const FVekaPaint Foreground = C.Role == EVekaButtonRole::Destructive ? Token(TEXT("Red")) : TintPaint();
-	const FVekaPaint Fill = Token(TEXT("Fill"), C.bIsPressed || C.bIsHovered ? EVekaHierarchy::Primary : EVekaHierarchy::Secondary);
+	const FVekaPaint Fill = Token(TEXT("ButtonBackground"), C.bIsPressed || C.bIsHovered ? EVekaHierarchy::Primary : EVekaHierarchy::Secondary);
 	FVekaElement Body = C.Label.Font(M.TextStyle).Foreground(Foreground)
 		.Padding(FMargin(M.HorizontalPadding, 0.f))
 		.FlexFrame(-1.0, -1.0, M.Height, -1.0)
@@ -93,7 +93,7 @@ FVekaElement FVekaSwitchToggleStyle::MakeBody(const FVekaToggleStyleConfiguratio
 	const float Knob = TrackHeight - 4.f;
 
 	FVekaElement Switch = ZStack(FVekaAlignment::Leading())(
-		Capsule().Fill(C.bIsOn ? TintPaint() : Token(TEXT("Fill"))).Frame(TrackWidth, TrackHeight),
+		Capsule().Fill(C.bIsOn ? Token(TEXT("ToggleAccent")) : Token(TEXT("ToggleBackground"))).Frame(TrackWidth, TrackHeight),
 		Circle().Fill(FLinearColor::White).Frame(Knob, Knob)
 			.Shadow(FLinearColor(0.f, 0.f, 0.f, 0.3f), 3.f, FVector2D(0.0, 1.0), Knob * 0.5f)
 			.Padding(2.f)
@@ -115,7 +115,7 @@ FVekaElement FVekaCheckboxToggleStyle::MakeBody(const FVekaToggleStyleConfigurat
 	const float Radius = FMath::Max(3.f, Box * 0.25f);
 
 	FVekaElement Mark = ZStack()(
-		RoundedRectangle(Radius).Fill(C.bIsOn ? TintPaint() : FVekaPaint(FLinearColor::Transparent)).Frame(Box, Box)
+		RoundedRectangle(Radius).Fill(C.bIsOn ? Token(TEXT("ToggleAccent")) : FVekaPaint(FLinearColor::Transparent)).Frame(Box, Box)
 			.Border(C.bIsOn ? FVekaPaint(FLinearColor::Transparent) : Token(TEXT("Gray")), 1.5f, Radius),
 		Symbol(TEXT("checkmark")).SymbolWeight(0.85f).FontSize(Box * 0.42f).Foreground(FLinearColor::White)
 			.Opacity(C.bIsOn ? 1.f : 0.f).Scale(C.bIsOn ? 1.f : 0.5f)
@@ -131,10 +131,10 @@ FVekaElement FVekaButtonToggleStyle::MakeBody(const FVekaToggleStyleConfiguratio
 {
 	using namespace Veka::Controls;
 	const FSizeMetrics M = GetSizeMetrics(C.ControlSize);
-	FVekaElement Body = C.Label.Font(M.TextStyle).Foreground(C.bIsOn ? FVekaPaint(FLinearColor::White) : TintPaint())
+	FVekaElement Body = C.Label.Font(M.TextStyle).Foreground(C.bIsOn ? FVekaPaint(FLinearColor::White) : Token(TEXT("ToggleAccent")))
 		.Padding(FMargin(M.HorizontalPadding, 0.f))
 		.FlexFrame(-1.0, -1.0, M.Height, -1.0)
-		.Background(C.bIsOn ? TintPaint() : Token(TEXT("Fill"), C.bIsHovered ? EVekaHierarchy::Primary : EVekaHierarchy::Secondary), M.Radius)
+		.Background(C.bIsOn ? Token(TEXT("ToggleAccent")) : Token(TEXT("ToggleBackground"), C.bIsHovered ? EVekaHierarchy::Primary : EVekaHierarchy::Secondary), M.Radius)
 		.Brightness(C.bIsPressed ? (C.bIsOn ? -0.1f : 0.1f) : 0.f)
 		.Animation(FVekaAnimationSpec::EaseOut(0.15), InteractionKey(C.bIsOn, C.bIsPressed, C.bIsHovered));
 	return WithEnabled(WithFocusRing(MoveTemp(Body), C.bIsFocused, M.Radius), C.bIsEnabled);
