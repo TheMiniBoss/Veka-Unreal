@@ -1,0 +1,77 @@
+// Copyright TheMiniBoss. All Rights Reserved.
+
+// Backdrop (Phase 4): the area behind a Veka element, blurred with a dual Kawase pyramid, composited inside the
+// element's rounded shape with a tint.
+
+#include "/Engine/Private/Common.ush"
+
+Texture2D InputTexture;
+SamplerState InputSampler;
+// 1 / size of the input texture.
+float2 InputTexelSize;
+// 1 / size of the render target (the pyramid levels start at 0, 0).
+float2 OutputTexelSize;
+
+// Dual Kawase downsample: the center and four diagonal taps at half a texel.
+void KawaseDownPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const float2 UV = SvPosition.xy * OutputTexelSize;
+	const float2 H = InputTexelSize * 0.5;
+	float4 Sum = InputTexture.SampleLevel(InputSampler, UV, 0) * 4.0;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-H.x, -H.y), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( H.x, -H.y), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-H.x,  H.y), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( H.x,  H.y), 0);
+	OutColor = Sum / 8.0;
+}
+
+// Dual Kawase upsample: four edge taps at one texel and four diagonal taps at half a texel (weight 2).
+void KawaseUpPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const float2 UV = SvPosition.xy * OutputTexelSize;
+	const float2 H = InputTexelSize * 0.5;
+	float4 Sum = 0;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-H.x * 2.0, 0), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( H.x * 2.0, 0), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(0, -H.y * 2.0), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(0,  H.y * 2.0), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-H.x,  H.y), 0) * 2.0;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( H.x,  H.y), 0) * 2.0;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-H.x, -H.y), 0) * 2.0;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( H.x, -H.y), 0) * 2.0;
+	OutColor = Sum / 12.0;
+}
+
+// Composite (output = the window's back buffer, pixel coordinates).
+// Element rect in pixels (Min, Size) and the captured rect the blur covers (Min, 1 / Size).
+float4 ElementRect;
+float4 CaptureRect;
+// Corner radii in pixels: top left, top right, bottom right, bottom left.
+float4 CornerRadii;
+float4 Tint;
+float Saturation;
+float Opacity;
+
+float RoundedRectDistance(float2 P, float2 HalfSize, float4 Radii)
+{
+	// Radius of the quadrant P is in.
+	float R = P.x < 0 ? (P.y < 0 ? Radii.x : Radii.w) : (P.y < 0 ? Radii.y : Radii.z);
+	R = min(R, min(HalfSize.x, HalfSize.y));
+	const float2 Q = abs(P) - HalfSize + R;
+	return min(max(Q.x, Q.y), 0.0) + length(max(Q, 0.0)) - R;
+}
+
+void CompositePS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const float2 Pixel = SvPosition.xy;
+	const float2 HalfSize = ElementRect.zw * 0.5;
+	const float Distance = RoundedRectDistance(Pixel - (ElementRect.xy + HalfSize), HalfSize, CornerRadii);
+	const float Coverage = saturate(0.5 - Distance);
+
+	const float2 BlurUV = (Pixel - CaptureRect.xy) * CaptureRect.zw;
+	float3 Color = InputTexture.SampleLevel(InputSampler, BlurUV, 0).rgb;
+	const float Luma = dot(Color, float3(0.2126, 0.7152, 0.0722));
+	Color = lerp(Luma.xxx, Color, Saturation);
+	Color = lerp(Color, Tint.rgb, Tint.a);
+	OutColor = float4(Color, Coverage * Opacity);
+}

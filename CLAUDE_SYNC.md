@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop fusionné) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4.0 Spike backdrop (plan proposé dans le Journal) |
+| Prochaine étape | Phase 4 — jalon 4a Backdrop + flou (voie B retenue au spike 4.0) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,30 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4.0 Spike backdrop
+
+- **Branche** : `cpp/phase-4.0-backdrop` (partie de `C++` @ `fafd658`), fusionnée dans `C++`. Rapport complet :
+  [`Docs/Spikes/4.0-backdrop.md`](Docs/Spikes/4.0-backdrop.md).
+- **Construit** : modificateur `backdropBlur` (`FVekaBackdropModifier`, `Modifiers/VekaEffectModifiers.h`) avec les
+  deux méthodes, et la commande **`Veka.BackdropSpike [rayon] [full]`** (PIE ou `-game`) qui les montre côte à côte
+  sur la scène 3D.
+  - **A** — post-buffers Slate du moteur (`SPostBufferUpdate` + processeur gaussien, render target échantillonnée).
+  - **B** — élément Slate custom + render graph (`VekaUIRender`, `VekaBackdrop.h` / `VekaBackdrop.usf`) : copie de la
+    zone, pyramide **dual Kawase**, composite dans le **SDF du rectangle arrondi** (teinte, saturation) ; stat GPU
+    `Veka Backdrop`.
+- **Résultats** : A ne capture rien dans l'éditeur (gris uni) et ne floute pas en jeu (copie nette) ; B floute
+  partout. **B coûte 0,09 ms GPU** pour un panneau 380 × 240 et **0,20–0,22 ms en plein écran 1080p** (rayon 24) —
+  budget §13 du glass : < 1 ms.
+- **Décision : B.** Pièges corrigés : Slate ne garde qu'un **pointeur faible** vers un élément custom (on le garde
+  vivant jusqu'au rendu, libéré par une commande de rendu) ; la matrice des éléments couvre **toute la texture de
+  sortie** ; `RDG_EVENT_SCOPE_STAT` remplace `RDG_GPU_STAT_SCOPE` (5.8).
+- **Test** : `VekaUI.Render.Backdrop` (niveaux de flou, un élément custom vivant par peinture).
+- **Validé** : build éditeur, **95 tests** (94 verts + 1 avec l'avertissement attendu), BuildPlugin non-unity
+  Editor + Shipping, 0 warning ; vérifié en PIE et en jeu (`Docs/Sync/Screens/phase4-0-*.jpg`).
+- **Suite (4a)** : une capture + pyramide **par couche et par frame** partagée, niveaux de qualité, repli sans
+  backdrop, `backdropBlur` / `frostedGlass` dans le langage ; retrait de la piste A et de la dépendance
+  `SlateRHIRenderer`.
 
 ### 2026-11-22 — CLOUD → plan de la Phase 4 (proposition)
 
