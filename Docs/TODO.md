@@ -1,6 +1,34 @@
 # TODO — Conversion de Veka en C++
 
 > ⚠️ **Plan remplacé** par [`VEKAUI_PHASE0.md`](VEKAUI_PHASE0.md) §12. Une nouvelle TODO sera écrite après validation de la Phase 0.
+> La section **À faire maintenant** ci-dessous est à jour ; tout ce qui suit « Ancien plan » est l'historique.
+
+## À faire maintenant (après la Phase 4, 2026-11-22)
+
+### Langage `.vk` : des effets sans C++
+Issu du défi « feux d'artifice » : le composant `Fireworks` est en C++ ; en `.vk` on n'en ferait qu'une approximation.
+- [ ] Fonctions maths dans les expressions : `sin`, `cos`, `abs`, `sqrt`, `pow`, `clamp`, `lerp`
+- [ ] Hasard déterministe : `random(seed)` et `random(seed, min, max)`
+- [ ] Une valeur de temps qui avance (l'équivalent de `TimelineView`), par ex. `time` ou une horloge `@Clock`
+- [ ] Composant générique « émetteur de particules » (forme, couleurs, vitesse, durée, gravité, rythme) réglable dans l'inspecteur
+- [ ] Expérience : refaire `Fireworks` 100 % `.vk` (timeline en boucle + `ForEach` + `.rotation`) et mesurer le coût face au composant C++
+
+### Rendu
+- [ ] **(P)** Galerie d'exemples du Hub : le verre de `VV_ExampleBirthdayCard` y paraît sombre. Un hôte ne prend qu'une capture par image (au premier effet dessiné) et tous les aperçus partagent l'hôte du Hub. Pistes : un modificateur qui isole un sous-arbre (sa propre capture), ou une nouvelle capture quand un effet est sur une couche Slate au-dessus de la précédente
+- [ ] Les effets (backdrop, glass) débordent d'un `.clip` : ils ignorent le clip Slate (vu dans la galerie d'exemples)
+- [ ] Primitives animées : relancer les images quand une propriété change (`NeedsAnimationFrame` est lu avant le paint, donc un `active: false → true` ne redémarre rien) ; permettrait un `Fireworks(active:)`
+
+### Hub
+- [ ] Recharger les exemples sans fermer et rouvrir l'onglet (les fichiers `.vk` sont gardés en cache)
+- [ ] Aperçus d'exemples : réduire à l'échelle les vues plus grandes que la carte (300 px de haut, ~270 px de large)
+
+### Livraison
+- [ ] **(P)** Vérifier la licence LT Flode Neue avant de diffuser le paquet Shipping (`VekaHost/Packaged/Windows`)
+- [ ] Revoir à l'œil les teintes assombries du fond de `VV_ExampleBirthdayCard` (vérifiées seulement par les tests)
+
+---
+
+# Ancien plan (conversion Blueprint → C++, remplacé)
 
 Référence : [`CAHIER_DES_CHARGES.md`](CAHIER_DES_CHARGES.md) (les `§` renvoient à ce document).
 Source : branche `Blueprint` @ `f6d5cfd` (Alpha 13). Cible : branche `C++`.
