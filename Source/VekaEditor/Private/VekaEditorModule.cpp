@@ -34,6 +34,7 @@
 #include "Colora/VekaPaintAsset.h"
 #include "View/VekaComponentLibrary.h"
 #include "Components/VekaComponentAssets.h"
+#include "Hub/VekaHub.h"
 
 #define LOCTEXT_NAMESPACE "VekaEditor"
 
@@ -52,6 +53,9 @@ public:
 			.SetDisplayName(LOCTEXT("PlaygroundTabTitle", "VekaUI Playground"))
 			.SetTooltipText(LOCTEXT("PlaygroundTabTooltip", "Phase 1 test view for the VekaUI runtime."))
 			.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+
+		// 4d: the Veka Hub (DesignLab), Window > Tools and the level editor toolbar.
+		Veka::Editor::Hub::Register();
 
 		// 3g: shared styles compile from their Veka text (the runtime has no parser).
 		Veka::Components::StyleCompiler() = &Veka::Editor::Components::CompileStyle;
@@ -93,6 +97,7 @@ public:
 			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaPaintAsset::StaticClass());
 		}
 		Veka::Components::StyleCompiler() = nullptr;
+		Veka::Editor::Hub::Unregister();
 		if (SampleCommand)
 		{
 			IConsoleManager::Get().UnregisterConsoleObject(SampleCommand);

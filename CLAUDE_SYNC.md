@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4d Hub + DesignLab |
+| Prochaine étape | Phase 4 — jalon 4e Hub : Exemples, Doc, Changelog |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,39 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4d Hub + DesignLab
+
+- **Branche** : `cpp/phase-4d-hub` (partie de `C++` @ `5e9e56f`), fusionnée dans `C++`. BuildPlugin non lancé.
+- **Veka Hub** (`VekaEditor/Private/Hub/VekaHub.*`) : onglet nomade **écrit en VekaUI** (une `FVekaView` avec état),
+  ouvert par **Window > Tools > Veka Hub**, un **bouton de la barre d'outils du Level Editor**
+  (`LevelEditor.LevelEditorToolBar.User`) et un bouton **Hub** dans la barre de l'éditeur de vue.
+  - Barre latérale (DesignLab : Components, Colors, Symbols, Typography, Animations, Effects, Morph ; Learn :
+    Examples, Documentation, Changelog marqués « 4e »), en-tête **Light / Dark** et **sélecteur de thème** (Veka
+    intégré + tous les `UVekaTheme` du projet, dont `VT_Alpha13`).
+  - Réglages en direct : taille de contrôle + désactivé (Components) ; graisse + mode de rendu sur une grille de
+    96 symboles (Symbols) ; taille + graisse d'un pangramme (Typography) ; **flou, réfraction, aberration, reflet,
+    distorsion, blend mode** sur une scène colorée (Effects) ; grilles des tokens Colora et des tokens de contrôle
+    résolus dans le thème et le schéma courants (Colors). Les galeries du playground sont exposées
+    (`Veka::Samples::ControlsGallery()`, `ColoraGallery`, `SymbolsGallery`, `TypographyGallery`, `AnimaGallery`,
+    `MorphGallery`).
+- **Deux corrections de rendu trouvées en vérifiant le Hub** :
+  - **la capture d'une couche est prise par le premier effet dessiné** (et non plus au début du host) : les effets
+    voient le contenu du host peint avant eux (le cas courant : un panneau glass au-dessus de l'interface elle-même).
+    Le host n'ajoute plus d'élément de capture.
+  - **enfants qui se chevauchent** (`ZStack`, offsets) : chacun est peint au-dessus du précédent
+    (`SVekaNodeWidget::PaintContent`) ; avant, tous partaient de la même couche et les couches profondes d'un enfant
+    passaient sur l'enfant suivant (effets cachés, et blend en carré noir). Les piles sans chevauchement gardent des
+    couches partagées (meilleur batching).
+- **Tests** : `VekaUI.Editor.Hub` (onglet enregistré, les dix sections dessinent, les effets émettent leurs éléments
+  GPU, `VT_Alpha13` proposé, symboles de la barre latérale existants) et `VekaUI.Render.OverlapLayers` ; décomptes
+  d'éléments des tests de backdrop mis à jour (plus d'élément de capture séparé).
+- **Validé** : build éditeur, **100 tests** (99 verts + 1 avec l'avertissement attendu). Vérifié dans l'éditeur
+  (`Docs/Sync/Screens/phase4d-hub-components.jpg`, `phase4d-hub-effects.jpg`, `phase4d-hub-colors-alpha13-light.jpg`) :
+  bouton de barre d'outils → Hub ; Effects : backdrop, glass, distorsion et Multiply corrects sur la scène, le
+  curseur de réfraction agit en direct ; Colors en Light avec `VT_Alpha13` (Indigo #6155F5, Selection opaque…).
+- **Limites** : dans une fenêtre flottante **maximisée**, la bande du haut est traitée comme barre de titre (les
+  contrôles de l'en-tête n'y reçoivent pas les clics ; ancré ou non maximisé, ils marchent) ; sections Learn en 4e.
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4c Blend modes + distorsion
 
