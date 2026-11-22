@@ -10,6 +10,10 @@
 #include "Engine/GameViewportClient.h"
 #include "HAL/IConsoleManager.h"
 #include "Containers/Ticker.h"
+#include "Engine/World.h"
+#include "Misc/CommandLine.h"
+#include "Misc/DelayedAutoRegister.h"
+#include "UObject/UObjectGlobals.h"
 
 namespace
 {
@@ -168,6 +172,28 @@ namespace
 	}
 
 	FAutoConsoleCommand GHudCommand(TEXT("Veka.HudDemo"), TEXT("Toggles the Liquid Glass HUD demo over the game viewport."), FConsoleCommandWithArgsDelegate::CreateStatic(&ToggleHud));
+
+	// `-VekaHudDemo` on the command line: the HUD over every game map. Works in Shipping, where the console is gone and
+	// the command line's map URL (so `?game=`) is ignored.
+	FDelayedAutoRegisterHelper GHudSwitch(EDelayedRegisterRunPhase::ObjectSystemReady, []
+	{
+		if (!FParse::Param(FCommandLine::Get(), TEXT("VekaHudDemo")))
+		{
+			return;
+		}
+		FCoreUObjectDelegates::PostLoadMapWithWorld.AddLambda([](UWorld* World)
+		{
+			UGameViewportClient* Viewport = World && World->IsGameWorld() ? World->GetGameViewport() : nullptr;
+			if (!Viewport || GConsoleHud.IsValid() || Cast<AVekaDemoGameMode>(World->GetAuthGameMode()))
+			{
+				return; // no viewport, already shown, or the demo game mode's HUD shows it
+			}
+			const TSharedRef<SVekaHost> Host = SNew(SVekaHost).Root(Veka::Samples::LiquidGlassHud());
+			Viewport->AddViewportWidgetContent(Host, 100);
+			GConsoleHud = Host;
+			StartTicker();
+		});
+	});
 }
 
 namespace Veka::Samples
