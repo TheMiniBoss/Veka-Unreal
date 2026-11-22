@@ -19,7 +19,32 @@ struct FVekaBackdropParams
 	float Saturation = 1.4f;
 	/** Grain of frosted glass (0..1). */
 	float Noise = 0.f;
+	/** Liquid distortion: displacement of the background (pixels), size of the waves (pixels) and time (seconds). */
+	float DistortionStrength = 0.f;
+	float DistortionScale = 120.f;
+	float DistortionTime = 0.f;
 	float Opacity = 1.f;
+};
+
+/**
+ * Blend of a node's content with what is behind it (Multiply ... Luminosity). The content is painted twice: over
+ * black, then over white, which gives its coverage without the back buffer's alpha (10:10:10:2). Mode: index in
+ * the W3C order Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference,
+ * Exclusion, Hue, Saturation, Color, Luminosity.
+ */
+struct FVekaBlendParams
+{
+	FVector2f Min = FVector2f::ZeroVector;
+	FVector2f Max = FVector2f::ZeroVector;
+	int32 Mode = 0;
+};
+
+/** The three elements of a blend: before the content, between its two paints, after. */
+struct FVekaBlendElements
+{
+	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> Begin;
+	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> Between;
+	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> End;
 };
 
 /** One shape of a glass: a rounded rect in Slate absolute space. */
@@ -124,4 +149,7 @@ namespace Veka::Render
 	VEKAUIRENDER_API int32 MaxBlurLevels(EVekaBackdropQuality Quality);
 
 	VEKAUIRENDER_API EVekaBackdropQuality GetBackdropQuality();
+
+	/** Elements of a blend against the backdrop (see FVekaBlendParams). */
+	VEKAUIRENDER_API FVekaBlendElements MakeBlendElements(const FVekaBlendParams& Params);
 }

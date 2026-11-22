@@ -19,13 +19,31 @@ enum class EVekaColorSpace : uint8
 	OkLCH
 };
 
-/** How a paint is composited with what is under it (Phase 2: Normal and Add; the rest needs the backdrop, Phase 4). */
+/**
+ * How content is composited with what is under it. Normal and Add are drawn directly; the others (W3C compositing
+ * modes) blend the subtree with its backdrop (Phase 4: the content is painted over black and over white, then blended).
+ */
 UENUM(BlueprintType)
 enum class EVekaBlendMode : uint8
 {
 	Normal,
 	/** Additive (light-like). Rendered with premultiplied alpha and zero coverage alpha. */
-	Add
+	Add,
+	Multiply,
+	Screen,
+	Overlay,
+	Darken,
+	Lighten,
+	ColorDodge,
+	ColorBurn,
+	HardLight,
+	SoftLight,
+	Difference,
+	Exclusion,
+	Hue,
+	Saturation,
+	Color,
+	Luminosity
 };
 
 /** Color adjustments, cf. SwiftUI's brightness / contrast / saturation / hueRotation / grayscale. */

@@ -68,11 +68,43 @@ namespace
 			SHADER_PARAMETER(FVector4f, Tint)
 			SHADER_PARAMETER(float, Saturation)
 			SHADER_PARAMETER(float, Noise)
+			SHADER_PARAMETER(FVector4f, Distortion)
 			SHADER_PARAMETER(float, Opacity)
 			RENDER_TARGET_BINDING_SLOTS()
 		END_SHADER_PARAMETER_STRUCT()
 	};
+
+	class FVekaFillPS : public FGlobalShader
+	{
+	public:
+		DECLARE_GLOBAL_SHADER(FVekaFillPS);
+		SHADER_USE_PARAMETER_STRUCT(FVekaFillPS, FGlobalShader);
+
+		BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+			SHADER_PARAMETER(FVector4f, FillColor)
+			RENDER_TARGET_BINDING_SLOTS()
+		END_SHADER_PARAMETER_STRUCT()
+	};
+
+	class FVekaBlendPS : public FGlobalShader
+	{
+	public:
+		DECLARE_GLOBAL_SHADER(FVekaBlendPS);
+		SHADER_USE_PARAMETER_STRUCT(FVekaBlendPS, FGlobalShader);
+
+		BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+			SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BehindTexture)
+			SHADER_PARAMETER_RDG_TEXTURE(Texture2D, OverBlackTexture)
+			SHADER_PARAMETER_RDG_TEXTURE(Texture2D, OverWhiteTexture)
+			SHADER_PARAMETER(FIntPoint, RegionMin)
+			SHADER_PARAMETER(int32, Mode)
+			RENDER_TARGET_BINDING_SLOTS()
+		END_SHADER_PARAMETER_STRUCT()
+	};
 }
+
+IMPLEMENT_GLOBAL_SHADER(FVekaFillPS, "/Plugin/VekaUI/Private/VekaBackdrop.usf", "FillPS", SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FVekaBlendPS, "/Plugin/VekaUI/Private/VekaBackdrop.usf", "BlendPS", SF_Pixel);
 
 namespace
 {
@@ -369,6 +401,7 @@ public:
 		Parameters->Tint = FVector4f(Params.Tint.R, Params.Tint.G, Params.Tint.B, Params.Tint.A);
 		Parameters->Saturation = Params.Saturation;
 		Parameters->Noise = Params.Noise;
+		Parameters->Distortion = FVector4f(Params.DistortionStrength * Pixels.Scale, 1.f / FMath::Max(1.f, Params.DistortionScale * Pixels.Scale), Params.DistortionTime, 0.f);
 		Parameters->Opacity = Params.Opacity;
 		Parameters->RenderTargets[0] = FRenderTargetBinding(Output, ERenderTargetLoadAction::ELoad);
 		const FScreenPassTextureViewport OutputViewport(Output, Element);
@@ -511,8 +544,126 @@ TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> FVekaBackdropLayer::MakeCap
 	return Element;
 }
 
+namespace
+{
+	/** What a blend keeps between its elements (render thread). */
+	struct FVekaBlendState
+	{
+		FVekaBlendParams Params;
+		FIntRect Region;
+		TRefCountPtr<IPooledRenderTarget> Behind;
+		TRefCountPtr<IPooledRenderTarget> OverBlack;
+	};
+
+	FIntRect BlendRegion(const FVekaBlendParams& Params, const ICustomSlateElement::FDrawPassInputs& Inputs)
+	{
+		FVekaBackdropParams AsBackdrop;
+		AsBackdrop.Min = Params.Min;
+		AsBackdrop.Max = Params.Max;
+		const FPixelRect Pixels = ToPixels(AsBackdrop, Inputs);
+		FIntRect Region(FIntPoint(FMath::FloorToInt(Pixels.Min.X), FMath::FloorToInt(Pixels.Min.Y)), FIntPoint(FMath::CeilToInt(Pixels.Max.X), FMath::CeilToInt(Pixels.Max.Y)));
+		Region.Clip(FIntRect(FIntPoint::ZeroValue, Inputs.OutputTexture->Desc.Extent));
+		return Region;
+	}
+
+	FRDGTexture* CopyRegion(FRDGBuilder& GraphBuilder, FRDGTexture* Output, const FIntRect& Region, const TCHAR* Name)
+	{
+		FRDGTexture* Copy = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(Region.Size(), Output->Desc.Format, FClearValueBinding::Black,
+			TexCreate_ShaderResource | TexCreate_RenderTargetable), Name);
+		AddDrawTexturePass(GraphBuilder, FScreenPassViewInfo(GMaxRHIFeatureLevel), Output, Copy, Region.Min, FIntPoint::ZeroValue, Region.Size());
+		return Copy;
+	}
+
+	void FillRegion(FRDGBuilder& GraphBuilder, FRDGTexture* Output, const FIntRect& Region, const FLinearColor& Color)
+	{
+		FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
+		FVekaFillPS::FParameters* Parameters = GraphBuilder.AllocParameters<FVekaFillPS::FParameters>();
+		Parameters->FillColor = FVector4f(Color.R, Color.G, Color.B, Color.A);
+		Parameters->RenderTargets[0] = FRenderTargetBinding(Output, ERenderTargetLoadAction::ELoad);
+		const FScreenPassTextureViewport Viewport(Output, Region);
+		AddDrawScreenPass(GraphBuilder, RDG_EVENT_NAME("Fill"), FScreenPassViewInfo(GMaxRHIFeatureLevel), Viewport, Viewport,
+			TShaderMapRef<FScreenPassVS>(ShaderMap), TShaderMapRef<FVekaFillPS>(ShaderMap), TStaticBlendState<>::GetRHI(), Parameters);
+	}
+
+	enum class EBlendStep : uint8 { Begin, Between, End };
+
+	/** One step of a blend: Begin keeps what is behind and clears to black; Between keeps the content over black and clears to white; End composites. */
+	class FVekaBlendElement : public ICustomSlateElement
+	{
+	public:
+		FVekaBlendElement(const TSharedRef<FVekaBlendState, ESPMode::ThreadSafe>& InState, EBlendStep InStep) : State(InState), Step(InStep) {}
+
+		virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override
+		{
+			FRDGTexture* Output = Inputs.OutputTexture;
+			FVekaBlendState& S = *State;
+			if (!Output)
+			{
+				return;
+			}
+			RDG_EVENT_SCOPE_STAT(GraphBuilder, VekaBackdrop, "VekaBlend %d", static_cast<int32>(Step));
+			if (Step == EBlendStep::Begin)
+			{
+				S.Region = BlendRegion(S.Params, Inputs);
+				S.Behind = nullptr;
+				S.OverBlack = nullptr;
+				if (S.Region.Width() < 1 || S.Region.Height() < 1)
+				{
+					return;
+				}
+				S.Behind = GraphBuilder.ConvertToExternalTexture(CopyRegion(GraphBuilder, Output, S.Region, TEXT("VekaBlend.Behind")));
+				FillRegion(GraphBuilder, Output, S.Region, FLinearColor::Black);
+				return;
+			}
+			if (!S.Behind.IsValid())
+			{
+				return;
+			}
+			if (Step == EBlendStep::Between)
+			{
+				S.OverBlack = GraphBuilder.ConvertToExternalTexture(CopyRegion(GraphBuilder, Output, S.Region, TEXT("VekaBlend.OverBlack")));
+				FillRegion(GraphBuilder, Output, S.Region, FLinearColor::White);
+				return;
+			}
+			if (!S.OverBlack.IsValid())
+			{
+				return;
+			}
+			FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
+			FVekaBlendPS::FParameters* Parameters = GraphBuilder.AllocParameters<FVekaBlendPS::FParameters>();
+			Parameters->BehindTexture = GraphBuilder.RegisterExternalTexture(S.Behind);
+			Parameters->OverBlackTexture = GraphBuilder.RegisterExternalTexture(S.OverBlack);
+			Parameters->OverWhiteTexture = CopyRegion(GraphBuilder, Output, S.Region, TEXT("VekaBlend.OverWhite"));
+			Parameters->RegionMin = S.Region.Min;
+			Parameters->Mode = S.Params.Mode;
+			Parameters->RenderTargets[0] = FRenderTargetBinding(Output, ERenderTargetLoadAction::ELoad);
+			const FScreenPassTextureViewport Viewport(Output, S.Region);
+			AddDrawScreenPass(GraphBuilder, RDG_EVENT_NAME("Blend"), FScreenPassViewInfo(GMaxRHIFeatureLevel), Viewport, Viewport,
+				TShaderMapRef<FScreenPassVS>(ShaderMap), TShaderMapRef<FVekaBlendPS>(ShaderMap), TStaticBlendState<>::GetRHI(), Parameters);
+		}
+
+	private:
+		TSharedRef<FVekaBlendState, ESPMode::ThreadSafe> State;
+		EBlendStep Step;
+	};
+}
+
 namespace Veka::Render
 {
+	FVekaBlendElements MakeBlendElements(const FVekaBlendParams& Params)
+	{
+		const TSharedRef<FVekaBlendState, ESPMode::ThreadSafe> State = MakeShared<FVekaBlendState, ESPMode::ThreadSafe>();
+		State->Params = Params;
+		FVekaBlendElements Out;
+		Out.Begin = MakeShared<FVekaBlendElement, ESPMode::ThreadSafe>(State, EBlendStep::Begin);
+		Out.Between = MakeShared<FVekaBlendElement, ESPMode::ThreadSafe>(State, EBlendStep::Between);
+		Out.End = MakeShared<FVekaBlendElement, ESPMode::ThreadSafe>(State, EBlendStep::End);
+		KeepUntilRendered(Out.Begin);
+		KeepUntilRendered(Out.Between);
+		KeepUntilRendered(Out.End);
+		return Out;
+	}
+
 	TSharedRef<FVekaBackdropLayer> MakeBackdropLayer()
 	{
 		TSharedRef<FVekaBackdropLayer> Layer = MakeShared<FVekaBackdropLayer, ESPMode::ThreadSafe>();

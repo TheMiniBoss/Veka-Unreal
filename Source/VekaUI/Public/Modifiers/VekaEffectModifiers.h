@@ -51,6 +51,33 @@ private:
 	mutable FSlateBrush FallbackBrush;
 };
 
+/**
+ * Liquid distortion: what is behind the node flows in animated waves (heat haze, water), inside its rounded rect.
+ * Shares its host's backdrop capture.
+ */
+USTRUCT(BlueprintType, meta = (VekaName = "liquidDistortion", VekaCategory = "Effects"))
+struct VEKAUI_API FVekaLiquidDistortionModifier : public FVekaModifier
+{
+	GENERATED_BODY()
+
+	/** Displacement of the background (Slate units). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
+	float Strength = 8.f;
+
+	/** Size of the waves (Slate units). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "1"))
+	float Scale = 120.f;
+
+	/** Speed of the flow (1 = normal, 0 = frozen). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
+	float Speed = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
+	FVekaCornerRadii CornerRadii;
+
+	virtual int32 PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+};
+
 /** Material of a liquid glass (shared by .glass and .glassGroup). */
 USTRUCT(BlueprintType)
 struct VEKAUI_API FVekaGlassMaterial
