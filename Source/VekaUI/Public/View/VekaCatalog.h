@@ -21,7 +21,9 @@ enum class EVekaArgumentKind : uint8
 	/** Value of Enum (by name: `.headline`). */
 	Enum,
 	/** Must be a state (`isOn: wifi`): the control writes it back. */
-	Binding
+	Binding,
+	/** Name of a shared style (UVekaComponentLibrary): `.style(.Card)`. */
+	Style
 };
 
 struct VEKAUI_API FVekaCatalogArgument

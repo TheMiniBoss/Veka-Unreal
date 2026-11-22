@@ -12,6 +12,7 @@
 #include "Slate/SVekaHost.h"
 #include "Symbols/VekaSymbol.h"
 #include "Colora/VekaPaintAsset.h"
+#include "View/VekaComponentLibrary.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
 #include "Modules/ModuleManager.h"
@@ -646,6 +647,30 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 				MakeChoice(Expr ? FText::FromString(Veka::Lang::PrintExpression(*Document, ExprIndex)) : LOCTEXT("Unset", "default"), Labels,
 					[this, Node, Modifier, Name, Tokens](int32 Index) { ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Tokens[Index])); }, &Swatches)
 			];
+	}
+	case EVekaArgumentKind::Style:
+	{
+		if (!bLiteral || (Expr && Value.Type != EVekaValueType::String))
+		{
+			return Code();
+		}
+		TArray<FText> Labels;
+		TArray<FString> Styles;
+		for (const UVekaComponentLibrary* Library : Veka::Components::GetLibraries())
+		{
+			for (const FVekaSharedStyle& Style : Library->Styles)
+			{
+				if (!Style.Name.IsNone() && !Styles.Contains(Style.Name.ToString()))
+				{
+					Styles.Add(Style.Name.ToString());
+					Labels.Add(FText::Format(LOCTEXT("StyleEntry", ".{0}  ({1})"), FText::FromName(Style.Name), Library->GetLibraryName()));
+				}
+			}
+		}
+		return MakeChoice(Expr ? FText::FromString(TEXT(".") + Value.StringValue) : LOCTEXT("NoStyle", "(choose a style)"), Labels, [this, Node, Modifier, Name, Styles](int32 Index)
+		{
+			ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Styles[Index]));
+		});
 	}
 	case EVekaArgumentKind::Text:
 	{

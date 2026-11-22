@@ -5,6 +5,8 @@
 #include "SimpleMode/VekaDocumentEdit.h"
 #include "View/VekaCatalog.h"
 #include "View/VekaViewAsset.h"
+#include "View/VekaComponentLibrary.h"
+#include "Components/VekaComponentAssets.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -609,27 +611,57 @@ TArray<FVekaPaletteEntry> SVekaPalette::GatherEntries(const UVekaView* Exclude)
 	{
 		Add(Type, Logic);
 	}
-	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-	TArray<FAssetData> Assets;
-	Registry.GetAssetsByClass(UVekaView::StaticClass()->GetClassPathName(), Assets, true);
-	for (const FAssetData& Asset : Assets)
+	for (const Veka::Editor::Components::FComponentEntry& Component : Veka::Editor::Components::GatherComponents(Exclude))
 	{
-		if (Exclude && Asset.AssetName == Exclude->GetFName())
-		{
-			continue;
-		}
 		FVekaPaletteEntry& Entry = Out.AddDefaulted_GetRef();
-		Entry.Type = Asset.AssetName;
-		Entry.Label = FText::FromName(Asset.AssetName);
-		Entry.Category = LOCTEXT("CategoryViews", "Views of the project");
-		Entry.Component = Cast<UVekaView>(Asset.GetAsset());
+		Entry.Type = Component.View->GetFName();
+		Entry.Label = FText::FromName(Entry.Type);
+		Entry.Category = Component.Group;
+		Entry.Component = Component.View;
+		Entry.Tooltip = FText::FromString(Veka::Editor::Components::DescribeComponent(*Component.View));
 	}
 	return Out;
+}
+
+SVekaPalette::~SVekaPalette()
+{
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("AssetRegistry")))
+	{
+		IAssetRegistry& Registry = FModuleManager::GetModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		Registry.OnAssetAdded().Remove(AddedHandle);
+		Registry.OnAssetRemoved().Remove(RemovedHandle);
+		Registry.OnAssetRenamed().Remove(RenamedHandle);
+	}
+	FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(ChangedHandle);
+}
+
+void SVekaPalette::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
+{
+	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (bStale || LibraryRevision != Veka::Components::GetRevision())
+	{
+		bStale = false;
+		LibraryRevision = Veka::Components::GetRevision();
+		Refresh();
+	}
 }
 
 void SVekaPalette::Construct(const FArguments& InArgs, const TSharedRef<FVekaViewEditorContext>& InContext)
 {
 	Context = InContext;
+	LibraryRevision = Veka::Components::GetRevision();
+	{
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		auto IsView = [](const FAssetData& Asset) { return Asset.AssetClassPath == UVekaView::StaticClass()->GetClassPathName(); };
+		AddedHandle = Registry.OnAssetAdded().AddSPLambda(this, [this, IsView](const FAssetData& Asset) { bStale |= IsView(Asset); });
+		RemovedHandle = Registry.OnAssetRemoved().AddSPLambda(this, [this, IsView](const FAssetData& Asset) { bStale |= IsView(Asset); });
+		RenamedHandle = Registry.OnAssetRenamed().AddSPLambda(this, [this, IsView](const FAssetData& Asset, const FString&) { bStale |= IsView(Asset); });
+		// A view's @Param / @Slot changed (its tooltip), or a library's list.
+		ChangedHandle = FCoreUObjectDelegates::OnObjectPropertyChanged.AddSPLambda(this, [this](UObject* Object, FPropertyChangedEvent&)
+		{
+			bStale |= Object && (Object->IsA<UVekaView>() || Object->IsA<UVekaComponentLibrary>());
+		});
+	}
 	ChildSlot
 	[
 		SNew(SVerticalBox)
@@ -671,6 +703,7 @@ void SVekaPalette::Refresh()
 			LastCategory = Entry.Category.ToString();
 			TSharedPtr<FVekaPaletteEntry> Header = MakeShared<FVekaPaletteEntry>();
 			Header->Label = Entry.Category;
+			Header->Category = Entry.Category;
 			Header->bHeader = true;
 			Entries.Add(Header);
 		}
@@ -692,7 +725,8 @@ TSharedRef<ITableRow> SVekaPalette::MakeRow(TSharedPtr<FVekaPaletteEntry> Entry,
 	}
 	return SNew(STableRow<TSharedPtr<FVekaPaletteEntry>>, Owner)
 		.Padding(FMargin(10.f, 2.f, 2.f, 2.f))
-		.ToolTipText(LOCTEXT("PaletteTooltip", "Drag onto the Outliner, or double-click to add it at the selection"))
+		.ToolTipText(Entry->Tooltip.IsEmpty() ? LOCTEXT("PaletteTooltip", "Drag onto the Outliner, or double-click to add it at the selection")
+			: FText::Format(LOCTEXT("PaletteComponentTooltip", "{0}\nDrag onto the Outliner, or double-click to add it at the selection"), Entry->Tooltip))
 		.OnDragDetected_Lambda([Entry](const FGeometry&, const FPointerEvent& Event) -> FReply
 		{
 			return FReply::Handled().BeginDragDrop(FVekaNodeDragDrop::New({}, Entry->Type, Entry->Component.Get(), Entry->Label));

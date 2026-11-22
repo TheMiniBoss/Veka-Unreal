@@ -2,6 +2,7 @@
 
 #include "View/VekaViewAsset.h"
 #include "View/VekaDocument.h"
+#include "View/VekaComponentLibrary.h"
 #include "Core/VekaView.h"
 #include "Core/VekaNode.h"
 #include "Core/VekaSchema.h"
@@ -285,6 +286,8 @@ namespace
 		/** Content the caller gave for each slot (built in the caller's scope). */
 		TMap<FName, TArray<FVekaElement>> SlotContents;
 		int32 ComponentDepth = 0;
+		/** Styles applied inside styles (a style can use another one). */
+		int32 StyleDepth = 0;
 		/** Asset document the elements are tagged with (the editor maps viewport clicks back to its nodes). */
 		const void* Origin = nullptr;
 		/** Players of the document's timelines (SetupTimelines). */
@@ -521,7 +524,11 @@ namespace
 			FVekaElement Element = Node.Component ? MakeComponent(Node, Depth) : MakeElement(Node, Depth);
 			for (const FVekaAstModifier& Modifier : Node.Modifiers)
 			{
-				if (Modifier.Name != TEXT("on"))
+				if (Modifier.Name == TEXT("style"))
+				{
+					Element = ApplyStyle(MoveTemp(Element), Modifier);
+				}
+				else if (Modifier.Name != TEXT("on"))
 				{
 					Element = ApplyModifier(MoveTemp(Element), Modifier);
 				}
@@ -768,6 +775,29 @@ namespace
 
 			UE_LOG(LogVekaUI, Warning, TEXT("VekaUI view: unknown component '%s'"), *Type.ToString());
 			return Text(FText::FromString(FString::Printf(TEXT("Unknown '%s'"), *Type.ToString()))).Foreground(FLinearColor(1.f, 0.25f, 0.25f));
+		}
+
+		/** `.style(.Name)`: the modifiers of a shared style (UVekaComponentLibrary), evaluated in the style's own document. */
+		FVekaElement ApplyStyle(FVekaElement Element, const FVekaAstModifier& Modifier) const
+		{
+			const FName StyleName(*Arg(Modifier.Arguments, TEXT("name")).AsString());
+			const FVekaSharedStyle* Style = Veka::Components::FindStyle(StyleName);
+			if (!Style)
+			{
+				UE_LOG(LogVekaUI, Warning, TEXT("VekaUI view: unknown style '%s'"), *StyleName.ToString());
+				return Element;
+			}
+			if (!Style->Compiled.Nodes.IsValidIndex(Style->Compiled.Root) || StyleDepth > 8)
+			{
+				return Element;
+			}
+			FInterpreter Inner(MakeShared<const FVekaDocument>(Style->Compiled), Store);
+			Inner.StyleDepth = StyleDepth + 1;
+			for (const FVekaAstModifier& Applied : Style->Compiled.Nodes[Style->Compiled.Root].Modifiers)
+			{
+				Element = Applied.Name == TEXT("style") ? Inner.ApplyStyle(MoveTemp(Element), Applied) : Inner.ApplyModifier(MoveTemp(Element), Applied);
+			}
+			return Element;
 		}
 
 		FVekaElement ApplyModifier(FVekaElement Element, const FVekaAstModifier& Modifier) const

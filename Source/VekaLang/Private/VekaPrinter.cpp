@@ -7,6 +7,7 @@
 #include "Core/VekaPaint.h"
 #include "Colora/VekaTheme.h"
 #include "Colora/VekaPaintAsset.h"
+#include "View/VekaComponentLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "UObject/UnrealType.h"
@@ -1015,6 +1016,10 @@ namespace
 							FText::FromName(Node.Type)), Node.Source);
 					}
 				}
+				else
+				{
+					CheckComponent(Node);
+				}
 				for (const FVekaAstModifier& Modifier : Node.Modifiers)
 				{
 					if (const FVekaCatalogEntry* Entry = Veka::Catalog::FindModifier(Modifier.Name))
@@ -1050,6 +1055,70 @@ namespace
 		}
 
 	private:
+		/** A view used as a component: its parameters, the parameters left out, and the slots its content fills. */
+		void CheckComponent(const FVekaAstNode& Node)
+		{
+			const FVekaDocument& Called = Node.Component->Document;
+			const FText ComponentName = FText::FromName(Node.Type);
+			for (const FVekaAstArgument& Argument : Node.Arguments)
+			{
+				const FVekaAstExpr* Value = Expr(Argument.Expr);
+				const FVekaSourceRange& At = Value && Value->Source.IsSet() ? Value->Source : Node.Source;
+				const FVekaParamDeclaration* Param = Called.FindParam(Argument.Name);
+				if (!Param)
+				{
+					TArray<FString> Names;
+					for (const FVekaParamDeclaration& Declared : Called.Params)
+					{
+						Names.Add(Declared.Name.ToString());
+					}
+					Add(EVekaDiagnosticSeverity::Error, Names.IsEmpty()
+						? FText::Format(LOCTEXT("ComponentNoParams", "{0} has no parameter (it declares no @Param)"), ComponentName)
+						: FText::Format(LOCTEXT("ComponentNoParam", "{0} has no parameter '{1}' ({2})"), ComponentName, FText::FromName(Argument.Name), FText::FromString(FString::Join(Names, TEXT(", ")))), At);
+					continue;
+				}
+				if (Value && Value->Kind == EVekaExprKind::Literal && Param->Type != EVekaValueType::None && !Value->Value.IsNone())
+				{
+					const bool bNumbers = Param->Type == EVekaValueType::Float || Param->Type == EVekaValueType::Int;
+					const bool bTextLike = Param->Type == EVekaValueType::Text || Param->Type == EVekaValueType::String;
+					const bool bMatches = Value->Value.Type == Param->Type || (bNumbers && Value->Value.IsNumber())
+						|| (bTextLike && (Value->Value.Type == EVekaValueType::Text || Value->Value.Type == EVekaValueType::String))
+						|| (Param->Type == EVekaValueType::Color && Value->Value.Type == EVekaValueType::String);
+					if (!bMatches)
+					{
+						Add(EVekaDiagnosticSeverity::Error, FText::Format(LOCTEXT("ParamType", "'{0}' of {1} expects {2}"), FText::FromName(Argument.Name), ComponentName,
+							FText::FromString(Veka::Lang::TypeName(Param->Type))), At);
+					}
+				}
+			}
+			for (const FVekaParamDeclaration& Param : Called.Params)
+			{
+				const bool bGiven = Node.Arguments.ContainsByPredicate([&Param](const FVekaAstArgument& Argument) { return Argument.Name == Param.Name; });
+				if (!bGiven && Param.Default.IsNone())
+				{
+					Add(EVekaDiagnosticSeverity::Warning, FText::Format(LOCTEXT("ParamMissing", "{0}: '{1}' is not given (no default value)"), ComponentName, FText::FromName(Param.Name)), Node.Source);
+				}
+			}
+			for (const int32 Child : Node.Children)
+			{
+				if (!Document.Nodes.IsValidIndex(Child))
+				{
+					continue;
+				}
+				const FVekaAstNode& Content = Document.Nodes[Child];
+				if (Called.Slots.IsEmpty())
+				{
+					Add(EVekaDiagnosticSeverity::Error, FText::Format(LOCTEXT("ComponentNoSlot", "{0} has no content (it declares no @Slot)"), ComponentName), Content.Source.IsSet() ? Content.Source : Node.Source);
+					break;
+				}
+				if (!Called.HasSlot(Content.SlotName))
+				{
+					Add(EVekaDiagnosticSeverity::Error, FText::Format(LOCTEXT("ComponentBadSlot", "{0} has no slot '{1}'"), ComponentName,
+						FText::FromString(Content.SlotName.IsNone() ? FString(TEXT("default")) : Content.SlotName.ToString())), Content.Source.IsSet() ? Content.Source : Node.Source);
+				}
+			}
+		}
+
 		void Add(EVekaDiagnosticSeverity Severity, const FText& Message, const FVekaSourceRange& Range)
 		{
 			FVekaDiagnostic& Diagnostic = Diagnostics.AddDefaulted_GetRef();
@@ -1104,11 +1173,16 @@ namespace
 				case EVekaArgumentKind::Paint:
 					if (bLiteral && Value->Value.Type == EVekaValueType::String && !Value->Value.StringValue.StartsWith(TEXT("#")))
 					{
-						FLinearColor Ignored;
-						if (!Veka::Colora::GetDefaultColor(FName(*Value->Value.StringValue), EVekaColorScheme::Dark, Ignored) && !Veka::Paints::Find(FName(*Value->Value.StringValue)))
+						if (!Veka::Colora::IsKnownToken(FName(*Value->Value.StringValue)) && !Veka::Paints::Find(FName(*Value->Value.StringValue)))
 						{
 							Add(EVekaDiagnosticSeverity::Error, FText::Format(LOCTEXT("BadToken", "'.{0}' is not a Colora token nor a paint asset"), FText::FromString(Value->Value.StringValue)), At);
 						}
+					}
+					break;
+				case EVekaArgumentKind::Style:
+					if (bLiteral && Value->Value.Type == EVekaValueType::String && !Veka::Components::FindStyle(FName(*Value->Value.StringValue)))
+					{
+						Add(EVekaDiagnosticSeverity::Warning, FText::Format(LOCTEXT("UnknownStyle", "'.{0}' is not a style of a component library"), FText::FromString(Value->Value.StringValue)), At);
 					}
 					break;
 				case EVekaArgumentKind::Number:

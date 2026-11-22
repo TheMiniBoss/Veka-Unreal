@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 struct FVekaDocument;
+class UVekaView;
 
 /** What a piece of a code line is (its color in the Code tab). */
 enum class EVekaCodeToken : uint8
@@ -69,6 +70,8 @@ struct FVekaCompletionSources
 	const FVekaDocument* Document = nullptr;
 	/** Views of the project usable as components. */
 	TArray<FName> ProjectViews;
+	/** Finds a view by name (its parameters are offered as arguments: Veka::Lang::MakeAssetResolver). */
+	TFunction<UVekaView*(FName)> ResolveView;
 	/** Preview model (`model.` offers its properties). */
 	const UClass* ModelClass = nullptr;
 };

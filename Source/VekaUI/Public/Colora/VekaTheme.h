@@ -83,8 +83,19 @@ namespace Veka::Colora
 	/** The 26 built-in tokens (Alpha 13 Colora presets). */
 	VEKAUI_API TConstArrayView<FName> DefaultTokenNames();
 
-	/** Built-in color of a token for a scheme (system palette). False if the token is unknown. */
+	/** Built-in color of a token for a scheme (system palette; control tokens: their target's). False if unknown. */
 	VEKAUI_API bool GetDefaultColor(FName Token, EVekaColorScheme Scheme, FLinearColor& OutColor);
+
+	/**
+	 * Control tokens (ToggleAccent, SliderBackground...: the Alpha 13 theme slots). Until a theme sets one it is
+	 * another token (ToggleAccent -> ThemeAccent -> Tint), so the controls look the same without a theme.
+	 */
+	VEKAUI_API TConstArrayView<FName> ControlTokenNames();
+	/** The token a control token stands for when no theme sets it (NAME_None for other tokens). */
+	VEKAUI_API FName GetControlTokenTarget(FName Token);
+
+	/** A built-in token, a control token, or a token of a loaded theme asset. */
+	VEKAUI_API bool IsKnownToken(FName Token);
 
 	/** Alpha multiplier of a hierarchy level. */
 	VEKAUI_API float HierarchyAlpha(EVekaHierarchy Hierarchy);

@@ -32,6 +32,8 @@
 #include "Symbols/SVekaSymbolLibrary.h"
 #include "Symbols/VekaSymbol.h"
 #include "Colora/VekaPaintAsset.h"
+#include "View/VekaComponentLibrary.h"
+#include "Components/VekaComponentAssets.h"
 
 #define LOCTEXT_NAMESPACE "VekaEditor"
 
@@ -50,6 +52,9 @@ public:
 			.SetDisplayName(LOCTEXT("PlaygroundTabTitle", "VekaUI Playground"))
 			.SetTooltipText(LOCTEXT("PlaygroundTabTooltip", "Phase 1 test view for the VekaUI runtime."))
 			.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+
+		// 3g: shared styles compile from their Veka text (the runtime has no parser).
+		Veka::Components::StyleCompiler() = &Veka::Editor::Components::CompileStyle;
 
 		// 3b: Veka View thumbnails (the asset editor opens through UAssetDefinition_VekaView).
 		UThumbnailManager::Get().RegisterCustomRenderer(UVekaView::StaticClass(), UVekaViewThumbnailRenderer::StaticClass());
@@ -87,6 +92,7 @@ public:
 			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaSymbol::StaticClass());
 			UThumbnailManager::Get().UnregisterCustomRenderer(UVekaPaintAsset::StaticClass());
 		}
+		Veka::Components::StyleCompiler() = nullptr;
 		if (SampleCommand)
 		{
 			IConsoleManager::Get().UnregisterConsoleObject(SampleCommand);
@@ -99,11 +105,11 @@ public:
 		}
 	}
 
-	/** Loads the project's symbols and paints: loaded assets register themselves, so views find them by name. */
+	/** Loads the project's symbols, paints and component libraries: loaded assets register themselves, so views find them by name. */
 	static void LoadSymbolsAndPaints()
 	{
 		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-		for (UClass* Class : { UVekaSymbol::StaticClass(), UVekaPaintAsset::StaticClass() })
+		for (UClass* Class : { UVekaSymbol::StaticClass(), UVekaPaintAsset::StaticClass(), UVekaComponentLibrary::StaticClass() })
 		{
 			TArray<FAssetData> Assets;
 			Registry.GetAssetsByClass(Class->GetClassPathName(), Assets, true);
@@ -111,6 +117,11 @@ public:
 			{
 				Asset.GetAsset();
 			}
+		}
+		// Styles compile from their text (the language may have changed since they were saved).
+		for (UVekaComponentLibrary* Library : Veka::Components::GetLibraries())
+		{
+			Veka::Components::CompileStyles(*Library);
 		}
 	}
 

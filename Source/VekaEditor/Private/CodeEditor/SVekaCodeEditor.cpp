@@ -625,6 +625,7 @@ FVekaCompletionSources SVekaCodeEditor::MakeSources() const
 			Sources.ProjectViews.AddUnique(Data.AssetName);
 		}
 	}
+	Sources.ResolveView = Veka::Lang::MakeAssetResolver();
 	return Sources;
 }
 

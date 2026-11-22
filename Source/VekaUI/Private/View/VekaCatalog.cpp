@@ -95,6 +95,7 @@ namespace Veka::Catalog
 			E(TEXT("symbolRenderingMode"), { A(TEXT("mode"), EKind::Enum, StaticEnum<EVekaSymbolRenderingMode>()) }, TEXT("mode")),
 			E(TEXT("animation"), { A(TEXT("value")) }, TEXT("value")),
 			E(TEXT("transition"), { A(TEXT("kind"), EKind::Name) }, TEXT("kind")),
+			E(TEXT("style"), { A(TEXT("name"), EKind::Style) }, TEXT("name")),
 		};
 		return Entries;
 	}
