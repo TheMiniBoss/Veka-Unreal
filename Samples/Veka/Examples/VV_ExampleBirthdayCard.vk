@@ -1,0 +1,62 @@
+view VV_ExampleBirthdayCard {
+    @State var shown: Bool = true
+
+    // The iOS 27 birthday card: small fireworks burst inside a frosted card; the glass button drops the card in and out.
+    ZStack {
+        // Wallpaper: violet folds on a dark night, blurred.
+        Rectangle(fill: #0D0C20)
+        Ellipse(fill: #33317A)
+            .frame(width: 360, height: 150)
+            .rotation(-38)
+            .offset(x: 90, y: -50)
+        Ellipse(fill: #20205A)
+            .frame(width: 340, height: 130)
+            .rotation(-54)
+            .offset(x: -100, y: 120)
+        Ellipse(fill: #5D54B4)
+            .frame(width: 220, height: 50)
+            .rotation(-41)
+            .offset(x: 40, y: 40)
+        Rectangle(fill: #00000000)
+            .backdropBlur(radius: 28, tintAmount: 0)
+        VStack(spacing: 0) {
+            if shown {
+                // The card: its text, and the fireworks over it.
+                ZStack {
+                    HStack(spacing: 0) {
+                        VStack(spacing: 2, alignment: .Leading) {
+                            Text("Birthday · Found in Contacts")
+                                .font(.Caption2)
+                                .opacity(0.6)
+                            Text("Today, Mar 13")
+                                .font(.Title2)
+                                .fontWeight(.Bold)
+                        }
+                        Spacer
+                    }
+                    .padding(horizontal: 16)
+                    Fireworks(rate: 1.8, particles: 48, radius: 24, size: 2)
+                }
+                .frame(width: 226, height: 76)
+                .frostedGlass(blur: 24, cornerRadius: 20, tint: #FFFFFF14)
+                .border(#FFFFFF26, width: 1, radius: 20)
+                .transition(.move)
+            }
+            Spacer
+            Text(shown ? "Hide Birthday Card" : "Show Birthday Card")
+                .font(.Footnote)
+                .padding(vertical: 11)
+                .frame(width: 226)
+                .glass(20)
+                .onTap {
+                    withAnimation {
+                        shown.toggle()
+                    }
+                }
+        }
+        .padding(horizontal: 12, vertical: 16)
+    }
+    .foreground(#FFFFFF)
+    .frame(width: 250, height: 290)
+    .clip
+}

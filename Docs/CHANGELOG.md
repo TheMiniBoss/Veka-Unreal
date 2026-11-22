@@ -2,6 +2,11 @@
 
 The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a release, `-` an entry.
 
+## Fireworks — the birthday card challenge (2026-11-22)
+- Fireworks component: bursts at random places, a flash, sparks that fly out, hang, twinkle and fade (Fireworks(rate:, particles:, radius:, size:)).
+- Birthday card example in the Hub: the iOS 27 card with fireworks inside a frosted card, a glass button drops it in and out.
+- New transitions in .vk: .move (drops in from above) and .blur (comes into focus).
+
 ## 4f — Performance and in-game demo (2026-11-22)
 - Performance budgets met: 100 springs in under 0.1 ms per frame, full-screen glass in 0.26 ms on the GPU (1080p, High), no Veka work at rest.
 - Animated visual values (offset, opacity, scale, background...) only repaint, without a new layout.
