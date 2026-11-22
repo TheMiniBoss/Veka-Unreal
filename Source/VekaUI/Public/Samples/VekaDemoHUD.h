@@ -16,7 +16,10 @@ namespace Veka::Samples
 	VEKAUI_API FVekaElement LiquidGlassHud();
 }
 
-/** Shows the Liquid Glass HUD over the game viewport while it plays (`Veka.HudDemo` toggles it in PIE). */
+/**
+ * Shows the Liquid Glass HUD over the game viewport while it plays (`Veka.HudDemo` toggles it in PIE; `-VekaHudDemo` on
+ * the command line shows it over every game map, Shipping included).
+ */
 UCLASS()
 class VEKAUI_API AVekaDemoHUD : public AHUD
 {
