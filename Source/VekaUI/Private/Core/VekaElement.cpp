@@ -312,6 +312,34 @@ FVekaElement FVekaElement::FrostedGlass(const FVekaCornerRadii& Radii, const FVe
 	return MoveTemp(*this);
 }
 
+FVekaElement FVekaElement::Glass(const FVekaCornerRadii& Radii) &&
+{
+	return MoveTemp(*this).Glass(Radii, FVekaGlassMaterial());
+}
+
+FVekaElement FVekaElement::Glass(const FVekaCornerRadii& Radii, const FVekaGlassMaterial& Material) &&
+{
+	FVekaGlassModifier Modifier;
+	Modifier.CornerRadii = Radii;
+	Modifier.Material = Material;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
+FVekaElement FVekaElement::GlassGroup(float Smoothness) &&
+{
+	return MoveTemp(*this).GlassGroup(Smoothness, FVekaGlassMaterial());
+}
+
+FVekaElement FVekaElement::GlassGroup(float Smoothness, const FVekaGlassMaterial& Material) &&
+{
+	FVekaGlassGroupModifier Modifier;
+	Modifier.Smoothness = FMath::Max(0.f, Smoothness);
+	Modifier.Material = Material;
+	AddModifierInternal(FInstancedStruct::Make(Modifier));
+	return MoveTemp(*this);
+}
+
 FVekaElement FVekaElement::Shadow(const FLinearColor& Color, float Radius, const FVector2D& Offset, const FVekaCornerRadii& Radii) &&
 {
 	FVekaShadowModifier Modifier;

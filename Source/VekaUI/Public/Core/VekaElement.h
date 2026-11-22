@@ -17,6 +17,7 @@ class FVekaView;
 class UVekaTheme;
 struct FVekaElementData;
 struct FVekaPaint;
+struct FVekaGlassMaterial;
 struct FVekaStrokeStyle;
 struct FVekaSymbolStyle;
 struct FVekaSymbolVariant;
@@ -158,6 +159,16 @@ public:
 	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii = FVekaCornerRadii()) &&;
 	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float Blur, float Noise) const& { return FVekaElement(*this).FrostedGlass(Radii, Tint, Blur, Noise); }
 	FVekaElement FrostedGlass(const FVekaCornerRadii& Radii, const FVekaPaint& Tint, float Blur, float Noise) &&;
+	/** Liquid glass over what is behind the node (refraction at the edge, color split, rim lit from the pointer). */
+	FVekaElement Glass(const FVekaCornerRadii& Radii = FVekaCornerRadii()) const& { return FVekaElement(*this).Glass(Radii); }
+	FVekaElement Glass(const FVekaCornerRadii& Radii = FVekaCornerRadii()) &&;
+	FVekaElement Glass(const FVekaCornerRadii& Radii, const FVekaGlassMaterial& Material) const& { return FVekaElement(*this).Glass(Radii, Material); }
+	FVekaElement Glass(const FVekaCornerRadii& Radii, const FVekaGlassMaterial& Material) &&;
+	/** The .Glass of the subtree become one glass whose shapes melt together closer than Smoothness. */
+	FVekaElement GlassGroup(float Smoothness = 16.f) const& { return FVekaElement(*this).GlassGroup(Smoothness); }
+	FVekaElement GlassGroup(float Smoothness = 16.f) &&;
+	FVekaElement GlassGroup(float Smoothness, const FVekaGlassMaterial& Material) const& { return FVekaElement(*this).GlassGroup(Smoothness, Material); }
+	FVekaElement GlassGroup(float Smoothness, const FVekaGlassMaterial& Material) &&;
 
 	FVekaElement Opacity(float Value) const& { return FVekaElement(*this).Opacity(Value); }
 	FVekaElement Opacity(float Value) &&;

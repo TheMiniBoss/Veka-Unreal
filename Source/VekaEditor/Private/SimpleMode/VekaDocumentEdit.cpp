@@ -122,7 +122,7 @@ namespace
 	{
 		static const TMap<FName, double> Numbers = {
 			{ TEXT("padding"), 16.0 }, { TEXT("frame"), 120.0 }, { TEXT("opacity"), 0.5 }, { TEXT("scale"), 1.2 }, { TEXT("rotation"), 15.0 }, { TEXT("fontSize"), 17.0 },
-			{ TEXT("background"), 8.0 }, { TEXT("border"), 1.0 }, { TEXT("offset"), 10.0 }, { TEXT("backdropBlur"), 20.0 }, { TEXT("frostedGlass"), 30.0 },
+			{ TEXT("background"), 8.0 }, { TEXT("border"), 1.0 }, { TEXT("offset"), 10.0 }, { TEXT("backdropBlur"), 20.0 }, { TEXT("frostedGlass"), 30.0 }, { TEXT("glass"), 24.0 }, { TEXT("glassGroup"), 16.0 },
 		};
 		switch (Argument.Kind)
 		{

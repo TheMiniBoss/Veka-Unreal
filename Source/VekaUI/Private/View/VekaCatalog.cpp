@@ -99,6 +99,10 @@ namespace Veka::Catalog
 			E(TEXT("backdropBlur"), { A(TEXT("radius"), EKind::Number), A(TEXT("cornerRadius"), EKind::Number), A(TEXT("tint"), EKind::Paint),
 				A(TEXT("tintAmount"), EKind::Number), A(TEXT("saturation"), EKind::Number) }, TEXT("radius")),
 			E(TEXT("frostedGlass"), { A(TEXT("blur"), EKind::Number), A(TEXT("cornerRadius"), EKind::Number), A(TEXT("tint"), EKind::Paint), A(TEXT("noise"), EKind::Number) }),
+			E(TEXT("glass"), { A(TEXT("cornerRadius"), EKind::Number), A(TEXT("blur"), EKind::Number), A(TEXT("refraction"), EKind::Number), A(TEXT("bezel"), EKind::Number),
+				A(TEXT("aberration"), EKind::Number), A(TEXT("highlight"), EKind::Number), A(TEXT("tint"), EKind::Paint), A(TEXT("tintAmount"), EKind::Number) }, TEXT("cornerRadius")),
+			E(TEXT("glassGroup"), { A(TEXT("smoothness"), EKind::Number), A(TEXT("blur"), EKind::Number), A(TEXT("refraction"), EKind::Number), A(TEXT("bezel"), EKind::Number),
+				A(TEXT("aberration"), EKind::Number), A(TEXT("highlight"), EKind::Number), A(TEXT("tint"), EKind::Paint), A(TEXT("tintAmount"), EKind::Number) }, TEXT("smoothness")),
 		};
 		return Entries;
 	}
