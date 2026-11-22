@@ -137,4 +137,72 @@ bool FVekaBackdropViewTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaGlassTest, "VekaUI.Render.Glass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaGlassTest::RunTest(const FString& Parameters)
+{
+	using namespace Veka;
+	// A glass: its composite and the host capture.
+	TestEqual(TEXT("one glass"), PaintAndCount(Text(TEXT("Glass")).Padding(20.f).Glass(FVekaCornerRadii(16.f))).Custom, 2);
+
+	// A group: the children give their shapes, only the group draws (plus the capture).
+	const FVekaElement Group = HStack(8.f)(
+		Text(TEXT("A")).Padding(12.f).Glass(FVekaCornerRadii(12.f)),
+		Text(TEXT("B")).Padding(12.f).Glass(FVekaCornerRadii(12.f))
+	).GlassGroup(20.f);
+	TestEqual(TEXT("a group of two: one glass"), PaintAndCount(Group).Custom, 2);
+
+	// Glass and backdrops in one host share the capture.
+	const FVekaElement Mixed = VStack(8.f)(Text(TEXT("A")).Padding(10.f).Glass(), Text(TEXT("B")).Padding(10.f).BackdropBlur(12.f));
+	TestEqual(TEXT("glass + backdrop: one capture"), PaintAndCount(Mixed).Custom, 3);
+
+	// Quality 0: fills, no capture (the group draws nothing, its children fill).
+	IConsoleVariable* Quality = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Veka.Backdrop.Quality"));
+	if (TestNotNull(TEXT("quality setting"), Quality))
+	{
+		const int32 Saved = Quality->GetInt();
+		ON_SCOPE_EXIT { Quality->Set(Saved, ECVF_SetByCode); };
+		Quality->Set(0, ECVF_SetByCode);
+		const FPaintCounts Off = PaintAndCount(Group);
+		TestEqual(TEXT("quality 0: no capture"), Off.Custom, 0);
+		TestTrue(TEXT("quality 0: the two children fill"), Off.Boxes >= 2);
+	}
+
+	// In the language.
+	FVekaDocumentBuilder Builder;
+	FVekaDocumentBuilder::FNode Stack = Builder.Node(TEXT("HStack"));
+	FVekaDocumentBuilder::FNode Item = Builder.Node(TEXT("Text"));
+	Item.Arg(TEXT("text"), Builder.Lit(TEXT("Tab")));
+	Item.Modifier(TEXT("glass"), { { TEXT("cornerRadius"), Builder.Lit(20.0) }, { TEXT("refraction"), Builder.Lit(10.0) } });
+	Stack.Children({ Item });
+	Stack.Modifier(TEXT("glassGroup"), { { TEXT("smoothness"), Builder.Lit(24.0) } });
+	Builder.SetRoot(Stack);
+	UVekaView* View = NewObject<UVekaView>();
+	View->Document = Builder.Release();
+	const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+	Host->SetRoot(View->BuildRoot());
+	Host->SlatePrepass(1.f);
+	const TSharedPtr<FVekaNode> Root = Host->GetRuntime()->GetRootNode();
+	const FVekaGlassGroupModifier* GroupModifier = nullptr;
+	const FVekaGlassModifier* GlassModifier = nullptr;
+	TFunction<void(const FVekaNode&)> Find = [&](const FVekaNode& N)
+	{
+		for (const FInstancedStruct& Modifier : N.GetModifiers())
+		{
+			GroupModifier = GroupModifier ? GroupModifier : Modifier.GetPtr<FVekaGlassGroupModifier>();
+			GlassModifier = GlassModifier ? GlassModifier : Modifier.GetPtr<FVekaGlassModifier>();
+		}
+		for (const TSharedRef<FVekaNode>& Child : N.GetChildren())
+		{
+			Find(*Child);
+		}
+	};
+	if (TestTrue(TEXT("tree built"), Root.IsValid()))
+	{
+		Find(*Root);
+	}
+	TestTrue(TEXT(".glassGroup(smoothness: 24)"), GroupModifier && GroupModifier->Smoothness == 24.f);
+	TestTrue(TEXT(".glass(cornerRadius: 20, refraction: 10)"), GlassModifier && GlassModifier->CornerRadii.TopLeft == 20.f && GlassModifier->Material.Refraction == 10.f);
+	return true;
+}
+
 #endif

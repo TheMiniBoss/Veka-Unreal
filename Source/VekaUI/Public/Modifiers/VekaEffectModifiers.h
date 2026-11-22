@@ -51,6 +51,83 @@ private:
 	mutable FSlateBrush FallbackBrush;
 };
 
+/** Material of a liquid glass (shared by .glass and .glassGroup). */
+USTRUCT(BlueprintType)
+struct VEKAUI_API FVekaGlassMaterial
+{
+	GENERATED_BODY()
+
+	/** Light blur of what is seen through the glass. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
+	float Blur = 3.f;
+
+	/** How far the background is displaced at the very edge. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
+	float Refraction = 18.f;
+
+	/** Width of the curved edge (where refraction and the rim happen). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "1"))
+	float Bezel = 18.f;
+
+	/** Color split of the refraction (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0", ClampMax = "1"))
+	float Aberration = 0.35f;
+
+	/** Specular rim, lit from the pointer (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0", ClampMax = "1"))
+	float Highlight = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
+	FVekaPaint Tint = FVekaPaint(FLinearColor::White);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0", ClampMax = "1"))
+	float TintAmount = 0.04f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
+	float Saturation = 1.2f;
+};
+
+/**
+ * Liquid glass: the background seen through the node's rounded rect, bent at the edge (refraction from the shape's
+ * signed distance field), split in colors, with a rim lit from the pointer. Inside a .glassGroup, the node gives its
+ * shape to the group instead (shapes then melt into each other). Shares its host's backdrop capture.
+ */
+USTRUCT(BlueprintType, meta = (VekaName = "glass", VekaCategory = "Effects"))
+struct VEKAUI_API FVekaGlassModifier : public FVekaModifier
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
+	FVekaCornerRadii CornerRadii;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
+	FVekaGlassMaterial Material;
+
+	virtual int32 PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+
+private:
+	mutable FSlateBrush FallbackBrush;
+};
+
+/**
+ * One glass for every .glass in the subtree (up to 8 shapes): their outlines merge with a smooth minimum when they come
+ * closer than Smoothness, like drops (Liquid Glass tab bars, morphing buttons). The group's material is used.
+ */
+USTRUCT(BlueprintType, meta = (VekaName = "glassGroup", VekaCategory = "Effects"))
+struct VEKAUI_API FVekaGlassGroupModifier : public FVekaModifier
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects", meta = (ClampMin = "0"))
+	float Smoothness = 16.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Veka|Effects")
+	FVekaGlassMaterial Material;
+
+	virtual int32 PaintBehind(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+	virtual int32 PaintFront(FVekaPaintContext& Context, const FVekaRect& Rect) const override;
+};
+
 namespace Veka::Backdrop
 {
 	/** The backdrop layer of the Veka host being painted (game thread), nullptr outside of a host. */

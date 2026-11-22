@@ -22,6 +22,41 @@ struct FVekaBackdropParams
 	float Opacity = 1.f;
 };
 
+/** One shape of a glass: a rounded rect in Slate absolute space. */
+struct FVekaGlassShape
+{
+	FVector2f Min = FVector2f::ZeroVector;
+	FVector2f Max = FVector2f::ZeroVector;
+	/** Top left, top right, bottom right, bottom left, in pixels. */
+	FVector4f CornerRadii = FVector4f(0.f, 0.f, 0.f, 0.f);
+};
+
+/**
+ * Liquid glass over what is behind it: the shapes (smooth union when several), refraction from the normal of their
+ * signed distance field near the edge (the bezel), chromatic aberration, a specular rim lit from LightPosition, a
+ * light blur and a tint. All lengths in Slate absolute units.
+ */
+struct FVekaGlassParams
+{
+	static constexpr int32 MaxShapes = 8;
+	TArray<FVekaGlassShape, TInlineAllocator<MaxShapes>> Shapes;
+	/** How far apart two shapes start to melt together (0 = plain union). */
+	float Smoothness = 0.f;
+	float BlurRadius = 3.f;
+	/** Displacement of the background at the very edge. */
+	float Refraction = 18.f;
+	/** Width of the curved edge where refraction and the rim happen. */
+	float Bezel = 18.f;
+	/** Color split of the refraction (0..1). */
+	float Aberration = 0.35f;
+	/** Strength of the specular rim (0..1). */
+	float Highlight = 0.6f;
+	FVector2f LightPosition = FVector2f(-10000.f, -10000.f);
+	FLinearColor Tint = FLinearColor(1.f, 1.f, 1.f, 0.04f);
+	float Saturation = 1.2f;
+	float Opacity = 1.f;
+};
+
 /** Backdrop quality (r.Veka.Backdrop.Quality, a scalability setting). */
 enum class EVekaBackdropQuality : uint8
 {
@@ -44,20 +79,27 @@ class VEKAUIRENDER_API FVekaBackdropLayer : public TSharedFromThis<FVekaBackdrop
 public:
 	/** Registers a backdrop and returns its composite element (FSlateDrawElement::MakeCustom at the node's layer). */
 	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> Add(const FVekaBackdropParams& Params);
+	/**
+	 * Registers a glass and returns its composite element. Glass shapes can still be added to Params on the game thread
+	 * until the end of the frame (a glass group gets its children's shapes after its own paint).
+	 */
+	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> AddGlass(const TSharedRef<FVekaGlassParams, ESPMode::ThreadSafe>& Params);
 	/** Registers a backdrop without a composite element (a standalone backdrop draws both). */
 	int32 AddItem(const FVekaBackdropParams& Params) { return Items.Add(Params); }
 	void SetQuality(EVekaBackdropQuality InQuality) { Quality = InQuality; }
-	bool IsEmpty() const { return Items.IsEmpty(); }
-	int32 Num() const { return Items.Num(); }
+	bool IsEmpty() const { return Items.IsEmpty() && Glasses.IsEmpty(); }
+	int32 Num() const { return Items.Num() + Glasses.Num(); }
 	/** The capture element, drawn before the host's content (nullptr when the layer is empty). */
 	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> MakeCaptureElement();
 
 private:
 	friend class FVekaBackdropCaptureElement;
 	friend class FVekaBackdropCompositeElement;
+	friend class FVekaGlassCompositeElement;
 
 	// Game thread, then read only by the render thread.
 	TArray<FVekaBackdropParams> Items;
+	TArray<TSharedRef<FVekaGlassParams, ESPMode::ThreadSafe>> Glasses;
 	EVekaBackdropQuality Quality = EVekaBackdropQuality::High;
 
 	// Render thread: the pyramid of this frame (pooled, so composites in another graph can register it).

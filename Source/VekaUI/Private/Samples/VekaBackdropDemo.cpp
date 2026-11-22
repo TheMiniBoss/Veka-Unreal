@@ -76,3 +76,58 @@ namespace
 	FAutoConsoleCommand GDemoCommand(TEXT("Veka.BackdropDemo"), TEXT("Toggles the backdrop demo over the game viewport (Veka.BackdropDemo [full])."),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&ToggleDemo));
 }
+
+// `Veka.GlassDemo` (PIE or game): liquid glass over the game viewport. A large glass panel (refraction at the edge,
+// color split, rim lit from the pointer) and a glass group where a pill and a drop melt together.
+namespace
+{
+	TWeakPtr<SVekaHost> GGlassHost;
+
+	void ToggleGlassDemo(const TArray<FString>& Args)
+	{
+		UGameViewportClient* Viewport = GEngine ? GEngine->GameViewport : nullptr;
+		if (!Viewport)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Veka.GlassDemo: no game viewport (run it in PIE or in a game)"));
+			return;
+		}
+		if (const TSharedPtr<SVekaHost> Existing = GGlassHost.Pin())
+		{
+			Viewport->RemoveViewportWidgetContent(Existing.ToSharedRef());
+			GGlassHost.Reset();
+			return;
+		}
+		using namespace Veka;
+		const float Gap = Args.IsEmpty() ? 150.f : FCString::Atof(*Args[0]);
+		const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+		Host->SetRoot(VStack(40.f, EVekaHAlign::Leading)(
+			VStack(8.f, EVekaHAlign::Leading)(
+				Text(TEXT("Liquid Glass")).Font(EVekaTextStyle::LargeTitle),
+				Text(TEXT("refraction · aberration · rim lit from the pointer")).Font(EVekaTextStyle::Body).Opacity(0.8f)
+			)
+			.Padding(36.f)
+			.Frame(560.0, 260.0)
+			.Glass(FVekaCornerRadii(44.f)),
+			ZStack(FVekaAlignment::Leading())(
+				HStack(22.f)(
+					Symbol(TEXT("house.fill")).Font(EVekaTextStyle::Title2),
+					Symbol(TEXT("magnifyingglass")).Font(EVekaTextStyle::Title2),
+					Symbol(TEXT("person.circle")).Font(EVekaTextStyle::Title2)
+				)
+				.Padding(FMargin(28.f, 0.f))
+				.Frame(240.0, 68.0)
+				.Glass(FVekaCornerRadii(34.f)),
+				Symbol(TEXT("plus")).Font(EVekaTextStyle::Title2)
+					.Frame(68.0, 68.0)
+					.Glass(FVekaCornerRadii(34.f))
+					.Offset(FVector2D(240.0 + Gap - 150.0, 0.0))
+			)
+			.GlassGroup(28.f)
+		).Padding(80.f));
+		Viewport->AddViewportWidgetContent(Host, 100);
+		GGlassHost = Host;
+	}
+
+	FAutoConsoleCommand GGlassCommand(TEXT("Veka.GlassDemo"), TEXT("Toggles the liquid glass demo over the game viewport (Veka.GlassDemo [gap])."),
+		FConsoleCommandWithArgsDelegate::CreateStatic(&ToggleGlassDemo));
+}

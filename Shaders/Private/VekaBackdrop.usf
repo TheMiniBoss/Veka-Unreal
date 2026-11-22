@@ -89,3 +89,84 @@ void CompositePS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosit
 	Color += Grain(Pixel) * Noise;
 	OutColor = float4(max(Color, 0.0), Coverage * Opacity);
 }
+
+// Liquid glass (output = the back buffer, pixel coordinates). The shapes (rounded rects, min.xy max.xy and radii),
+// merged with a smooth minimum, refract the capture near their edge (the bezel) along the normal of the field.
+float4 ShapeRects[8];
+float4 ShapeRadii[8];
+int NumShapes;
+float Smoothness;
+float Refraction;
+float Bezel;
+float Aberration;
+float Highlight;
+float2 LightPosition;
+
+float SmoothMin(float A, float B, float K)
+{
+	if (K <= 0.0)
+	{
+		return min(A, B);
+	}
+	const float H = saturate(0.5 + 0.5 * (B - A) / K);
+	return lerp(B, A, H) - K * H * (1.0 - H);
+}
+
+float GlassField(float2 P)
+{
+	float D = 1e6;
+	for (int Index = 0; Index < NumShapes; ++Index)
+	{
+		const float4 Rect = ShapeRects[Index];
+		const float2 HalfSize = (Rect.zw - Rect.xy) * 0.5;
+		const float Shape = RoundedRectDistance(P - (Rect.xy + HalfSize), HalfSize, ShapeRadii[Index]);
+		D = Index == 0 ? Shape : SmoothMin(D, Shape, Smoothness);
+	}
+	return D;
+}
+
+float3 SampleBlurred(float2 Pixel)
+{
+	const float2 UV = (Pixel - CaptureRect.xy) * CaptureRect.zw;
+	return lerp(LowerTexture.SampleLevel(InputSampler, UV, 0).rgb, UpperTexture.SampleLevel(InputSampler, UV, 0).rgb, LevelMix);
+}
+
+void GlassPS(noperspective float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const float2 Pixel = SvPosition.xy;
+	const float D = GlassField(Pixel);
+	const float Coverage = saturate(0.5 - D);
+	if (Coverage <= 0.0)
+	{
+		OutColor = 0;
+		return;
+	}
+
+	// Outward normal of the merged shape.
+	const float E = 1.0;
+	float2 Normal = float2(GlassField(Pixel + float2(E, 0)) - GlassField(Pixel - float2(E, 0)), GlassField(Pixel + float2(0, E)) - GlassField(Pixel - float2(0, E)));
+	Normal = Normal / max(length(Normal), 1e-4);
+
+	// 0 at the edge, 1 past the bezel: the curved rim bends the background, most at the edge.
+	const float Depth = saturate(-D / Bezel);
+	const float Rim = 1.0 - Depth;
+	const float Lens = Rim * Rim;
+	const float2 Offset = Normal * Refraction * Lens;
+
+	// Chromatic aberration: red bends more than blue.
+	float3 Color;
+	Color.r = SampleBlurred(Pixel + Offset * (1.0 + Aberration)).r;
+	Color.g = SampleBlurred(Pixel + Offset).g;
+	Color.b = SampleBlurred(Pixel + Offset * (1.0 - Aberration)).b;
+
+	const float Luma = dot(Color, float3(0.2126, 0.7152, 0.0722));
+	Color = lerp(Luma.xxx, Color, Saturation);
+	Color = lerp(Color, Tint.rgb, Tint.a);
+
+	// Specular rim lit from the light (the pointer), a softer one all around.
+	const float2 ToLight = normalize(LightPosition - Pixel);
+	const float Facing = saturate(dot(Normal, ToLight));
+	Color += Highlight * pow(Rim, 3.0) * (0.25 + 0.75 * Facing);
+
+	OutColor = float4(max(Color, 0.0), Coverage * Opacity);
+}

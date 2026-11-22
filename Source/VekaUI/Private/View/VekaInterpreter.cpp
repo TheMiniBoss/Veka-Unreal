@@ -856,6 +856,31 @@ namespace
 				Backdrop.Noise = static_cast<float>(Float(TEXT("noise"), Backdrop.Noise));
 				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Backdrop));
 			}
+			if (Name == TEXT("glass") || Name == TEXT("glassGroup"))
+			{
+				FVekaGlassMaterial Material;
+				Material.Blur = static_cast<float>(Float(TEXT("blur"), Material.Blur));
+				Material.Refraction = static_cast<float>(Float(TEXT("refraction"), Material.Refraction));
+				Material.Bezel = static_cast<float>(Float(TEXT("bezel"), Material.Bezel));
+				Material.Aberration = static_cast<float>(Float(TEXT("aberration"), Material.Aberration));
+				Material.Highlight = static_cast<float>(Float(TEXT("highlight"), Material.Highlight));
+				if (HasArg(A, TEXT("tint")))
+				{
+					Material.Tint = PaintFrom(Value(TEXT("tint")));
+				}
+				Material.TintAmount = static_cast<float>(Float(TEXT("tintAmount"), Material.TintAmount));
+				if (Name == TEXT("glass"))
+				{
+					FVekaGlassModifier Glass;
+					Glass.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(TEXT("cornerRadius"), 0.0)));
+					Glass.Material = Material;
+					return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Glass));
+				}
+				FVekaGlassGroupModifier Group;
+				Group.Smoothness = static_cast<float>(Float(TEXT("smoothness"), Group.Smoothness));
+				Group.Material = Material;
+				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Group));
+			}
 			if (Name == TEXT("opacity"))
 			{
 				return MoveTemp(Element).Opacity(static_cast<float>(Float(TEXT("value"), 1.0)));

@@ -74,6 +74,38 @@ namespace
 	};
 }
 
+namespace
+{
+	class FVekaGlassPS : public FGlobalShader
+	{
+	public:
+		DECLARE_GLOBAL_SHADER(FVekaGlassPS);
+		SHADER_USE_PARAMETER_STRUCT(FVekaGlassPS, FGlobalShader);
+
+		BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+			SHADER_PARAMETER_RDG_TEXTURE(Texture2D, LowerTexture)
+			SHADER_PARAMETER_RDG_TEXTURE(Texture2D, UpperTexture)
+			SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
+			SHADER_PARAMETER(float, LevelMix)
+			SHADER_PARAMETER(FVector4f, CaptureRect)
+			SHADER_PARAMETER_ARRAY(FVector4f, ShapeRects, [FVekaGlassParams::MaxShapes])
+			SHADER_PARAMETER_ARRAY(FVector4f, ShapeRadii, [FVekaGlassParams::MaxShapes])
+			SHADER_PARAMETER(int32, NumShapes)
+			SHADER_PARAMETER(float, Smoothness)
+			SHADER_PARAMETER(float, Refraction)
+			SHADER_PARAMETER(float, Bezel)
+			SHADER_PARAMETER(float, Aberration)
+			SHADER_PARAMETER(float, Highlight)
+			SHADER_PARAMETER(FVector2f, LightPosition)
+			SHADER_PARAMETER(FVector4f, Tint)
+			SHADER_PARAMETER(float, Saturation)
+			SHADER_PARAMETER(float, Opacity)
+			RENDER_TARGET_BINDING_SLOTS()
+		END_SHADER_PARAMETER_STRUCT()
+	};
+}
+
+IMPLEMENT_GLOBAL_SHADER(FVekaGlassPS, "/Plugin/VekaUI/Private/VekaBackdrop.usf", "GlassPS", SF_Pixel);
 IMPLEMENT_GLOBAL_SHADER(FVekaKawaseDownPS, "/Plugin/VekaUI/Private/VekaBackdrop.usf", "KawaseDownPS", SF_Pixel);
 IMPLEMENT_GLOBAL_SHADER(FVekaKawaseUpPS, "/Plugin/VekaUI/Private/VekaBackdrop.usf", "KawaseUpPS", SF_Pixel);
 IMPLEMENT_GLOBAL_SHADER(FVekaBackdropCompositePS, "/Plugin/VekaUI/Private/VekaBackdrop.usf", "CompositePS", SF_Pixel);
@@ -166,11 +198,11 @@ public:
 		L.bCaptured = false;
 		L.Levels.Reset();
 		FRDGTexture* Output = Inputs.OutputTexture;
-		if (!Output || L.Items.IsEmpty() || L.Quality == EVekaBackdropQuality::Off)
+		if (!Output || L.IsEmpty() || L.Quality == EVekaBackdropQuality::Off)
 		{
 			return;
 		}
-		RDG_EVENT_SCOPE_STAT(GraphBuilder, VekaBackdrop, "VekaBackdrop.Capture %d", L.Items.Num());
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, VekaBackdrop, "VekaBackdrop.Capture %d", L.Num());
 
 		// Union of the rects, each with a margin for its blur, and the levels needed.
 		const FIntPoint Extent = Output->Desc.Extent;
@@ -199,6 +231,37 @@ public:
 			NeededLevels[FMath::FloorToInt(Level)] = true;
 			NeededLevels[FMath::Min(FMath::CeilToInt(Level), MaxLevels)] = true;
 			L.PixelScale = Pixels.Scale;
+		}
+		for (const TSharedRef<FVekaGlassParams, ESPMode::ThreadSafe>& Glass : L.Glasses)
+		{
+			for (const FVekaGlassShape& Shape : Glass->Shapes)
+			{
+				FVekaBackdropParams AsBackdrop;
+				AsBackdrop.Min = Shape.Min;
+				AsBackdrop.Max = Shape.Max;
+				const FPixelRect Pixels = ToPixels(AsBackdrop, Inputs);
+				const float Blur = FMath::Max(0.f, Glass->BlurRadius * Pixels.Scale);
+				// Room for the blur and for the refraction, which samples outside of the shape.
+				const int32 Margin = FMath::CeilToInt(Blur * 1.5f + (Glass->Refraction * (1.f + Glass->Aberration) + Glass->Smoothness) * Pixels.Scale) + 2;
+				const FIntRect Rect(FIntPoint(FMath::FloorToInt(Pixels.Min.X) - Margin, FMath::FloorToInt(Pixels.Min.Y) - Margin),
+					FIntPoint(FMath::CeilToInt(Pixels.Max.X) + Margin, FMath::CeilToInt(Pixels.Max.Y) + Margin));
+				if (bAny)
+				{
+					Capture.Union(Rect);
+				}
+				else
+				{
+					Capture = Rect;
+				}
+				bAny = true;
+				const float Level = FMath::Min(Veka::Render::BlurLevel(Blur), static_cast<float>(MaxLevels));
+				NeededLevels[FMath::FloorToInt(Level)] = true;
+				NeededLevels[FMath::Min(FMath::CeilToInt(Level), MaxLevels)] = true;
+			}
+		}
+		if (!bAny)
+		{
+			return;
 		}
 		Capture.Clip(Bounds);
 		const FIntPoint CaptureSize = Capture.Size();
@@ -319,6 +382,86 @@ private:
 	int32 Index;
 };
 
+/** A glass of a layer: its shapes (merged), refracting the layer capture, with the rim and the tint. */
+class FVekaGlassCompositeElement : public ICustomSlateElement
+{
+public:
+	FVekaGlassCompositeElement(const TSharedRef<FVekaBackdropLayer, ESPMode::ThreadSafe>& InLayer, const TSharedRef<FVekaGlassParams, ESPMode::ThreadSafe>& InGlass)
+		: Layer(InLayer), Glass(InGlass) {}
+
+	virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override
+	{
+		const FVekaBackdropLayer& L = *Layer;
+		const FVekaGlassParams& G = *Glass;
+		FRDGTexture* Output = Inputs.OutputTexture;
+		if (!Output || !L.bCaptured || G.Shapes.IsEmpty())
+		{
+			return;
+		}
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, VekaBackdrop, "VekaGlass %d", G.Shapes.Num());
+
+		FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
+		FVekaGlassPS::FParameters* Parameters = GraphBuilder.AllocParameters<FVekaGlassPS::FParameters>();
+		float Scale = 1.f;
+		FVector2f BoundsMin(TNumericLimits<float>::Max());
+		FVector2f BoundsMax(-TNumericLimits<float>::Max());
+		const int32 Count = FMath::Min(G.Shapes.Num(), FVekaGlassParams::MaxShapes);
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			FVekaBackdropParams AsBackdrop;
+			AsBackdrop.Min = G.Shapes[Index].Min;
+			AsBackdrop.Max = G.Shapes[Index].Max;
+			const FPixelRect Pixels = ToPixels(AsBackdrop, Inputs);
+			Scale = Pixels.Scale;
+			Parameters->ShapeRects[Index] = FVector4f(Pixels.Min.X, Pixels.Min.Y, Pixels.Max.X, Pixels.Max.Y);
+			Parameters->ShapeRadii[Index] = G.Shapes[Index].CornerRadii * Pixels.Scale;
+			BoundsMin = FVector2f(FMath::Min(BoundsMin.X, Pixels.Min.X), FMath::Min(BoundsMin.Y, Pixels.Min.Y));
+			BoundsMax = FVector2f(FMath::Max(BoundsMax.X, Pixels.Max.X), FMath::Max(BoundsMax.Y, Pixels.Max.Y));
+		}
+		const int32 Grow = 2;
+		FIntRect Region(FIntPoint(FMath::FloorToInt(BoundsMin.X) - Grow, FMath::FloorToInt(BoundsMin.Y) - Grow),
+			FIntPoint(FMath::CeilToInt(BoundsMax.X) + Grow, FMath::CeilToInt(BoundsMax.Y) + Grow));
+		Region.Clip(FIntRect(FIntPoint::ZeroValue, Output->Desc.Extent));
+		if (Region.Width() < 1 || Region.Height() < 1)
+		{
+			return;
+		}
+		const int32 TopLevel = L.Levels.Num() - 1;
+		const float Level = FMath::Clamp(Veka::Render::BlurLevel(FMath::Max(0.f, G.BlurRadius * Scale)), 0.f, static_cast<float>(TopLevel));
+		const int32 Lower = FMath::FloorToInt(Level);
+		const int32 Upper = FMath::Min(FMath::CeilToInt(Level), TopLevel);
+		if (!L.Levels.IsValidIndex(Lower) || !L.Levels[Lower].IsValid() || !L.Levels[Upper].IsValid())
+		{
+			return;
+		}
+		Parameters->LowerTexture = GraphBuilder.RegisterExternalTexture(L.Levels[Lower]);
+		Parameters->UpperTexture = GraphBuilder.RegisterExternalTexture(L.Levels[Upper]);
+		Parameters->InputSampler = TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+		Parameters->LevelMix = Level - Lower;
+		const FIntPoint CaptureSize = L.CaptureRect.Size();
+		Parameters->CaptureRect = FVector4f(L.CaptureRect.Min.X, L.CaptureRect.Min.Y, 1.f / CaptureSize.X, 1.f / CaptureSize.Y);
+		Parameters->NumShapes = Count;
+		Parameters->Smoothness = G.Smoothness * Scale;
+		Parameters->Refraction = G.Refraction * Scale;
+		Parameters->Bezel = FMath::Max(1.f, G.Bezel * Scale);
+		Parameters->Aberration = G.Aberration;
+		Parameters->Highlight = G.Highlight;
+		Parameters->LightPosition = ToPixel(G.LightPosition, Inputs);
+		Parameters->Tint = FVector4f(G.Tint.R, G.Tint.G, G.Tint.B, G.Tint.A);
+		Parameters->Saturation = G.Saturation;
+		Parameters->Opacity = G.Opacity;
+		Parameters->RenderTargets[0] = FRenderTargetBinding(Output, ERenderTargetLoadAction::ELoad);
+		const FScreenPassTextureViewport OutputViewport(Output, Region);
+		AddDrawScreenPass(GraphBuilder, RDG_EVENT_NAME("Glass"), FScreenPassViewInfo(GMaxRHIFeatureLevel), OutputViewport, OutputViewport,
+			TShaderMapRef<FScreenPassVS>(ShaderMap), TShaderMapRef<FVekaGlassPS>(ShaderMap),
+			TStaticBlendState<CW_RGB, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha>::GetRHI(), Parameters);
+	}
+
+private:
+	TSharedRef<FVekaBackdropLayer, ESPMode::ThreadSafe> Layer;
+	TSharedRef<FVekaGlassParams, ESPMode::ThreadSafe> Glass;
+};
+
 namespace
 {
 	/** A backdrop outside of a layer: its own capture, then its composite. */
@@ -348,9 +491,18 @@ TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> FVekaBackdropLayer::Add(con
 	return Element;
 }
 
+TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> FVekaBackdropLayer::AddGlass(const TSharedRef<FVekaGlassParams, ESPMode::ThreadSafe>& Params)
+{
+	check(IsInGameThread());
+	Glasses.Add(Params);
+	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> Element = MakeShared<FVekaGlassCompositeElement, ESPMode::ThreadSafe>(AsShared(), Params);
+	KeepUntilRendered(Element);
+	return Element;
+}
+
 TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> FVekaBackdropLayer::MakeCaptureElement()
 {
-	if (Items.IsEmpty())
+	if (IsEmpty())
 	{
 		return nullptr;
 	}

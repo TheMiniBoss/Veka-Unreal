@@ -81,10 +81,10 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 | | |
 |---|---|
-| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
+| Phase | **4** en cours (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass fusionnés) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré ; 94 tests automation ✅ |
-| Prochaine étape | Phase 4 — jalon 4b Glass (réfraction SDF, reflet, aberration, fusion) |
+| Prochaine étape | Phase 4 — jalon 4c Blend modes + distorsion |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +119,37 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-22 — CLOUD + LOCAL → jalon 4b Glass (Liquid Glass)
+
+- **Branche** : `cpp/phase-4b-glass` (partie de `C++` @ `74d619e`), fusionnée dans `C++`.
+- **Règle de validation (TheMiniBoss, 2026-11-22)** : plus de BuildPlugin Editor + Shipping à chaque jalon, sauf
+  demande ou besoin ; un jalon est vert avec build éditeur + tests + vérification visuelle. **Non lancé pour 4b.**
+- **Shader glass** (`VekaBackdrop.usf`, `GlassPS`) : champ de distance des formes (jusqu'à 8 rectangles arrondis,
+  **minimum lisse** pour la fusion), normale par différences finies ; près du bord (le **bezel**) l'arrière-plan est
+  lu plus loin le long de la normale (`Refraction · (1 − profondeur)²`) — le fond « coule » autour du bord comme dans
+  un verre épais ; **aberration chromatique** (rouge, vert, bleu déplacés différemment) ; **reflet du bord**
+  (`Highlight · rim³`, plus fort du côté de la lumière = **le pointeur**) ; flou léger, saturation, teinte.
+- **Rendu** : `FVekaGlassParams` / `FVekaBackdropLayer::AddGlass` ; le glass partage la capture et la pyramide de la
+  couche (marge de capture élargie pour la réfraction). Un `.glassGroup` dépose son élément avant ses enfants, puis
+  ses enfants `.glass` lui donnent leurs formes pendant la même peinture (pile de groupes ; `PaintFront` referme).
+- **Modificateurs** : `FVekaGlassModifier` (`.glass`, rayons + `FVekaGlassMaterial` : flou 3, réfraction 18, bezel
+  18, aberration 0,35, reflet 0,6, teinte blanche 0,04, saturation 1,2) et `FVekaGlassGroupModifier` (`.glassGroup`,
+  lissage 16). Builders `.Glass(radii[, material])`, `.GlassGroup(smoothness[, material])`. Repli à la qualité 0 :
+  remplissage teinté léger (les enfants d'un groupe remplissent chacun).
+- **Langage** : `.glass(cornerRadius, blur:, refraction:, bezel:, aberration:, highlight:, tint:, tintAmount:)` et
+  `.glassGroup(smoothness, …)` (catalogue → analyse, complétion, inspecteur).
+- **Démo** : **`Veka.GlassDemo [écart]`** (PIE ou jeu) — grand panneau glass + barre d'onglets et goutte « + » qui
+  fusionnent.
+- **Mesure** (jeu 1080p, `stat gpu`) : panneau 560 × 260 + groupe de deux formes = **0,11 ms** (capture comprise).
+- **Tests** : `VekaUI.Render.Glass` (un glass = composite + capture ; groupe de deux = un seul glass ; glass +
+  backdrop = une capture ; qualité 0 = remplissages ; `.glass(...)` / `.glassGroup(...)` depuis une vue).
+- **Validé** : build éditeur, **97 tests** (96 verts + 1 avec l'avertissement attendu). Vérifié en jeu
+  (`Docs/Sync/Screens/phase4b-glass-game.jpg`, `phase4b-glass-light-*.jpg`, `phase4b-stat-gpu.jpg`) : nuages
+  courbés au bord, franges bleu / orange en bas, reflet qui suit le pointeur, pilule et goutte reliées par un col lisse.
+- **Limites** : réaction au scroll pas encore faite (le pointeur oui) ; un widget mis en cache par l'invalidation
+  Slate perd toujours son effet ; 8 formes au plus par groupe ; pas de reflet « spéculaire » d'environnement (seulement
+  le bord).
 
 ### 2026-11-22 — CLOUD + LOCAL → jalon 4a Backdrop + flou
 
