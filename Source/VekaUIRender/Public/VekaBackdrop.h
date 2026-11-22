@@ -114,7 +114,7 @@ public:
 	void SetQuality(EVekaBackdropQuality InQuality) { Quality = InQuality; }
 	bool IsEmpty() const { return Items.IsEmpty() && Glasses.IsEmpty(); }
 	int32 Num() const { return Items.Num() + Glasses.Num(); }
-	/** The capture element, drawn before the host's content (nullptr when the layer is empty). */
+	/** A capture element drawn before the host's content: the layer's backdrops then see only what is behind the host (nullptr when empty). */
 	TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> MakeCaptureElement();
 
 private:
@@ -133,6 +133,8 @@ private:
 	TArray<TRefCountPtr<struct IPooledRenderTarget>> Levels;
 	float PixelScale = 1.f;
 	bool bCaptured = false;
+	/** The capture is taken by the first composite drawn (so it sees what the host drew before it). */
+	bool bCaptureTried = false;
 };
 
 namespace Veka::Render

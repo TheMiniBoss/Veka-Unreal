@@ -72,13 +72,13 @@ bool FVekaBackdropTest::RunTest(const FString& Parameters)
 	// One capture per host, one composite per backdrop.
 	using namespace Veka;
 	const FVekaElement One = Text(TEXT("Glass")).Padding(20.f).BackdropBlur(16.f, FVekaCornerRadii(12.f));
-	TestEqual(TEXT("one backdrop: its composite and the host's capture"), PaintAndCount(One).Custom, 2);
+	TestEqual(TEXT("one backdrop: its composite (it takes the capture)"), PaintAndCount(One).Custom, 1);
 	const FVekaElement Three = VStack(8.f)(
 		Text(TEXT("A")).Padding(10.f).BackdropBlur(6.f),
 		Text(TEXT("B")).Padding(10.f).BackdropBlur(30.f),
 		Text(TEXT("C")).Padding(10.f).FrostedGlass()
 	);
-	TestEqual(TEXT("three backdrops share one capture"), PaintAndCount(Three).Custom, 4);
+	TestEqual(TEXT("three backdrops: three composites (the first one captures for all)"), PaintAndCount(Three).Custom, 3);
 	TestEqual(TEXT("no backdrop: no capture"), PaintAndCount(Text(TEXT("Plain")).Padding(10.f)).Custom, 0);
 
 	// Quality 0: a tinted fill instead, no capture.
@@ -146,18 +146,18 @@ bool FVekaGlassTest::RunTest(const FString& Parameters)
 {
 	using namespace Veka;
 	// A glass: its composite and the host capture.
-	TestEqual(TEXT("one glass"), PaintAndCount(Text(TEXT("Glass")).Padding(20.f).Glass(FVekaCornerRadii(16.f))).Custom, 2);
+	TestEqual(TEXT("one glass"), PaintAndCount(Text(TEXT("Glass")).Padding(20.f).Glass(FVekaCornerRadii(16.f))).Custom, 1);
 
 	// A group: the children give their shapes, only the group draws (plus the capture).
 	const FVekaElement Group = HStack(8.f)(
 		Text(TEXT("A")).Padding(12.f).Glass(FVekaCornerRadii(12.f)),
 		Text(TEXT("B")).Padding(12.f).Glass(FVekaCornerRadii(12.f))
 	).GlassGroup(20.f);
-	TestEqual(TEXT("a group of two: one glass"), PaintAndCount(Group).Custom, 2);
+	TestEqual(TEXT("a group of two: one glass"), PaintAndCount(Group).Custom, 1);
 
 	// Glass and backdrops in one host share the capture.
 	const FVekaElement Mixed = VStack(8.f)(Text(TEXT("A")).Padding(10.f).Glass(), Text(TEXT("B")).Padding(10.f).BackdropBlur(12.f));
-	TestEqual(TEXT("glass + backdrop: one capture"), PaintAndCount(Mixed).Custom, 3);
+	TestEqual(TEXT("glass + backdrop: two composites, one capture"), PaintAndCount(Mixed).Custom, 2);
 
 	// Quality 0: fills, no capture (the group draws nothing, its children fill).
 	IConsoleVariable* Quality = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Veka.Backdrop.Quality"));
@@ -240,7 +240,7 @@ bool FVekaBlendModeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("multiply: three steps"), PaintAndCount(Rectangle().Fill(FLinearColor::Red).Frame(40.f, 40.f).BlendMode(EVekaBlendMode::Multiply)).Custom, 3);
 	TestEqual(TEXT("normal: nothing"), PaintAndCount(Rectangle().Fill(FLinearColor::Red).Frame(40.f, 40.f).BlendMode(EVekaBlendMode::Normal)).Custom, 0);
 	TestEqual(TEXT("add: drawn directly"), PaintAndCount(Rectangle().Fill(FLinearColor::Red).Frame(40.f, 40.f).BlendMode(EVekaBlendMode::Add)).Custom, 0);
-	TestEqual(TEXT("liquid distortion: composite + capture"), PaintAndCount(Text(TEXT("Haze")).Padding(20.f).AddModifier(FInstancedStruct::Make(FVekaLiquidDistortionModifier()))).Custom, 2);
+	TestEqual(TEXT("liquid distortion: one composite"), PaintAndCount(Text(TEXT("Haze")).Padding(20.f).AddModifier(FInstancedStruct::Make(FVekaLiquidDistortionModifier()))).Custom, 1);
 
 	// Pixels against the W3C formulas, on the stored (display) values: a background, a plain swatch of the source
 	// color, then swatches of the same color blended with the background.
@@ -285,6 +285,54 @@ bool FVekaBlendModeTest::RunTest(const FString& Parameters)
 		const FString Mode = StaticEnum<EVekaBlendMode>()->GetNameStringByValue(static_cast<int64>(Cases[Index].Mode));
 		TestTrue(FString::Printf(TEXT("%s: got %s, expected %s (B %s, S %s)"), *Mode, *Got.ToString(), *Expected.ToString(), *B.ToString(), *S.ToString()), Got.Equals(Expected, 3.f / 255.f));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaOverlapLayersTest, "VekaUI.Render.OverlapLayers", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaOverlapLayersTest::RunTest(const FString& Parameters)
+{
+	// Overlapping children paint above each other: a backdrop in the second child of a ZStack comes after every element
+	// of the first child (it must see them), even when the first child is deeper.
+	using namespace Veka;
+	const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+	Host->SetRoot(ZStack()(
+		VStack(4.f)(Text(TEXT("A")), VStack(2.f)(Text(TEXT("B")).Padding(4.f).Background(FLinearColor::Red, 4.f))).Padding(20.f),
+		Text(TEXT("C")).Padding(30.f).BackdropBlur(10.f)
+	));
+	const FVector2f Size(300.f, 200.f);
+	TSharedRef<SWindow> Window = SNew(SWindow).ClientSize(Size).CreateTitleBar(false);
+	FSlateWindowElementList Elements(Window);
+	FHittestGrid Grid;
+	Grid.SetHittestArea(FVector2f::ZeroVector, Size);
+	const FPaintArgs Args(nullptr, Grid, FVector2f::ZeroVector, FPlatformTime::Seconds(), 1.f / 60.f);
+	Host->SlatePrepass(1.f);
+	Host->Paint(Args, FGeometry::MakeRoot(Size, FSlateLayoutTransform()), FSlateRect(0.f, 0.f, Size.X, Size.Y), Elements, 0, FWidgetStyle(), true);
+	int32 BackdropLayer = -1;
+	for (const FSlateCustomDrawerElement& Element : Elements.GetUncachedDrawElements().Get<(uint8)EElementType::ET_Custom>())
+	{
+		BackdropLayer = FMath::Max(BackdropLayer, static_cast<int32>(Element.GetLayer()));
+	}
+	// Layers of the text elements, in paint order (shaped or plain, whichever Slate made).
+	TArray<int32> TextLayers;
+	for (const auto& Element : Elements.GetUncachedDrawElements().Get<(uint8)EElementType::ET_ShapedText>())
+	{
+		TextLayers.Add(static_cast<int32>(Element.GetLayer()));
+	}
+	if (TextLayers.Num() < 3)
+	{
+		TextLayers.Reset();
+		for (const auto& Element : Elements.GetUncachedDrawElements().Get<(uint8)EElementType::ET_Text>())
+		{
+			TextLayers.Add(static_cast<int32>(Element.GetLayer()));
+		}
+	}
+	if (!TestTrue(FString::Printf(TEXT("three texts (%d) and a backdrop (%d)"), TextLayers.Num(), BackdropLayer), TextLayers.Num() >= 3 && BackdropLayer >= 0))
+	{
+		return false;
+	}
+	// The first two texts (A, B) belong to the first child.
+	TestTrue(FString::Printf(TEXT("backdrop (%d) above A (%d) and B (%d)"), BackdropLayer, TextLayers[0], TextLayers[1]),
+		BackdropLayer > TextLayers[0] && BackdropLayer > TextLayers[1]);
 	return true;
 }
 

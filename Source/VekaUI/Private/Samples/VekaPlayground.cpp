@@ -1148,3 +1148,13 @@ namespace Veka::Samples
 		.Background(Background);
 	}
 }
+
+namespace Veka::Samples
+{
+	FVekaElement ControlsGallery() { return VekaPlaygroundPrivate::ControlsSection(); }
+	FVekaElement ColoraGallery() { return VekaPlaygroundPrivate::ColoraSection(); }
+	FVekaElement SymbolsGallery() { return VekaPlaygroundPrivate::SymbolsSection(); }
+	FVekaElement TypographyGallery() { return VekaPlaygroundPrivate::TypographySection(); }
+	FVekaElement AnimaGallery() { return VekaPlaygroundPrivate::AnimaSection(); }
+	FVekaElement MorphGallery() { return VekaPlaygroundPrivate::MorphSection(); }
+}

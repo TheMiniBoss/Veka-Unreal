@@ -8,6 +8,7 @@
 #include "SimpleMode/SVekaInspector.h"
 #include "TestMode/SVekaTestPanels.h"
 #include "Symbols/SVekaSymbolLibrary.h"
+#include "Hub/VekaHub.h"
 #include "Symbols/VekaSymbol.h"
 #include "Colora/VekaPaintAsset.h"
 #include "View/VekaViewAsset.h"
@@ -233,6 +234,9 @@ void FVekaViewEditorToolkit::FillToolbar(FToolBarBuilder& Builder)
 	Builder.AddToolBarButton(
 		FUIAction(FExecuteAction::CreateLambda([]() { FGlobalTabmanager::Get()->TryInvokeTab(Veka::Editor::SymbolLibrary::TabId); })), NAME_None, LOCTEXT("Symbols", "Symbols"),
 		LOCTEXT("SymbolsTooltip", "Open the Veka Symbol Library"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"));
+	Builder.AddToolBarButton(
+		FUIAction(FExecuteAction::CreateLambda([]() { FGlobalTabmanager::Get()->TryInvokeTab(Veka::Editor::Hub::TabId); })), NAME_None, LOCTEXT("Hub", "Hub"),
+		LOCTEXT("HubTooltip", "Open the Veka Hub (DesignLab)"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Layout"));
 	Builder.EndSection();
 }
 

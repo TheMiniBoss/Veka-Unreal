@@ -250,12 +250,24 @@ int32 SVekaNodeWidget::PaintContent(const FPaintPass& Pass, FVekaNode& InNode, i
 
 		FArrangedChildren Arranged(EVisibility::Visible);
 		ArrangeChildWidgets(InNode, Pass.Geometry, Arranged); // already arranged in OnPaint
+		// Children that do not overlap share their layers (better batching); overlapping ones (a ZStack, offsets) each
+		// paint above the previous one, or the deeper layers of an earlier child would cover a later child (and its
+		// backdrops would not see what is under them).
+		bool bOverlap = false;
+		for (int32 A = 0; A < Arranged.Num() && !bOverlap; ++A)
+		{
+			const FSlateRect RectA = Arranged[A].Geometry.GetRenderBoundingRect();
+			for (int32 B = A + 1; B < Arranged.Num() && !bOverlap; ++B)
+			{
+				bOverlap = FSlateRect::DoRectanglesIntersect(RectA, Arranged[B].Geometry.GetRenderBoundingRect());
+			}
+		}
 		const int32 ChildLayer = MaxLayer + 1;
 		for (int32 Index = 0; Index < Arranged.Num(); ++Index)
 		{
 			const FArrangedWidget& Child = Arranged[Index];
 			const int32 Painted = Child.Widget->Paint(Pass.Args.WithNewParent(this), Child.Geometry, Pass.CullingRect, Pass.DrawElements,
-				ChildLayer, Style, Pass.bEnabled);
+				bOverlap ? MaxLayer + 1 : ChildLayer, Style, Pass.bEnabled);
 			MaxLayer = FMath::Max(MaxLayer, Painted);
 		}
 

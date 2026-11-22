@@ -106,9 +106,6 @@ int32 SVekaHost::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 		const Veka::Backdrop::FLayerScope Scope(*Backdrops);
 		MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId + 1, InWidgetStyle, bParentEnabled);
 	}
-	if (const TSharedPtr<ICustomSlateElement, ESPMode::ThreadSafe> Capture = Backdrops->MakeCaptureElement())
-	{
-		FSlateDrawElement::MakeCustom(OutDrawElements, LayerId, Capture);
-	}
+	// The first backdrop drawn takes the layer's capture (it sees the host's own content drawn before it).
 	return MaxLayer;
 }

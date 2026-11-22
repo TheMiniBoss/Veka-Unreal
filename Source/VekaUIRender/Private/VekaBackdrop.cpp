@@ -227,6 +227,7 @@ public:
 	virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override
 	{
 		FVekaBackdropLayer& L = *Layer;
+		L.bCaptureTried = true;
 		L.bCaptured = false;
 		L.Levels.Reset();
 		FRDGTexture* Output = Inputs.OutputTexture;
@@ -363,8 +364,12 @@ public:
 
 	virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override
 	{
-		const FVekaBackdropLayer& L = *Layer;
 		FRDGTexture* Output = Inputs.OutputTexture;
+		if (Output && !Layer->bCaptureTried)
+		{
+			FVekaBackdropCaptureElement(Layer).Draw_RenderThread(GraphBuilder, Inputs);
+		}
+		const FVekaBackdropLayer& L = *Layer;
 		if (!Output || !L.bCaptured || !L.Items.IsValidIndex(Index))
 		{
 			return;
@@ -424,9 +429,13 @@ public:
 
 	virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override
 	{
+		FRDGTexture* Output = Inputs.OutputTexture;
+		if (Output && !Layer->bCaptureTried)
+		{
+			FVekaBackdropCaptureElement(Layer).Draw_RenderThread(GraphBuilder, Inputs);
+		}
 		const FVekaBackdropLayer& L = *Layer;
 		const FVekaGlassParams& G = *Glass;
-		FRDGTexture* Output = Inputs.OutputTexture;
 		if (!Output || !L.bCaptured || G.Shapes.IsEmpty())
 		{
 			return;
