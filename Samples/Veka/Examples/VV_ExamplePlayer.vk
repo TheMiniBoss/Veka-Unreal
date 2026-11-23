@@ -1,0 +1,33 @@
+view VV_ExamplePlayer {
+    @State var playing: Bool = false
+    @State var progress: Float = 0.35
+
+    // A music player card: the middle button switches between play and pause.
+    VStack(spacing: 10) {
+        RoundedRectangle(18, fill: .Indigo)
+            .frame(width: 140, height: 140)
+        Text("Midnight Drive")
+            .font(.Headline)
+        Text("Veka Ensemble")
+            .font(.Subheadline)
+            .opacity(0.7)
+        Slider(value: progress)
+            .frame(width: 200)
+        HStack(spacing: 28) {
+            Symbol(#"backward.fill")
+            if playing {
+                Button("Pause", symbol: #"pause.fill") {
+                    playing.toggle()
+                }
+            } else {
+                Button("Play", symbol: #"play.fill") {
+                    playing.toggle()
+                }
+            }
+            Symbol(#"forward.fill")
+        }
+        .font(.Title2)
+    }
+    .padding(18)
+    .background(.WindowBackground, radius: 20)
+}

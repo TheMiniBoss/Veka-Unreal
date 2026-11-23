@@ -1,0 +1,299 @@
+// Copyright TheMiniBoss. All Rights Reserved.
+
+#include "Layout/VekaStack.h"
+#include "Core/VekaNode.h"
+
+TOptional<EVekaAxis> FVekaStack::GetStackAxis() const
+{
+	return Axis == EVekaAxis::Depth ? TOptional<EVekaAxis>() : TOptional<EVekaAxis>(Axis);
+}
+
+void FVekaStack::ComputeLinearSizes(const FVekaProposal& Proposal, TConstArrayView<FVekaLayoutChild> Children, TArray<FVector2D>& OutSizes) const
+{
+	const int32 Num = Children.Num();
+	OutSizes.SetNumZeroed(Num);
+	if (Num == 0)
+	{
+		return;
+	}
+
+	const EVekaAxis Cross = Veka::CrossAxis(Axis);
+	const double TotalSpacing = Spacing * (Num - 1);
+	const TOptional<double> MainProposal = Proposal.Get(Axis);
+
+	auto MakeChildProposal = [&](TOptional<double> Main)
+	{
+		FVekaProposal ChildProposal;
+		ChildProposal.Set(Axis, Main);
+		ChildProposal.Set(Cross, Proposal.Get(Cross));
+		return ChildProposal;
+	};
+
+	// Ideal size along the axis (ScrollView content, nested ideal measurement).
+	if (!MainProposal.IsSet())
+	{
+		for (int32 Index = 0; Index < Num; ++Index)
+		{
+			OutSizes[Index] = Children[Index].SizeThatFits(MakeChildProposal(TOptional<double>()));
+		}
+		return;
+	}
+
+	// SwiftUI distribution: children are served by layout priority (highest first). A priority group may
+	// use everything except the minimum size of the lower-priority children. Inside a group, the least
+	// flexible children go first and each is offered an equal share of what is left. Spacers come last and
+	// only keep back their minimum length: a label next to a Spacer is not cut in half.
+	struct FEntry
+	{
+		int32 Index;
+		double Priority;
+		double MinMain;
+		double Flexibility;
+		bool bSpacer;
+	};
+	TArray<FEntry> Entries;
+	Entries.Reserve(Num);
+	for (int32 Index = 0; Index < Num; ++Index)
+	{
+		const double MinMain = Veka::AxisValue(Children[Index].SizeThatFits(MakeChildProposal(0.0)), Axis);
+		const double MaxMain = Veka::AxisValue(Children[Index].SizeThatFits(MakeChildProposal(Veka::Infinity)), Axis);
+		const bool bSpacer = Children[Index].GetNode().GetPrimitiveAs<FVekaSpacer>() != nullptr;
+		Entries.Add({ Index, Children[Index].GetLayoutPriority(), MinMain, MaxMain - MinMain, bSpacer });
+	}
+	Entries.StableSort([](const FEntry& A, const FEntry& B)
+	{
+		if (A.Priority != B.Priority)
+		{
+			return A.Priority > B.Priority;
+		}
+		if (A.bSpacer != B.bSpacer)
+		{
+			return !A.bSpacer;
+		}
+		return A.Flexibility < B.Flexibility;
+	});
+
+	double Remaining = FMath::Max(0.0, MainProposal.GetValue() - TotalSpacing);
+
+	// Room for everyone: each child gets its ideal size and the expanding ones (spacers, sliders, fields, infinite
+	// frames) share what is left. Equal shares only when space is short (they squeezed a label next to a shorter
+	// one although the row had room: the color panel's "Grayscale" wrapped).
+	bool bSamePriority = true;
+	for (const FEntry& Entry : Entries)
+	{
+		bSamePriority &= Entry.Priority == Entries[0].Priority;
+	}
+	if (bSamePriority)
+	{
+		TArray<double> Ideal;
+		TArray<bool> Expanding;
+		Ideal.SetNumZeroed(Entries.Num());
+		Expanding.SetNumZeroed(Entries.Num());
+		double Needed = 0.0;
+		for (int32 Position = 0; Position < Entries.Num(); ++Position)
+		{
+			const FEntry& Entry = Entries[Position];
+			Expanding[Position] = Entry.bSpacer || Entry.MinMain + Entry.Flexibility >= Veka::Infinity * 0.5;
+			if (Expanding[Position])
+			{
+				Needed += Entry.MinMain;
+			}
+			else
+			{
+				Ideal[Position] = Veka::AxisValue(Children[Entry.Index].SizeThatFits(MakeChildProposal(TOptional<double>())), Axis);
+				Needed += Ideal[Position];
+			}
+		}
+		if (Needed <= Remaining + 0.5)
+		{
+			double Left = Remaining;
+			for (int32 Position = 0; Position < Entries.Num(); ++Position)
+			{
+				if (!Expanding[Position])
+				{
+					const FVector2D Size = Children[Entries[Position].Index].SizeThatFits(MakeChildProposal(Ideal[Position]));
+					OutSizes[Entries[Position].Index] = Size;
+					Left = FMath::Max(0.0, Left - Veka::AxisValue(Size, Axis));
+				}
+			}
+			for (int32 Position = 0; Position < Entries.Num(); ++Position)
+			{
+				if (!Expanding[Position])
+				{
+					continue;
+				}
+				// Expanding views first (sorted before spacers), each keeping back the spacers' minimum lengths.
+				int32 Others = 0;
+				double SpacerMinimum = 0.0;
+				for (int32 Next = Position; Next < Entries.Num(); ++Next)
+				{
+					if (!Expanding[Next])
+					{
+						continue;
+					}
+					if (Entries[Next].bSpacer)
+					{
+						SpacerMinimum += Entries[Next].MinMain;
+						++Others;
+					}
+					else
+					{
+						++Others;
+					}
+				}
+				double Share = Left / FMath::Max(Others, 1);
+				if (!Entries[Position].bSpacer)
+				{
+					int32 Views = 0;
+					for (int32 Next = Position; Next < Entries.Num(); ++Next)
+					{
+						Views += Expanding[Next] && !Entries[Next].bSpacer ? 1 : 0;
+					}
+					Share = FMath::Max(0.0, (Left - SpacerMinimum) / FMath::Max(Views, 1));
+				}
+				const FVector2D Size = Children[Entries[Position].Index].SizeThatFits(MakeChildProposal(Share));
+				OutSizes[Entries[Position].Index] = Size;
+				Left = FMath::Max(0.0, Left - Veka::AxisValue(Size, Axis));
+			}
+			return;
+		}
+	}
+
+	int32 GroupStart = 0;
+	while (GroupStart < Entries.Num())
+	{
+		int32 GroupEnd = GroupStart;
+		while (GroupEnd < Entries.Num() && Entries[GroupEnd].Priority == Entries[GroupStart].Priority)
+		{
+			++GroupEnd;
+		}
+
+		double LowerMinimum = 0.0;
+		for (int32 Lower = GroupEnd; Lower < Entries.Num(); ++Lower)
+		{
+			LowerMinimum += Entries[Lower].MinMain;
+		}
+
+		double GroupAvailable = FMath::Max(0.0, Remaining - LowerMinimum);
+		int32 Left = GroupEnd - GroupStart;
+		for (int32 Position = GroupStart; Position < GroupEnd; ++Position)
+		{
+			const FEntry& Entry = Entries[Position];
+			double Share = FMath::Max(0.0, GroupAvailable / Left);
+			if (!Entry.bSpacer)
+			{
+				int32 OthersLeft = 0;
+				double SpacerMinimum = 0.0;
+				for (int32 Next = Position; Next < GroupEnd; ++Next)
+				{
+					if (Entries[Next].bSpacer)
+					{
+						SpacerMinimum += Entries[Next].MinMain;
+					}
+					else
+					{
+						++OthersLeft;
+					}
+				}
+				Share = FMath::Max(0.0, (GroupAvailable - SpacerMinimum) / FMath::Max(OthersLeft, 1));
+			}
+			const FVector2D Size = Children[Entry.Index].SizeThatFits(MakeChildProposal(Share));
+			OutSizes[Entry.Index] = Size;
+			const double Used = Veka::AxisValue(Size, Axis);
+			GroupAvailable = FMath::Max(0.0, GroupAvailable - Used);
+			Remaining = FMath::Max(0.0, Remaining - Used);
+			--Left;
+		}
+		GroupStart = GroupEnd;
+	}
+}
+
+FVector2D FVekaStack::SizeThatFits(const FVekaProposal& Proposal, FVekaLayoutContext& Context, TConstArrayView<FVekaLayoutChild> Children) const
+{
+	if (Children.IsEmpty())
+	{
+		return FVector2D::ZeroVector;
+	}
+
+	if (Axis == EVekaAxis::Depth)
+	{
+		FVector2D Size = FVector2D::ZeroVector;
+		for (const FVekaLayoutChild& Child : Children)
+		{
+			Size = Size.ComponentMax(Child.SizeThatFits(Proposal));
+		}
+		return Size;
+	}
+
+	TArray<FVector2D> Sizes;
+	ComputeLinearSizes(Proposal, Children, Sizes);
+
+	double Main = Spacing * (Children.Num() - 1);
+	double CrossSize = 0.0;
+	for (const FVector2D& Size : Sizes)
+	{
+		Main += Veka::AxisValue(Size, Axis);
+		CrossSize = FMath::Max(CrossSize, Veka::CrossValue(Size, Axis));
+	}
+	return Veka::MakeAxisVector(Axis, Main, CrossSize);
+}
+
+void FVekaStack::PlaceChildren(const FVekaRect& Bounds, FVekaLayoutContext& Context, TConstArrayView<FVekaLayoutChild> Children) const
+{
+	if (Children.IsEmpty())
+	{
+		return;
+	}
+
+	const FVekaProposal Proposal = FVekaProposal::FromSize(Bounds.Size);
+
+	if (Axis == EVekaAxis::Depth)
+	{
+		for (const FVekaLayoutChild& Child : Children)
+		{
+			const FVector2D Size = Child.SizeThatFits(Proposal);
+			Child.Place(FVekaRect(Bounds.Position + Alignment.Offset(Bounds.Size, Size), Size));
+		}
+		return;
+	}
+
+	// Same distribution as when this stack was measured (re-running it with the final size would give other
+	// shares and squeeze some children). Falls back to the final size when that measurement is gone.
+	FVekaProposal DistributionProposal = Proposal;
+	if (const TOptional<FVekaProposal> Measured = Context.Node.FindContentProposal(Bounds.Size))
+	{
+		// Both axes as measured: children get exactly the proposals that produced this size.
+		DistributionProposal = Measured.GetValue();
+	}
+	TArray<FVector2D> Sizes;
+	ComputeLinearSizes(DistributionProposal, Children, Sizes);
+
+	const double CrossContainer = Veka::CrossValue(Bounds.Size, Axis);
+	double Cursor = 0.0;
+	for (int32 Index = 0; Index < Children.Num(); ++Index)
+	{
+		const FVector2D& Size = Sizes[Index];
+		const double CrossSize = Veka::CrossValue(Size, Axis);
+		const double CrossOffset = Axis == EVekaAxis::Horizontal
+			? FVekaAlignment::AlignV(Alignment.Vertical, CrossContainer, CrossSize)
+			: FVekaAlignment::AlignH(Alignment.Horizontal, CrossContainer, CrossSize);
+
+		const FVector2D Position = Bounds.Position + Veka::MakeAxisVector(Axis, Cursor, CrossOffset);
+		Children[Index].Place(FVekaRect(Position, Size));
+		Cursor += Veka::AxisValue(Size, Axis) + Spacing;
+	}
+}
+
+FVector2D FVekaSpacer::SizeThatFits(const FVekaProposal& Proposal, FVekaLayoutContext& Context, TConstArrayView<FVekaLayoutChild> Children) const
+{
+	if (!Context.ParentStackAxis.IsSet())
+	{
+		// Outside a stack: flexible in both directions, MinLength when nothing is proposed.
+		return Proposal.ReplaceUnspecified(FVector2D(MinLength, MinLength)).ComponentMax(FVector2D(MinLength, MinLength));
+	}
+
+	const EVekaAxis StackAxis = Context.ParentStackAxis.GetValue();
+	const TOptional<double> Main = Proposal.Get(StackAxis);
+	const double Length = FMath::Max<double>(MinLength, Main.Get(MinLength));
+	return Veka::MakeAxisVector(StackAxis, Length, 0.0);
+}

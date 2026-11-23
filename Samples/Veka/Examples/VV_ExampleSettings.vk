@@ -1,0 +1,22 @@
+view VV_ExampleSettings {
+    @State var wifi: Bool = true
+    @State var bluetooth: Bool = false
+    @State var volume: Float = 0.6
+
+    // A settings panel: toggles and a slider in a card.
+    VStack(spacing: 14, alignment: .Leading) {
+        Text("Settings")
+            .font(.Title2)
+        Toggle("Wi-Fi", isOn: wifi)
+        Toggle("Bluetooth", isOn: bluetooth)
+        Divider
+        HStack(spacing: 10) {
+            Symbol(#"speaker")
+            Slider(value: volume)
+            Symbol(#"speaker.wave.3")
+        }
+    }
+    .padding(20)
+    .frame(width: 320)
+    .background(.WindowBackground, radius: 16)
+}
