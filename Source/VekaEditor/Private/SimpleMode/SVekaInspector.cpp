@@ -653,7 +653,7 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 			.MinSliderValue(0.0)
 			.MaxSliderValue(Owner == TEXT("opacity") || Owner == TEXT("ProgressView") || Owner == TEXT("Slider") ? 1.0 : 400.0)
 			.Value(Expr ? TOptional<double>(Value.AsFloat()) : TOptional<double>())
-			.UndeterminedString(LOCTEXT("Unset", "default"))
+			.UndeterminedString(LOCTEXT("Unset", "Auto"))
 			.OnValueCommitted_Lambda([this, Node, Modifier, Name, bWasFloat](double NewValue, ETextCommit::Type)
 			{
 				const bool bInt = !bWasFloat && FMath::IsNearlyEqual(NewValue, FMath::RoundToDouble(NewValue));
@@ -686,7 +686,7 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 		{
 			return Look::Segmented(Labels, Icons, Labels, Current, Pick);
 		}
-		return MakeChoice(Labels.IsValidIndex(Current) ? Labels[Current] : LOCTEXT("Unset", "default"), Labels, Pick);
+		return MakeChoice(Labels.IsValidIndex(Current) ? Labels[Current] : LOCTEXT("Unset", "Auto"), Labels, Pick);
 	}
 	case EVekaArgumentKind::Paint:
 	{
@@ -734,7 +734,7 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.f)
 			[
-				MakeChoice(Expr ? FText::FromString(Veka::Lang::PrintExpression(*Document, ExprIndex)) : LOCTEXT("Unset", "default"), Labels,
+				MakeChoice(Expr ? FText::FromString(Veka::Lang::PrintExpression(*Document, ExprIndex)) : LOCTEXT("Unset", "Auto"), Labels,
 					[this, Node, Modifier, Name, Tokens](int32 Index) { ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Tokens[Index])); }, &Swatches)
 			];
 	}
@@ -806,14 +806,14 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 					})
 					.ButtonContent()
 					[
-						SNew(STextBlock).Text(Expr ? FText::FromString(Value.StringValue) : LOCTEXT("Unset", "default"))
+						SNew(STextBlock).Text(Expr ? FText::FromString(Value.StringValue) : LOCTEXT("Unset", "Auto"))
 					]
 				];
 		}
 		if (Owner == TEXT("transition"))
 		{
 			const TArray<FString> Kinds = { TEXT("opacity"), TEXT("scale"), TEXT("slide"), TEXT("move"), TEXT("blur") };
-			return MakeChoice(Expr ? FText::FromString(TEXT(".") + Value.StringValue) : LOCTEXT("Unset", "default"),
+			return MakeChoice(Expr ? FText::FromString(TEXT(".") + Value.StringValue) : LOCTEXT("Unset", "Auto"),
 				{ FText::FromString(TEXT(".opacity")), FText::FromString(TEXT(".scale")), FText::FromString(TEXT(".slide")), FText::FromString(TEXT(".move")), FText::FromString(TEXT(".blur")) },
 				[this, Node, Modifier, Name, Kinds](int32 Index) { ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Kinds[Index])); });
 		}
