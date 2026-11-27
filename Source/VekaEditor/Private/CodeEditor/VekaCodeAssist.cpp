@@ -19,9 +19,17 @@ namespace
 
 	const TSet<FString>& Keywords()
 	{
-		static const TSet<FString> Set = { TEXT("view"), TEXT("var"), TEXT("if"), TEXT("else"), TEXT("in"), TEXT("true"), TEXT("false"), TEXT("nil"), TEXT("emit"),
-			TEXT("withAnimation"), TEXT("action"), TEXT("model"), TEXT("ForEach"), TEXT("Slot"), TEXT("default"), TEXT("format"), TEXT("rgba"), TEXT("vec2"), TEXT("min"),
-			TEXT("max"), TEXT("toggle"), TEXT("track") };
+		static const TSet<FString> Set = []
+		{
+			TSet<FString> Words = { TEXT("view"), TEXT("var"), TEXT("if"), TEXT("else"), TEXT("in"), TEXT("true"), TEXT("false"), TEXT("nil"), TEXT("emit"),
+				TEXT("withAnimation"), TEXT("action"), TEXT("model"), TEXT("ForEach"), TEXT("Slot"), TEXT("default"), TEXT("format"), TEXT("rgba"), TEXT("vec2"), TEXT("min"),
+				TEXT("max"), TEXT("toggle"), TEXT("track"), TEXT("let"), TEXT("time"), TEXT("pi") };
+			for (const FVekaCatalogFunction& Function : Veka::Catalog::Functions())
+			{
+				Words.Add(Function.Name.ToString());
+			}
+			return Words;
+		}();
 		return Set;
 	}
 
@@ -230,6 +238,12 @@ namespace
 		for (const FVekaDocumentTimeline& Timeline : Sources.Document->Timelines)
 		{
 			AddItem(Items, Timeline.Name.ToString(), Timeline.Name.ToString() + TEXT("."), TEXT("timeline"), EVekaCompletionKind::Variable);
+		}
+		AddItem(Items, TEXT("time"), TEXT("time"), TEXT("seconds since the view appeared"), EVekaCompletionKind::Variable);
+		AddItem(Items, TEXT("pi"), TEXT("pi"), TEXT("3.14159..."), EVekaCompletionKind::Variable);
+		for (const FVekaCatalogFunction& Function : Veka::Catalog::Functions())
+		{
+			AddItem(Items, Function.Name.ToString(), Function.Name.ToString() + TEXT("("), Function.Signature, EVekaCompletionKind::Variable);
 		}
 	}
 
@@ -607,7 +621,7 @@ namespace Veka::Editor
 		{
 			AddItem(Out.Items, View.ToString(), View.ToString() + TEXT("("), TEXT("view of the project"), EVekaCompletionKind::Component);
 		}
-		const TCHAR* Statements[] = { TEXT("if"), TEXT("else"), TEXT("ForEach"), TEXT("Slot"), TEXT("emit"), TEXT("withAnimation") };
+		const TCHAR* Statements[] = { TEXT("if"), TEXT("else"), TEXT("ForEach"), TEXT("let"), TEXT("Slot"), TEXT("emit"), TEXT("withAnimation") };
 		for (const TCHAR* Keyword : Statements)
 		{
 			AddItem(Out.Items, Keyword, Keyword, TEXT("keyword"), EVekaCompletionKind::Keyword);

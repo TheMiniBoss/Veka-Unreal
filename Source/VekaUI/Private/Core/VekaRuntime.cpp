@@ -18,9 +18,14 @@ namespace
 		FVekaElement Element;
 	};
 
-	/** Assigns sibling keys and flattens fragments. Slot index is part of the key so If() keeps identity. */
-	void FlattenChildren(const TArray<FVekaElement>& Elements, const FString& Prefix, TArray<FKeyedElement>& Out, TSet<FName>& UsedKeys)
+	/**
+	 * Assigns sibling keys and flattens fragments. Slot index is part of the key so If() keeps identity. Keys are the
+	 * id (or a position name) with a number hashed from the fragments it sits in: no string work per element, which
+	 * matters when a view is re-evaluated every frame. Prefix 0 = directly in the parent.
+	 */
+	void FlattenChildren(const TArray<FVekaElement>& Elements, uint32 Prefix, TArray<FKeyedElement>& Out, TSet<FName>& UsedKeys)
 	{
+		static const FName PositionName(TEXT("#"));
 		for (int32 Index = 0; Index < Elements.Num(); ++Index)
 		{
 			const FVekaElement& Element = Elements[Index];
@@ -30,20 +35,27 @@ namespace
 			}
 
 			const FName Id = Element.GetId();
-			const FString Base = Id.IsNone() ? FString::Printf(TEXT("#%d"), Index) : Id.ToString();
-			const FString KeyString = Prefix.IsEmpty() ? Base : Prefix + TEXT("/") + Base;
-
+			const uint32 Part = Id.IsNone() ? HashCombineFast(0x9E3779B9u, static_cast<uint32>(Index)) : GetTypeHash(Id);
 			if (Element.GetKind() == EVekaElementKind::Fragment)
 			{
-				FlattenChildren(Element.GetChildren(), KeyString, Out, UsedKeys);
+				const uint32 Inner = Prefix == 0 ? Part : HashCombineFast(Prefix, Part);
+				FlattenChildren(Element.GetChildren(), Inner == 0 ? 1u : Inner, Out, UsedKeys);
 				continue;
 			}
 
-			FName Key(*KeyString);
+			FName Key;
+			if (Prefix == 0)
+			{
+				Key = Id.IsNone() ? FName(PositionName, Index + 1) : Id;
+			}
+			else
+			{
+				Key = FName(Id.IsNone() ? PositionName : Id, static_cast<int32>(HashCombineFast(Prefix, Part) & 0x7FFFFFFF));
+			}
 			if (UsedKeys.Contains(Key))
 			{
-				UE_LOG(LogVekaUI, Warning, TEXT("Duplicate Veka id '%s' among siblings; identity falls back to position."), *KeyString);
-				Key = FName(*FString::Printf(TEXT("%s~%d"), *KeyString, Index));
+				UE_LOG(LogVekaUI, Warning, TEXT("Duplicate Veka id '%s' among siblings; identity falls back to position."), *Key.ToString());
+				Key = FName(PositionName, static_cast<int32>(HashCombineFast(GetTypeHash(Key), static_cast<uint32>(Index) + 0x40000000u) & 0x7FFFFFFF));
 			}
 			UsedKeys.Add(Key);
 			Out.Add({ Key, Element });
@@ -269,18 +281,19 @@ void FVekaRuntime::EvaluateNode(FVekaNode& Node, bool bDescriptionChanged)
 	const bool bChildrenChanged = ReconcileChildren(Node, ChildElements);
 	Node.bBuilt = true;
 
+	// Nothing changed (same description, same children): the widget is already in sync.
 	if (bDescriptionChanged || bChildrenChanged)
 	{
 		Node.InvalidateLayout();
+		Node.SyncWidget();
 	}
-	Node.SyncWidget();
 }
 
 bool FVekaRuntime::ReconcileChildren(FVekaNode& Node, const TArray<FVekaElement>& Elements)
 {
 	TArray<FKeyedElement> Keyed;
 	TSet<FName> UsedKeys;
-	FlattenChildren(Elements, FString(), Keyed, UsedKeys);
+	FlattenChildren(Elements, 0u, Keyed, UsedKeys);
 
 	TMap<FName, TSharedPtr<FVekaNode>> OldByKey;
 	OldByKey.Reserve(Node.Children.Num());

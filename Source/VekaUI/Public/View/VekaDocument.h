@@ -53,7 +53,11 @@ enum class EVekaExprKind : uint8
 	/** Field Name of operand 0 (`item.name`). */
 	Member,
 	/** Track values of the timeline Name now, as a struct (`Intro.fade` = Member of it). */
-	Timeline
+	Timeline,
+	/** Built-in function Name called with the operands (`sin(x)`, `random(seed)`, `clamp(x, 0, 1)`...). */
+	Call,
+	/** `time`: seconds since the view appeared; a view that reads it is re-evaluated every frame. */
+	Time
 };
 
 UENUM(BlueprintType)
@@ -188,7 +192,9 @@ enum class EVekaAstNodeKind : uint8
 	/** Expr is a count or an array; Children repeated with LoopVariable = the item (or the index) and IndexVariable = the index. */
 	ForEach,
 	/** Inside a component: the content the caller gave for slot Type (None = the default slot). */
-	Slot
+	Slot,
+	/** `let LoopVariable = Expr`: a named value for the following views of the block (draws nothing). */
+	Let
 };
 
 USTRUCT(BlueprintType)

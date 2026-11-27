@@ -1,7 +1,7 @@
 view VV_ExampleBirthdayCard {
     @State var shown: Bool = true
 
-    // The iOS 27 birthday card: small fireworks burst inside a frosted card; the glass button drops the card in and out.
+    // The iOS 27 birthday card: small fireworks burst inside a frosted card (all in Veka: time, let, random, sin, cos, hsv); the glass button drops the card in and out.
     ZStack {
         // Wallpaper: violet folds on a dark night, blurred.
         Rectangle(fill: #0D0C20)
@@ -35,7 +35,35 @@ view VV_ExampleBirthdayCard {
                         Spacer
                     }
                     .padding(horizontal: 16)
-                    Fireworks(rate: 1.8, particles: 48, radius: 24, size: 2)
+                    // Four bursts, each relaunched at a new random place and color every cycle.
+                    ZStack {
+                        ForEach(4) { k in
+                            let period = 1.7 + k * 0.37
+                            let cycle = (time + k * 0.61) / period
+                            let seed = k * 1000 + floor(cycle) + 1
+                            let t = fract(cycle) * period
+                            let x = random(seed, -85, 85)
+                            let y = random(seed + 0.5, -20, 14)
+                            let hue = random(seed + 0.25, 0, 360)
+                            // The flash where it bursts.
+                            Circle(fill: #FFFFFF)
+                                .frame(width: 8, height: 8)
+                                .scale(0.4 + t * 5)
+                                .opacity(clamp(1 - t * 5, 0, 1))
+                                .offset(x: x, y: y)
+                            // The sparks: they fly out fast, hang, twinkle, fall a little and fade.
+                            ForEach(36) { i in
+                                let angle = (i + random(seed * 41 + i)) * 2 * pi / 36
+                                let reach = 24 * sqrt(random(seed * 43 + i, 0.12, 1)) * (1 - pow(1 - clamp(t / 0.95, 0, 1), 3))
+                                let twinkle = t > 0.8 ? 0.6 + 0.4 * sin(t * 30 + i) : 1
+                                Circle(fill: hsv(random(seed * 47 + i) < 0.72 ? hue : hue + 40, clamp(t / 0.3, 0, 1) * 0.65, 1))
+                                    .frame(width: 2.4, height: 2.4)
+                                    .scale(1 - 0.2 * t)
+                                    .opacity((1 - smoothstep(0.75, 1.7, t)) * twinkle)
+                                    .offset(x: x + cos(angle) * reach, y: y + sin(angle) * reach + 7 * t * t)
+                            }
+                        }
+                    }
                 }
                 .frame(width: 226, height: 76)
                 .frostedGlass(blur: 24, cornerRadius: 20, tint: #FFFFFF14)

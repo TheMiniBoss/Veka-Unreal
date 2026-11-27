@@ -374,6 +374,11 @@ namespace
 			{
 				Line(Indent, TEXT("// ") + Comment);
 			}
+			if (N.Kind == EVekaAstNodeKind::Let)
+			{
+				Line(Indent, TEXT("let ") + N.LoopVariable.ToString() + TEXT(" = ") + Expression(N.Expr));
+				return;
+			}
 			switch (N.Kind)
 			{
 			case EVekaAstNodeKind::If:
@@ -602,6 +607,20 @@ namespace
 			case EVekaExprKind::Local: return E.Name.ToString();
 			case EVekaExprKind::Model: return TEXT("model.") + E.Name.ToString();
 			case EVekaExprKind::Timeline: return E.Name.ToString();
+			case EVekaExprKind::Time: return TEXT("time");
+			case EVekaExprKind::Call:
+			{
+				if (E.Operands.IsEmpty() && E.Name == TEXT("pi"))
+				{
+					return TEXT("pi");
+				}
+				TArray<FString> Arguments;
+				for (const int32 Item : E.Operands)
+				{
+					Arguments.Add(Expression(Item));
+				}
+				return E.Name.ToString() + TEXT("(") + FString::Join(Arguments, TEXT(", ")) + TEXT(")");
+			}
 			case EVekaExprKind::Member: return Wrapped(Operand(0), 10) + TEXT(".") + E.Name.ToString();
 			case EVekaExprKind::Unary:
 			{

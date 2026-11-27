@@ -17,6 +17,11 @@
 #include "Types/PaintArgs.h"
 #include "View/VekaViewAsset.h"
 #include "VekaLanguage.h"
+#include "Core/VekaRuntime.h"
+#include "Slate/WidgetRenderer.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "TextureResource.h"
+#include "Misc/ScopeExit.h"
 
 namespace
 {
@@ -129,6 +134,69 @@ bool FVekaHubLearnTest::RunTest(const FString& Parameters)
 	const int32 Index4d = Changelog.IndexOfByPredicate([](const FChangelogRelease& Release) { return Release.Title.StartsWith(TEXT("4d")); });
 	TestTrue(TEXT("newest first (4e before 4d)"), Index4e != INDEX_NONE && Index4d != INDEX_NONE && Index4e < Index4d);
 	TestTrue(TEXT("the newest release has entries"), Changelog.Num() > 0 && Changelog[0].Entries.Num() >= 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaFireworksInVekaTest, "VekaUI.Editor.FireworksInVeka", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaFireworksInVekaTest::RunTest(const FString& Parameters)
+{
+	// The birthday card's fireworks are written in .vk only (time, let, random, sin, cos, hsv): colored sparks show up
+	// on the card as time passes, at a cost logged per frame ("VekaUI perf:").
+	const TArray<Veka::Editor::Hub::FExample> Examples = Veka::Editor::Hub::GetExamples();
+	const Veka::Editor::Hub::FExample* Card = Examples.FindByPredicate([](const Veka::Editor::Hub::FExample& Example) { return Example.Name == TEXT("VV_ExampleBirthdayCard"); });
+	if (!TestNotNull(TEXT("birthday card example"), Card))
+	{
+		return false;
+	}
+	TestFalse(TEXT("no C++ fireworks component"), Card->Source.Contains(TEXT("Fireworks(")));
+	const FVekaParseResult Parsed = Veka::Lang::Parse(Card->Source);
+	if (!TestFalse(TEXT("parses"), Parsed.HasErrors()))
+	{
+		return false;
+	}
+	const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+	Host->SetRoot(Veka::Interpreter::MakeView(Parsed.Document, MakeShared<FVekaViewStore>()));
+	const FIntPoint Size(250, 290);
+	UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(FVector2D(Size), TF_Nearest, false);
+	Target->AddToRoot();
+	ON_SCOPE_EXIT { Target->RemoveFromRoot(); };
+	FWidgetRenderer Renderer(false, true);
+	Renderer.DrawWidget(Target, Host, FVector2D(Size), 0.f);
+	const TSharedRef<FVekaRuntime> Runtime = Host->GetRuntime();
+
+	// Sparks: bright and saturated pixels in the card (white text is not saturated, the wallpaper is dark).
+	int32 BestSparks = 0;
+	double TickTotal = 0.0;
+	int32 Ticks = 0;
+	for (int32 Step = 0; Step < 8; ++Step)
+	{
+		for (int32 Frame = 0; Frame < 15; ++Frame)
+		{
+			const double Start = FPlatformTime::Seconds();
+			Runtime->Tick(1.0 / 60.0);
+			TickTotal += FPlatformTime::Seconds() - Start;
+			++Ticks;
+		}
+		Renderer.DrawWidget(Target, Host, FVector2D(Size), 0.25f);
+		TArray<FColor> Pixels;
+		Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels);
+		int32 Sparks = 0;
+		for (int32 Y = 16; Y < 92 && Pixels.Num() == Size.X * Size.Y; ++Y)
+		{
+			for (int32 X = 12; X < 238; ++X)
+			{
+				const FLinearColor Hsv = FLinearColor(Pixels[Y * Size.X + X]).LinearRGBToHSV();
+				Sparks += Hsv.B > 0.55f && Hsv.G > 0.3f ? 1 : 0;
+			}
+		}
+		BestSparks = FMath::Max(BestSparks, Sparks);
+	}
+	const double Ms = TickTotal * 1000.0 / FMath::Max(1, Ticks);
+	UE_LOG(LogTemp, Display, TEXT("VekaUI perf: fireworks in .vk (~150 nodes re-evaluated): %.3f ms per frame, %d spark pixels at best"), Ms, BestSparks);
+	TestTrue(FString::Printf(TEXT("colored sparks on the card (%d pixels)"), BestSparks), BestSparks > 15);
+	// Measured 2.3 ms (6.6 before the interpreter and reconciler optimizations): a guard against regressions, not a budget.
+	TestTrue(FString::Printf(TEXT("re-evaluated every frame under 4 ms (%.3f ms)"), Ms), Ms < 4.0);
+	TestTrue(TEXT("the view keeps evaluating (time)"), Runtime->HasPendingWork());
 	return true;
 }
 

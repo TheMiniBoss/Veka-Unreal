@@ -2,6 +2,7 @@
 
 #include "View/VekaViewAsset.h"
 #include "View/VekaDocument.h"
+#include "View/VekaCatalog.h"
 #include "View/VekaComponentLibrary.h"
 #include "Modifiers/VekaEffectModifiers.h"
 #include "Modifiers/VekaColoraModifiers.h"
@@ -195,6 +196,9 @@ void FVekaViewStore::Invalidate()
 
 // --- Interpreter ---------------------------------------------------------------------------------------------
 
+/** A name literal compared or looked up often: made once, then compared as an integer. */
+#define VEKA_FNAME(Literal) ([]() -> const FName& { static const FName Cached(TEXT(Literal)); return Cached; }())
+
 namespace
 {
 	using namespace Veka;
@@ -294,6 +298,8 @@ namespace
 		const void* Origin = nullptr;
 		/** Players of the document's timelines (SetupTimelines). */
 		TMap<FName, FVekaTimelineHandle> Timelines;
+		/** `time`: a timeline that never stops (only when the document reads it): the view re-evaluates every frame. */
+		TOptional<FVekaTimelineHandle> Clock;
 
 		/**
 		 * Players of the document's timelines, kept by the view node: cues become events that run their actions, autoplay
@@ -301,6 +307,18 @@ namespace
 		 */
 		void SetupTimelines(FVekaContext& Ctx)
 		{
+			if (Document.Expressions.ContainsByPredicate([](const FVekaAstExpr& Expr) { return Expr.Kind == EVekaExprKind::Time; }))
+			{
+				// An hour that loops (float time stays precise); playing, it re-evaluates the view every frame.
+				FVekaTimelineData Data;
+				Data.Length = 3600.f;
+				Data.bLoop = true;
+				Clock = Ctx.Timeline(TEXT("__clock"), Data);
+				if (Clock->GetPlayer().IsValid() && !Clock->GetPlayer()->IsPlaying())
+				{
+					Clock->Play();
+				}
+			}
 			for (const FVekaDocumentTimeline& Timeline : Document.Timelines)
 			{
 				FVekaTimelineData Data = Timeline.Data;
@@ -338,6 +356,144 @@ namespace
 			}
 		}
 
+		/** A number while evaluating, and whether it is an Int (same rules as Binary). */
+		struct FNumber
+		{
+			double Value = 0.0;
+			bool bInt = false;
+		};
+
+		/**
+		 * Numeric expressions without FVekaValue at each step (an animation evaluates hundreds every frame). False when the
+		 * expression is not purely numeric: Eval then takes the general path, with the same results.
+		 */
+		bool EvalNumber(int32 Index, FNumber& Out, int32 Depth = 0) const
+		{
+			if (!Document.Expressions.IsValidIndex(Index) || Depth > 64)
+			{
+				return false;
+			}
+			const FVekaAstExpr& Expr = Document.Expressions[Index];
+			auto Operand = [&](int32 Position, FNumber& Value)
+			{
+				return Expr.Operands.IsValidIndex(Position) && Expr.Operands[Position] != Index && EvalNumber(Expr.Operands[Position], Value, Depth + 1);
+			};
+			auto FromValue = [&Out](const FVekaValue* Value)
+			{
+				if (!Value || (Value->Type != EVekaValueType::Int && Value->Type != EVekaValueType::Float))
+				{
+					return false;
+				}
+				Out.bInt = Value->Type == EVekaValueType::Int;
+				Out.Value = Out.bInt ? static_cast<double>(Value->IntValue) : Value->FloatValue;
+				return true;
+			};
+			switch (Expr.Kind)
+			{
+			case EVekaExprKind::Literal: return FromValue(&Expr.Value);
+			case EVekaExprKind::Local: return FromValue(Locals.Find(Expr.Name));
+			case EVekaExprKind::Time:
+				Out = { Clock.IsSet() && Clock->GetPlayer().IsValid() ? Clock->GetPlayer()->GetTime() : 0.0, false };
+				return true;
+			case EVekaExprKind::Unary:
+			{
+				FNumber A;
+				if (Expr.Op != EVekaExprOp::Negate || !Operand(0, A))
+				{
+					return false;
+				}
+				Out = { -A.Value, A.bInt };
+				return true;
+			}
+			case EVekaExprKind::Call:
+			{
+				if (Expr.Name == VEKA_FNAME("pi"))
+				{
+					Out = { UE_DOUBLE_PI, false };
+					return true;
+				}
+				const FVekaCatalogFunction* Function = Veka::Catalog::FindFunction(Expr.Name);
+				if (!Function || Function->bColor)
+				{
+					return false;
+				}
+				TArray<double, TInlineAllocator<4>> Arguments;
+				for (int32 Position = 0; Position < Expr.Operands.Num(); ++Position)
+				{
+					FNumber Argument;
+					if (!Operand(Position, Argument))
+					{
+						return false;
+					}
+					Arguments.Add(Argument.Value);
+				}
+				Out = { Veka::Catalog::CallFunction(Expr.Name, Arguments), false };
+				return true;
+			}
+			case EVekaExprKind::Ternary:
+			{
+				bool bCondition = false;
+				FNumber Left;
+				FNumber Right;
+				const FVekaAstExpr* Condition = Expr.Operands.IsValidIndex(0) && Document.Expressions.IsValidIndex(Expr.Operands[0]) ? &Document.Expressions[Expr.Operands[0]] : nullptr;
+				if (Condition && Condition->Kind == EVekaExprKind::Binary && Condition->Operands.Num() == 2
+					&& EvalNumber(Condition->Operands[0], Left, Depth + 1) && EvalNumber(Condition->Operands[1], Right, Depth + 1))
+				{
+					switch (Condition->Op)
+					{
+					case EVekaExprOp::Less: bCondition = Left.Value < Right.Value; break;
+					case EVekaExprOp::LessEqual: bCondition = Left.Value <= Right.Value; break;
+					case EVekaExprOp::Greater: bCondition = Left.Value > Right.Value; break;
+					case EVekaExprOp::GreaterEqual: bCondition = Left.Value >= Right.Value; break;
+					default: return false;
+					}
+				}
+				else
+				{
+					return false;
+				}
+				return Operand(bCondition ? 1 : 2, Out);
+			}
+			case EVekaExprKind::Binary:
+			{
+				FNumber A;
+				FNumber B;
+				if (!Operand(0, A) || !Operand(1, B))
+				{
+					return false;
+				}
+				const bool bInts = A.bInt && B.bInt;
+				switch (Expr.Op)
+				{
+				case EVekaExprOp::Add: Out = { A.Value + B.Value, bInts }; return true;
+				case EVekaExprOp::Subtract: Out = { A.Value - B.Value, bInts }; return true;
+				case EVekaExprOp::Multiply: Out = { A.Value * B.Value, bInts }; return true;
+				case EVekaExprOp::Divide:
+					if (B.Value == 0.0)
+					{
+						Out = { 0.0, false };
+						return true;
+					}
+					Out = { A.Value / B.Value, bInts && static_cast<int64>(A.Value) % static_cast<int64>(B.Value) == 0 };
+					return true;
+				case EVekaExprOp::Modulo:
+					if (B.Value == 0.0)
+					{
+						Out = { 0.0, false };
+						return true;
+					}
+					Out = { bInts ? static_cast<double>(static_cast<int64>(A.Value) % static_cast<int64>(B.Value)) : FMath::Fmod(A.Value, B.Value), bInts };
+					return true;
+				case EVekaExprOp::Min: Out = { FMath::Min(A.Value, B.Value), bInts }; return true;
+				case EVekaExprOp::Max: Out = { FMath::Max(A.Value, B.Value), bInts }; return true;
+				default: return false;
+				}
+			}
+			default:
+				return false;
+			}
+		}
+
 		FVekaValue Eval(int32 Index) const
 		{
 			if (!Document.Expressions.IsValidIndex(Index))
@@ -345,6 +501,14 @@ namespace
 				return FVekaValue();
 			}
 			const FVekaAstExpr& Expr = Document.Expressions[Index];
+			if (Expr.Kind == EVekaExprKind::Binary || Expr.Kind == EVekaExprKind::Call || Expr.Kind == EVekaExprKind::Unary || Expr.Kind == EVekaExprKind::Ternary)
+			{
+				FNumber Number;
+				if (EvalNumber(Index, Number))
+				{
+					return Number.bInt ? FVekaValue::Int(static_cast<int64>(Number.Value)) : FVekaValue::Float(Number.Value);
+				}
+			}
 			auto Operand = [&](int32 Position) { return Expr.Operands.IsValidIndex(Position) && Expr.Operands[Position] != Index ? Eval(Expr.Operands[Position]) : FVekaValue(); };
 			switch (Expr.Kind)
 			{
@@ -384,6 +548,25 @@ namespace
 				}
 				return FVekaValue::Struct(MoveTemp(Fields));
 			}
+			case EVekaExprKind::Call:
+			{
+				if (Expr.Name == VEKA_FNAME("pi"))
+				{
+					return FVekaValue::Float(UE_DOUBLE_PI);
+				}
+				TArray<double, TInlineAllocator<4>> Arguments;
+				for (int32 Position = 0; Position < Expr.Operands.Num(); ++Position)
+				{
+					Arguments.Add(Operand(Position).AsFloat());
+				}
+				const FVekaCatalogFunction* Function = Veka::Catalog::FindFunction(Expr.Name);
+				if (Function && Function->bColor)
+				{
+					return FVekaValue::Color(Veka::Catalog::CallColorFunction(Expr.Name, Arguments));
+				}
+				return FVekaValue::Float(Veka::Catalog::CallFunction(Expr.Name, Arguments));
+			}
+			case EVekaExprKind::Time: return FVekaValue::Float(Clock.IsSet() && Clock->GetPlayer().IsValid() ? Clock->GetPlayer()->GetTime() : 0.0);
 			case EVekaExprKind::Unary:
 			{
 				const FVekaValue A = Operand(0);
@@ -486,7 +669,7 @@ namespace
 				// Ids keep the two branches apart (an insertion transition plays when the branch changes).
 				for (const int32 Child : bThen ? Node.Children : Node.ElseChildren)
 				{
-					Elements.Add(Build(Child, Depth + 1).Id(FName(*FString::Printf(TEXT("%s%d"), bThen ? TEXT("then") : TEXT("else"), Child))));
+					Elements.Add(Build(Child, Depth + 1).Id(FName(bThen ? VEKA_FNAME("then") : VEKA_FNAME("else"), Child + 1)));
 				}
 				return FVekaElement::MakeFragment(MoveTemp(Elements));
 			}
@@ -509,10 +692,16 @@ namespace
 					{
 						Body.Add(Build(Child, Depth + 1));
 					}
-					Elements.Add(FVekaElement::MakeFragment(MoveTemp(Body)).Id(FName(*FString::Printf(TEXT("item%lld"), Item))));
+					Elements.Add(FVekaElement::MakeFragment(MoveTemp(Body)).Id(FName(VEKA_FNAME("item"), static_cast<int32>(Item) + 1)));
 				}
 				Locals = SavedLocals;
 				return FVekaElement::MakeFragment(MoveTemp(Elements));
+			}
+			case EVekaAstNodeKind::Let:
+			{
+				// Seen by the next views of the block (the parser keeps the name to them).
+				Locals.Add(Node.LoopVariable, Eval(Node.Expr));
+				return FVekaElement::MakeFragment(TArray<FVekaElement>());
 			}
 			case EVekaAstNodeKind::Slot:
 			{
@@ -526,11 +715,11 @@ namespace
 			FVekaElement Element = Node.Component ? MakeComponent(Node, Depth) : MakeElement(Node, Depth);
 			for (const FVekaAstModifier& Modifier : Node.Modifiers)
 			{
-				if (Modifier.Name == TEXT("style"))
+				if (Modifier.Name == VEKA_FNAME("style"))
 				{
 					Element = ApplyStyle(MoveTemp(Element), Modifier);
 				}
-				else if (Modifier.Name != TEXT("on"))
+				else if (Modifier.Name != VEKA_FNAME("on"))
 				{
 					Element = ApplyModifier(MoveTemp(Element), Modifier);
 				}
@@ -653,110 +842,110 @@ namespace
 
 		FVekaElement Shape(FVekaElement Shape, const FVekaAstNode& Node) const
 		{
-			return HasArg(Node.Arguments, TEXT("fill")) ? MoveTemp(Shape).Fill(PaintFrom(Arg(Node.Arguments, TEXT("fill")))) : MoveTemp(Shape);
+			return HasArg(Node.Arguments, VEKA_FNAME("fill")) ? MoveTemp(Shape).Fill(PaintFrom(Arg(Node.Arguments, VEKA_FNAME("fill")))) : MoveTemp(Shape);
 		}
 
 		FVekaElement MakeElement(const FVekaAstNode& Node, int32 Depth)
 		{
 			const TArray<FVekaAstArgument>& A = Node.Arguments;
 			const FName Type = Node.Type;
-			auto Float = [&](const TCHAR* Name, float Default) { return HasArg(A, Name) ? static_cast<float>(Arg(A, Name).AsFloat()) : Default; };
+			auto Float = [&](FName Name, float Default) { return HasArg(A, Name) ? static_cast<float>(Arg(A, Name).AsFloat()) : Default; };
 			auto String = [&](const TCHAR* Name) { return Arg(A, Name).AsText(); };
 
-			if (Type == TEXT("VStack"))
+			if (Type == VEKA_FNAME("VStack"))
 			{
-				return VStack(Float(TEXT("spacing"), 8.f), EnumFrom(Arg(A, TEXT("alignment")), EVekaHAlign::Center)).Children(BuildChildren(Node, Depth));
+				return VStack(Float(VEKA_FNAME("spacing"), 8.f), EnumFrom(Arg(A, VEKA_FNAME("alignment")), EVekaHAlign::Center)).Children(BuildChildren(Node, Depth));
 			}
-			if (Type == TEXT("HStack"))
+			if (Type == VEKA_FNAME("HStack"))
 			{
-				return HStack(Float(TEXT("spacing"), 8.f), EnumFrom(Arg(A, TEXT("alignment")), EVekaVAlign::Center)).Children(BuildChildren(Node, Depth));
+				return HStack(Float(VEKA_FNAME("spacing"), 8.f), EnumFrom(Arg(A, VEKA_FNAME("alignment")), EVekaVAlign::Center)).Children(BuildChildren(Node, Depth));
 			}
-			if (Type == TEXT("ZStack"))
+			if (Type == VEKA_FNAME("ZStack"))
 			{
 				return ZStack().Children(BuildChildren(Node, Depth));
 			}
-			if (Type == TEXT("Text"))
+			if (Type == VEKA_FNAME("Text"))
 			{
 				return Text(String(TEXT("text")));
 			}
-			if (Type == TEXT("Symbol"))
+			if (Type == VEKA_FNAME("Symbol"))
 			{
-				return Symbol(FName(*Arg(A, TEXT("name")).AsString()), Float(TEXT("value"), -1.f));
+				return Symbol(FName(*Arg(A, VEKA_FNAME("name")).AsString()), Float(VEKA_FNAME("value"), -1.f));
 			}
-			if (Type == TEXT("Label"))
+			if (Type == VEKA_FNAME("Label"))
 			{
-				return Label(String(TEXT("title")), FName(*Arg(A, TEXT("symbol")).AsString()));
+				return Label(String(TEXT("title")), FName(*Arg(A, VEKA_FNAME("symbol")).AsString()));
 			}
-			if (Type == TEXT("Button"))
+			if (Type == VEKA_FNAME("Button"))
 			{
 				TFunction<void()> Action = MakeActions(Node.Actions);
-				const EVekaButtonRole Role = EnumFrom(Arg(A, TEXT("role")), EVekaButtonRole::Normal);
+				const EVekaButtonRole Role = EnumFrom(Arg(A, VEKA_FNAME("role")), EVekaButtonRole::Normal);
 				TArray<FVekaElement> Children = BuildChildren(Node, Depth);
 				if (!Children.IsEmpty())
 				{
 					return Button(Children[0], MoveTemp(Action), Role);
 				}
-				return HasArg(A, TEXT("symbol"))
-					? Button(String(TEXT("title")), FName(*Arg(A, TEXT("symbol")).AsString()), MoveTemp(Action), Role)
+				return HasArg(A, VEKA_FNAME("symbol"))
+					? Button(String(TEXT("title")), FName(*Arg(A, VEKA_FNAME("symbol")).AsString()), MoveTemp(Action), Role)
 					: Button(String(TEXT("title")), MoveTemp(Action), Role);
 			}
-			if (Type == TEXT("Toggle"))
+			if (Type == VEKA_FNAME("Toggle"))
 			{
 				return Toggle(String(TEXT("title")), Binding<bool>(BoundState(A, TEXT("isOn")), [](const FVekaValue& V) { return V.AsBool(); },
-					[](const bool& V) { return FVekaValue::Bool(V); }, Arg(A, TEXT("isOn")).AsBool()));
+					[](const bool& V) { return FVekaValue::Bool(V); }, Arg(A, VEKA_FNAME("isOn")).AsBool()));
 			}
-			if (Type == TEXT("Slider"))
+			if (Type == VEKA_FNAME("Slider"))
 			{
 				return Slider(Binding<float>(BoundState(A, TEXT("value")), [](const FVekaValue& V) { return static_cast<float>(V.AsFloat()); },
-					[](const float& V) { return FVekaValue::Float(V); }, static_cast<float>(Arg(A, TEXT("value")).AsFloat())),
-					Float(TEXT("min"), 0.f), Float(TEXT("max"), 1.f), Float(TEXT("step"), 0.f));
+					[](const float& V) { return FVekaValue::Float(V); }, static_cast<float>(Arg(A, VEKA_FNAME("value")).AsFloat())),
+					Float(VEKA_FNAME("min"), 0.f), Float(VEKA_FNAME("max"), 1.f), Float(VEKA_FNAME("step"), 0.f));
 			}
-			if (Type == TEXT("Stepper"))
+			if (Type == VEKA_FNAME("Stepper"))
 			{
 				const FName State = BoundState(A, TEXT("value"));
 				const bool bInt = Store->Get(State).Type == EVekaValueType::Int;
 				return Stepper(String(TEXT("title")), Binding<float>(State, [](const FVekaValue& V) { return static_cast<float>(V.AsFloat()); },
-					[bInt](const float& V) { return bInt ? FVekaValue::Int(FMath::RoundToInt64(V)) : FVekaValue::Float(V); }, static_cast<float>(Arg(A, TEXT("value")).AsFloat())),
-					Float(TEXT("min"), 0.f), Float(TEXT("max"), 10.f), Float(TEXT("step"), 1.f), static_cast<int32>(Float(TEXT("decimals"), 0.f)));
+					[bInt](const float& V) { return bInt ? FVekaValue::Int(FMath::RoundToInt64(V)) : FVekaValue::Float(V); }, static_cast<float>(Arg(A, VEKA_FNAME("value")).AsFloat())),
+					Float(VEKA_FNAME("min"), 0.f), Float(VEKA_FNAME("max"), 10.f), Float(VEKA_FNAME("step"), 1.f), static_cast<int32>(Float(VEKA_FNAME("decimals"), 0.f)));
 			}
-			if (Type == TEXT("TextField"))
+			if (Type == VEKA_FNAME("TextField"))
 			{
 				return TextField(String(TEXT("placeholder")), Binding<FString>(BoundState(A, TEXT("text")), [](const FVekaValue& V) { return V.AsString(); },
-					[](const FString& V) { return FVekaValue::String(V); }, Arg(A, TEXT("text")).AsString()));
+					[](const FString& V) { return FVekaValue::String(V); }, Arg(A, VEKA_FNAME("text")).AsString()));
 			}
-			if (Type == TEXT("ProgressView"))
+			if (Type == VEKA_FNAME("ProgressView"))
 			{
-				return ProgressView(Float(TEXT("value"), -1.f), String(TEXT("label")));
+				return ProgressView(Float(VEKA_FNAME("value"), -1.f), String(TEXT("label")));
 			}
-			if (Type == TEXT("Gauge"))
+			if (Type == VEKA_FNAME("Gauge"))
 			{
-				return Gauge(Float(TEXT("value"), 0.f), Float(TEXT("min"), 0.f), Float(TEXT("max"), 1.f), String(TEXT("label")), String(TEXT("current")));
+				return Gauge(Float(VEKA_FNAME("value"), 0.f), Float(VEKA_FNAME("min"), 0.f), Float(VEKA_FNAME("max"), 1.f), String(TEXT("label")), String(TEXT("current")));
 			}
-			if (Type == TEXT("Divider"))
+			if (Type == VEKA_FNAME("Divider"))
 			{
 				return Divider();
 			}
-			if (Type == TEXT("Spacer"))
+			if (Type == VEKA_FNAME("Spacer"))
 			{
-				return Spacer(Float(TEXT("min"), 8.f));
+				return Spacer(Float(VEKA_FNAME("min"), 8.f));
 			}
-			if (Type == TEXT("Rectangle"))
+			if (Type == VEKA_FNAME("Rectangle"))
 			{
 				return Shape(Rectangle(), Node);
 			}
-			if (Type == TEXT("RoundedRectangle"))
+			if (Type == VEKA_FNAME("RoundedRectangle"))
 			{
-				return Shape(RoundedRectangle(Float(TEXT("radius"), 8.f)), Node);
+				return Shape(RoundedRectangle(Float(VEKA_FNAME("radius"), 8.f)), Node);
 			}
-			if (Type == TEXT("Capsule"))
+			if (Type == VEKA_FNAME("Capsule"))
 			{
 				return Shape(Capsule(), Node);
 			}
-			if (Type == TEXT("Circle"))
+			if (Type == VEKA_FNAME("Circle"))
 			{
 				return Shape(Circle(), Node);
 			}
-			if (Type == TEXT("Ellipse"))
+			if (Type == VEKA_FNAME("Ellipse"))
 			{
 				return Shape(Ellipse(), Node);
 			}
@@ -782,7 +971,7 @@ namespace
 		/** `.style(.Name)`: the modifiers of a shared style (UVekaComponentLibrary), evaluated in the style's own document. */
 		FVekaElement ApplyStyle(FVekaElement Element, const FVekaAstModifier& Modifier) const
 		{
-			const FName StyleName(*Arg(Modifier.Arguments, TEXT("name")).AsString());
+			const FName StyleName(*Arg(Modifier.Arguments, VEKA_FNAME("name")).AsString());
 			const FVekaSharedStyle* Style = Veka::Components::FindStyle(StyleName);
 			if (!Style)
 			{
@@ -797,7 +986,7 @@ namespace
 			Inner.StyleDepth = StyleDepth + 1;
 			for (const FVekaAstModifier& Applied : Style->Compiled.Nodes[Style->Compiled.Root].Modifiers)
 			{
-				Element = Applied.Name == TEXT("style") ? Inner.ApplyStyle(MoveTemp(Element), Applied) : Inner.ApplyModifier(MoveTemp(Element), Applied);
+				Element = Applied.Name == VEKA_FNAME("style") ? Inner.ApplyStyle(MoveTemp(Element), Applied) : Inner.ApplyModifier(MoveTemp(Element), Applied);
 			}
 			return Element;
 		}
@@ -806,156 +995,156 @@ namespace
 		{
 			const TArray<FVekaAstArgument>& A = Modifier.Arguments;
 			const FName Name = Modifier.Name;
-			auto Float = [&](const TCHAR* ArgName, double Default) { return HasArg(A, ArgName) ? Arg(A, ArgName).AsFloat() : Default; };
-			auto Value = [&](const TCHAR* ArgName) { return Arg(A, ArgName); };
+			auto Float = [&](FName ArgName, double Default) { return HasArg(A, ArgName) ? Arg(A, ArgName).AsFloat() : Default; };
+			auto Value = [&](FName ArgName) { return Arg(A, ArgName); };
 
-			if (Name == TEXT("onTap"))
+			if (Name == VEKA_FNAME("onTap"))
 			{
 				TFunction<void()> Action = MakeActions(Modifier.Actions);
 				return Action ? MoveTemp(Element).OnTap(MoveTemp(Action)) : MoveTemp(Element);
 			}
-			if (Name == TEXT("padding"))
+			if (Name == VEKA_FNAME("padding"))
 			{
-				if (HasArg(A, TEXT("horizontal")) || HasArg(A, TEXT("vertical")))
+				if (HasArg(A, VEKA_FNAME("horizontal")) || HasArg(A, VEKA_FNAME("vertical")))
 				{
-					return MoveTemp(Element).Padding(FMargin(static_cast<float>(Float(TEXT("horizontal"), 0.0)), static_cast<float>(Float(TEXT("vertical"), 0.0))));
+					return MoveTemp(Element).Padding(FMargin(static_cast<float>(Float(VEKA_FNAME("horizontal"), 0.0)), static_cast<float>(Float(VEKA_FNAME("vertical"), 0.0))));
 				}
-				return MoveTemp(Element).Padding(static_cast<float>(Float(TEXT("value"), 16.0)));
+				return MoveTemp(Element).Padding(static_cast<float>(Float(VEKA_FNAME("value"), 16.0)));
 			}
-			if (Name == TEXT("frame"))
+			if (Name == VEKA_FNAME("frame"))
 			{
-				if (Value(TEXT("fillWidth")).AsBool())
+				if (Value(VEKA_FNAME("fillWidth")).AsBool())
 				{
-					return MoveTemp(Element).FillWidth(EnumFrom(Value(TEXT("alignment")), EVekaHAlign::Leading) == EVekaHAlign::Leading ? FVekaAlignment::Leading() : FVekaAlignment());
+					return MoveTemp(Element).FillWidth(EnumFrom(Value(VEKA_FNAME("alignment")), EVekaHAlign::Leading) == EVekaHAlign::Leading ? FVekaAlignment::Leading() : FVekaAlignment());
 				}
-				return MoveTemp(Element).Frame(Float(TEXT("width"), -1.0), Float(TEXT("height"), -1.0));
+				return MoveTemp(Element).Frame(Float(VEKA_FNAME("width"), -1.0), Float(VEKA_FNAME("height"), -1.0));
 			}
-			if (Name == TEXT("background"))
+			if (Name == VEKA_FNAME("background"))
 			{
-				return MoveTemp(Element).Background(PaintFrom(Value(TEXT("paint"))), FVekaCornerRadii(static_cast<float>(Float(TEXT("radius"), 0.0))));
+				return MoveTemp(Element).Background(PaintFrom(Value(VEKA_FNAME("paint"))), FVekaCornerRadii(static_cast<float>(Float(VEKA_FNAME("radius"), 0.0))));
 			}
-			if (Name == TEXT("foreground"))
+			if (Name == VEKA_FNAME("foreground"))
 			{
-				return MoveTemp(Element).Foreground(PaintFrom(Value(TEXT("paint"))));
+				return MoveTemp(Element).Foreground(PaintFrom(Value(VEKA_FNAME("paint"))));
 			}
-			if (Name == TEXT("border"))
+			if (Name == VEKA_FNAME("border"))
 			{
-				return MoveTemp(Element).Border(PaintFrom(Value(TEXT("paint"))), static_cast<float>(Float(TEXT("width"), 1.0)), FVekaCornerRadii(static_cast<float>(Float(TEXT("radius"), 0.0))));
+				return MoveTemp(Element).Border(PaintFrom(Value(VEKA_FNAME("paint"))), static_cast<float>(Float(VEKA_FNAME("width"), 1.0)), FVekaCornerRadii(static_cast<float>(Float(VEKA_FNAME("radius"), 0.0))));
 			}
-			if (Name == TEXT("backdropBlur") || Name == TEXT("frostedGlass"))
+			if (Name == VEKA_FNAME("backdropBlur") || Name == VEKA_FNAME("frostedGlass"))
 			{
-				const bool bFrosted = Name == TEXT("frostedGlass");
+				const bool bFrosted = Name == VEKA_FNAME("frostedGlass");
 				FVekaBackdropModifier Backdrop = bFrosted ? FVekaBackdropModifier::FrostedGlass() : FVekaBackdropModifier();
 				Backdrop.Radius = static_cast<float>(Float(bFrosted ? TEXT("blur") : TEXT("radius"), Backdrop.Radius));
-				Backdrop.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(TEXT("cornerRadius"), 0.0)));
-				if (HasArg(A, TEXT("tint")))
+				Backdrop.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(VEKA_FNAME("cornerRadius"), 0.0)));
+				if (HasArg(A, VEKA_FNAME("tint")))
 				{
-					Backdrop.Tint = PaintFrom(Value(TEXT("tint")));
+					Backdrop.Tint = PaintFrom(Value(VEKA_FNAME("tint")));
 				}
-				Backdrop.TintAmount = static_cast<float>(Float(TEXT("tintAmount"), Backdrop.TintAmount));
-				Backdrop.Saturation = static_cast<float>(Float(TEXT("saturation"), Backdrop.Saturation));
-				Backdrop.Noise = static_cast<float>(Float(TEXT("noise"), Backdrop.Noise));
+				Backdrop.TintAmount = static_cast<float>(Float(VEKA_FNAME("tintAmount"), Backdrop.TintAmount));
+				Backdrop.Saturation = static_cast<float>(Float(VEKA_FNAME("saturation"), Backdrop.Saturation));
+				Backdrop.Noise = static_cast<float>(Float(VEKA_FNAME("noise"), Backdrop.Noise));
 				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Backdrop));
 			}
-			if (Name == TEXT("blendMode"))
+			if (Name == VEKA_FNAME("blendMode"))
 			{
 				FVekaBlendModeModifier Blend;
-				Blend.Mode = EnumFrom(Value(TEXT("mode")), EVekaBlendMode::Normal);
+				Blend.Mode = EnumFrom(Value(VEKA_FNAME("mode")), EVekaBlendMode::Normal);
 				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Blend));
 			}
-			if (Name == TEXT("liquidDistortion"))
+			if (Name == VEKA_FNAME("liquidDistortion"))
 			{
 				FVekaLiquidDistortionModifier Distortion;
-				Distortion.Strength = static_cast<float>(Float(TEXT("strength"), Distortion.Strength));
-				Distortion.Scale = static_cast<float>(Float(TEXT("scale"), Distortion.Scale));
-				Distortion.Speed = static_cast<float>(Float(TEXT("speed"), Distortion.Speed));
-				Distortion.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(TEXT("cornerRadius"), 0.0)));
+				Distortion.Strength = static_cast<float>(Float(VEKA_FNAME("strength"), Distortion.Strength));
+				Distortion.Scale = static_cast<float>(Float(VEKA_FNAME("scale"), Distortion.Scale));
+				Distortion.Speed = static_cast<float>(Float(VEKA_FNAME("speed"), Distortion.Speed));
+				Distortion.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(VEKA_FNAME("cornerRadius"), 0.0)));
 				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Distortion));
 			}
-			if (Name == TEXT("glass") || Name == TEXT("glassGroup"))
+			if (Name == VEKA_FNAME("glass") || Name == VEKA_FNAME("glassGroup"))
 			{
 				FVekaGlassMaterial Material;
-				Material.Blur = static_cast<float>(Float(TEXT("blur"), Material.Blur));
-				Material.Refraction = static_cast<float>(Float(TEXT("refraction"), Material.Refraction));
-				Material.Bezel = static_cast<float>(Float(TEXT("bezel"), Material.Bezel));
-				Material.Aberration = static_cast<float>(Float(TEXT("aberration"), Material.Aberration));
-				Material.Highlight = static_cast<float>(Float(TEXT("highlight"), Material.Highlight));
-				if (HasArg(A, TEXT("tint")))
+				Material.Blur = static_cast<float>(Float(VEKA_FNAME("blur"), Material.Blur));
+				Material.Refraction = static_cast<float>(Float(VEKA_FNAME("refraction"), Material.Refraction));
+				Material.Bezel = static_cast<float>(Float(VEKA_FNAME("bezel"), Material.Bezel));
+				Material.Aberration = static_cast<float>(Float(VEKA_FNAME("aberration"), Material.Aberration));
+				Material.Highlight = static_cast<float>(Float(VEKA_FNAME("highlight"), Material.Highlight));
+				if (HasArg(A, VEKA_FNAME("tint")))
 				{
-					Material.Tint = PaintFrom(Value(TEXT("tint")));
+					Material.Tint = PaintFrom(Value(VEKA_FNAME("tint")));
 				}
-				Material.TintAmount = static_cast<float>(Float(TEXT("tintAmount"), Material.TintAmount));
-				if (Name == TEXT("glass"))
+				Material.TintAmount = static_cast<float>(Float(VEKA_FNAME("tintAmount"), Material.TintAmount));
+				if (Name == VEKA_FNAME("glass"))
 				{
 					FVekaGlassModifier Glass;
-					Glass.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(TEXT("cornerRadius"), 0.0)));
+					Glass.CornerRadii = FVekaCornerRadii(static_cast<float>(Float(VEKA_FNAME("cornerRadius"), 0.0)));
 					Glass.Material = Material;
 					return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Glass));
 				}
 				FVekaGlassGroupModifier Group;
-				Group.Smoothness = static_cast<float>(Float(TEXT("smoothness"), Group.Smoothness));
+				Group.Smoothness = static_cast<float>(Float(VEKA_FNAME("smoothness"), Group.Smoothness));
 				Group.Material = Material;
 				return MoveTemp(Element).AddModifier(FInstancedStruct::Make(Group));
 			}
-			if (Name == TEXT("opacity"))
+			if (Name == VEKA_FNAME("opacity"))
 			{
-				return MoveTemp(Element).Opacity(static_cast<float>(Float(TEXT("value"), 1.0)));
+				return MoveTemp(Element).Opacity(static_cast<float>(Float(VEKA_FNAME("value"), 1.0)));
 			}
-			if (Name == TEXT("clip"))
+			if (Name == VEKA_FNAME("clip"))
 			{
 				return MoveTemp(Element).Clip();
 			}
-			if (Name == TEXT("offset"))
+			if (Name == VEKA_FNAME("offset"))
 			{
-				return MoveTemp(Element).Offset(FVector2D(Float(TEXT("x"), 0.0), Float(TEXT("y"), 0.0)));
+				return MoveTemp(Element).Offset(FVector2D(Float(VEKA_FNAME("x"), 0.0), Float(VEKA_FNAME("y"), 0.0)));
 			}
-			if (Name == TEXT("scale"))
+			if (Name == VEKA_FNAME("scale"))
 			{
-				return MoveTemp(Element).Scale(static_cast<float>(Float(TEXT("value"), 1.0)));
+				return MoveTemp(Element).Scale(static_cast<float>(Float(VEKA_FNAME("value"), 1.0)));
 			}
-			if (Name == TEXT("rotation"))
+			if (Name == VEKA_FNAME("rotation"))
 			{
-				return MoveTemp(Element).Rotation(static_cast<float>(Float(TEXT("degrees"), 0.0)));
+				return MoveTemp(Element).Rotation(static_cast<float>(Float(VEKA_FNAME("degrees"), 0.0)));
 			}
-			if (Name == TEXT("font"))
+			if (Name == VEKA_FNAME("font"))
 			{
-				return MoveTemp(Element).Font(EnumFrom(Value(TEXT("style")), EVekaTextStyle::Body));
+				return MoveTemp(Element).Font(EnumFrom(Value(VEKA_FNAME("style")), EVekaTextStyle::Body));
 			}
-			if (Name == TEXT("fontWeight"))
+			if (Name == VEKA_FNAME("fontWeight"))
 			{
-				return MoveTemp(Element).FontWeight(EnumFrom(Value(TEXT("weight")), EVekaFontWeight::Regular));
+				return MoveTemp(Element).FontWeight(EnumFrom(Value(VEKA_FNAME("weight")), EVekaFontWeight::Regular));
 			}
-			if (Name == TEXT("fontSize"))
+			if (Name == VEKA_FNAME("fontSize"))
 			{
-				return MoveTemp(Element).FontSize(static_cast<float>(Float(TEXT("size"), 14.0)));
+				return MoveTemp(Element).FontSize(static_cast<float>(Float(VEKA_FNAME("size"), 14.0)));
 			}
-			if (Name == TEXT("disabled"))
+			if (Name == VEKA_FNAME("disabled"))
 			{
-				return MoveTemp(Element).Disabled(HasArg(A, TEXT("value")) ? Value(TEXT("value")).AsBool() : true);
+				return MoveTemp(Element).Disabled(HasArg(A, VEKA_FNAME("value")) ? Value(VEKA_FNAME("value")).AsBool() : true);
 			}
-			if (Name == TEXT("buttonStyle"))
+			if (Name == VEKA_FNAME("buttonStyle"))
 			{
-				return MoveTemp(Element).ButtonStyle(EnumFrom(Value(TEXT("style")), EVekaButtonStyleKind::Bordered));
+				return MoveTemp(Element).ButtonStyle(EnumFrom(Value(VEKA_FNAME("style")), EVekaButtonStyleKind::Bordered));
 			}
-			if (Name == TEXT("toggleStyle"))
+			if (Name == VEKA_FNAME("toggleStyle"))
 			{
-				return MoveTemp(Element).ToggleStyle(EnumFrom(Value(TEXT("style")), EVekaToggleStyleKind::Switch));
+				return MoveTemp(Element).ToggleStyle(EnumFrom(Value(VEKA_FNAME("style")), EVekaToggleStyleKind::Switch));
 			}
-			if (Name == TEXT("controlSize"))
+			if (Name == VEKA_FNAME("controlSize"))
 			{
-				return MoveTemp(Element).ControlSize(EnumFrom(Value(TEXT("size")), EVekaControlSize::Regular));
+				return MoveTemp(Element).ControlSize(EnumFrom(Value(VEKA_FNAME("size")), EVekaControlSize::Regular));
 			}
-			if (Name == TEXT("symbolRenderingMode"))
+			if (Name == VEKA_FNAME("symbolRenderingMode"))
 			{
-				return MoveTemp(Element).SymbolRenderingMode(EnumFrom(Value(TEXT("mode")), EVekaSymbolRenderingMode::Monochrome));
+				return MoveTemp(Element).SymbolRenderingMode(EnumFrom(Value(VEKA_FNAME("mode")), EVekaSymbolRenderingMode::Monochrome));
 			}
-			if (Name == TEXT("animation"))
+			if (Name == VEKA_FNAME("animation"))
 			{
-				return MoveTemp(Element).AnimationKey(FVekaAnimationSpec::Snappy(), static_cast<int64>(GetTypeHash(Value(TEXT("value")))));
+				return MoveTemp(Element).AnimationKey(FVekaAnimationSpec::Snappy(), static_cast<int64>(GetTypeHash(Value(VEKA_FNAME("value")))));
 			}
-			if (Name == TEXT("transition"))
+			if (Name == VEKA_FNAME("transition"))
 			{
-				const FString Kind = Value(TEXT("kind")).AsString();
+				const FString Kind = Value(VEKA_FNAME("kind")).AsString();
 				const FVekaTransition Transition = Kind == TEXT("scale") ? FVekaTransition::Combined(FVekaTransition::Opacity(), FVekaTransition::Scale(0.6f))
 					: Kind == TEXT("slide") ? FVekaTransition::Slide()
 					// From (and back to) above, fading: a card that drops in.
@@ -1119,9 +1308,9 @@ namespace
 		}
 		for (const FVekaAstModifier& Modifier : Node.Modifiers)
 		{
-			if (Modifier.Name == TEXT("on"))
+			if (Modifier.Name == VEKA_FNAME("on"))
 			{
-				View->Handlers.Add(FName(*Arg(Modifier.Arguments, TEXT("event")).AsString()), MakeHandler(Modifier.Actions));
+				View->Handlers.Add(FName(*Arg(Modifier.Arguments, VEKA_FNAME("event")).AsString()), MakeHandler(Modifier.Actions));
 			}
 		}
 		View->ParentStore = Store;

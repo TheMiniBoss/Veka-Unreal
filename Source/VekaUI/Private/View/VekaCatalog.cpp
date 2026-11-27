@@ -11,6 +11,8 @@ const FVekaCatalogArgument* FVekaCatalogEntry::FindArgument(FName Argument) cons
 	return Arguments.FindByPredicate([Argument](const FVekaCatalogArgument& Item) { return Item.Name == Argument; });
 }
 
+#define VEKA_CATALOG_NAME(Literal) ([]() -> const FName& { static const FName Cached(TEXT(Literal)); return Cached; }())
+
 namespace Veka::Catalog
 {
 	namespace
@@ -118,5 +120,116 @@ namespace Veka::Catalog
 	const FVekaCatalogEntry* FindModifier(FName Name)
 	{
 		return Modifiers().FindByPredicate([Name](const FVekaCatalogEntry& Entry) { return Entry.Name == Name; });
+	}
+
+	const TArray<FVekaCatalogFunction>& Functions()
+	{
+		auto F = [](const TCHAR* Name, int32 Min, int32 Max, const TCHAR* Signature, const TCHAR* Description)
+		{
+			FVekaCatalogFunction Out;
+			Out.Name = Name;
+			Out.MinArguments = Min;
+			Out.MaxArguments = Max;
+			Out.Signature = Signature;
+			Out.Description = Description;
+			return Out;
+		};
+		static const TArray<FVekaCatalogFunction> Entries = {
+			F(TEXT("sin"), 1, 1, TEXT("sin(angle)"), TEXT("Sine of an angle in radians.")),
+			F(TEXT("cos"), 1, 1, TEXT("cos(angle)"), TEXT("Cosine of an angle in radians.")),
+			F(TEXT("tan"), 1, 1, TEXT("tan(angle)"), TEXT("Tangent of an angle in radians.")),
+			F(TEXT("atan2"), 2, 2, TEXT("atan2(y, x)"), TEXT("Angle of the point (x, y), in radians.")),
+			F(TEXT("abs"), 1, 1, TEXT("abs(x)"), TEXT("Absolute value.")),
+			F(TEXT("sqrt"), 1, 1, TEXT("sqrt(x)"), TEXT("Square root (0 below 0).")),
+			F(TEXT("pow"), 2, 2, TEXT("pow(x, power)"), TEXT("x to a power.")),
+			F(TEXT("exp"), 1, 1, TEXT("exp(x)"), TEXT("e to the power x.")),
+			F(TEXT("floor"), 1, 1, TEXT("floor(x)"), TEXT("Largest whole number not above x.")),
+			F(TEXT("ceil"), 1, 1, TEXT("ceil(x)"), TEXT("Smallest whole number not below x.")),
+			F(TEXT("round"), 1, 1, TEXT("round(x)"), TEXT("Nearest whole number.")),
+			F(TEXT("fract"), 1, 1, TEXT("fract(x)"), TEXT("Fractional part: x - floor(x), 0 to 1 (a value that loops).")),
+			F(TEXT("sign"), 1, 1, TEXT("sign(x)"), TEXT("-1, 0 or 1.")),
+			F(TEXT("clamp"), 3, 3, TEXT("clamp(x, low, high)"), TEXT("x kept between low and high.")),
+			F(TEXT("lerp"), 3, 3, TEXT("lerp(a, b, t)"), TEXT("From a (t = 0) to b (t = 1).")),
+			F(TEXT("smoothstep"), 3, 3, TEXT("smoothstep(edge0, edge1, x)"), TEXT("0 before edge0, 1 after edge1, a smooth curve in between.")),
+			F(TEXT("random"), 1, 3, TEXT("random(seed) / random(seed, low, high)"),
+				TEXT("A random number from a seed: the same seed always gives the same number (0 to 1, or low to high).")),
+			[&F]
+			{
+				FVekaCatalogFunction Out = F(TEXT("hsv"), 3, 4, TEXT("hsv(hue, saturation, value, alpha)"),
+					TEXT("A color from its hue (degrees, 0 = red, 120 = green, 240 = blue), saturation and value (0 to 1)."));
+				Out.bColor = true;
+				return Out;
+			}(),
+			[&F]
+			{
+				FVekaCatalogFunction Out = F(TEXT("rgba"), 4, 4, TEXT("rgba(red, green, blue, alpha)"), TEXT("A color from its channels, 0 to 1 (values can be computed)."));
+				Out.bColor = true;
+				return Out;
+			}(),
+		};
+		return Entries;
+	}
+
+	FLinearColor CallColorFunction(FName Name, TConstArrayView<double> Arguments)
+	{
+		auto A = [&Arguments](int32 Index, double Default) { return Arguments.IsValidIndex(Index) ? Arguments[Index] : Default; };
+		if (Name == TEXT("hsv"))
+		{
+			const float Hue = static_cast<float>(FMath::Fmod(FMath::Fmod(A(0, 0.0), 360.0) + 360.0, 360.0));
+			FLinearColor Color = FLinearColor(Hue, FMath::Clamp(static_cast<float>(A(1, 1.0)), 0.f, 1.f), FMath::Clamp(static_cast<float>(A(2, 1.0)), 0.f, 1.f)).HSVToLinearRGB();
+			Color.A = FMath::Clamp(static_cast<float>(A(3, 1.0)), 0.f, 1.f);
+			return Color;
+		}
+		if (Name == TEXT("rgba"))
+		{
+			return FLinearColor(static_cast<float>(A(0, 0.0)), static_cast<float>(A(1, 0.0)), static_cast<float>(A(2, 0.0)), static_cast<float>(A(3, 1.0)));
+		}
+		return FLinearColor::White;
+	}
+
+	const FVekaCatalogFunction* FindFunction(FName Name)
+	{
+		return Functions().FindByPredicate([Name](const FVekaCatalogFunction& Entry) { return Entry.Name == Name; });
+	}
+
+	double CallFunction(FName Name, TConstArrayView<double> Arguments)
+	{
+		auto A = [&Arguments](int32 Index) { return Arguments.IsValidIndex(Index) ? Arguments[Index] : 0.0; };
+		// Cached names: no string work per call (an animation calls these hundreds of times a frame).
+		if (Name == VEKA_CATALOG_NAME("sin")) { return FMath::Sin(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("cos")) { return FMath::Cos(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("tan")) { return FMath::Tan(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("atan2")) { return FMath::Atan2(A(0), A(1)); }
+		if (Name == VEKA_CATALOG_NAME("abs")) { return FMath::Abs(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("sqrt")) { return FMath::Sqrt(FMath::Max(0.0, A(0))); }
+		if (Name == VEKA_CATALOG_NAME("pow")) { return FMath::Pow(A(0), A(1)); }
+		if (Name == VEKA_CATALOG_NAME("exp")) { return FMath::Exp(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("floor")) { return FMath::FloorToDouble(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("ceil")) { return FMath::CeilToDouble(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("round")) { return FMath::RoundToDouble(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("fract")) { return A(0) - FMath::FloorToDouble(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("sign")) { return FMath::Sign(A(0)); }
+		if (Name == VEKA_CATALOG_NAME("clamp")) { return FMath::Clamp(A(0), FMath::Min(A(1), A(2)), FMath::Max(A(1), A(2))); }
+		if (Name == VEKA_CATALOG_NAME("lerp")) { return A(0) + (A(1) - A(0)) * A(2); }
+		if (Name == VEKA_CATALOG_NAME("smoothstep"))
+		{
+			const double Span = A(1) - A(0);
+			const double T = FMath::Clamp(Span == 0.0 ? (A(2) >= A(1) ? 1.0 : 0.0) : (A(2) - A(0)) / Span, 0.0, 1.0);
+			return T * T * (3.0 - 2.0 * T);
+		}
+		if (Name == VEKA_CATALOG_NAME("random"))
+		{
+			// SplitMix64 of the seed's bits: the same seed always gives the same number, close seeds unrelated ones.
+			const double Seed = A(0) + 0.0;
+			uint64 Bits = 0;
+			FMemory::Memcpy(&Bits, &Seed, sizeof(Bits));
+			uint64 Z = Bits + 0x9E3779B97F4A7C15ull;
+			Z = (Z ^ (Z >> 30)) * 0xBF58476D1CE4E5B9ull;
+			Z = (Z ^ (Z >> 27)) * 0x94D049BB133111EBull;
+			Z ^= Z >> 31;
+			const double Unit = static_cast<double>(Z >> 11) * (1.0 / 9007199254740992.0);
+			return Arguments.Num() >= 3 ? A(1) + (A(2) - A(1)) * Unit : Unit;
+		}
+		return 0.0;
 	}
 }

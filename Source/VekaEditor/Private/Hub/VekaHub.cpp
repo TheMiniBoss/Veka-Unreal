@@ -474,7 +474,8 @@ namespace Veka::Editor::Hub
 				AddText(Cursor, Line.Len(), EVekaCodeToken::Plain);
 				Rows.Add(HStack(0.f).Children(MoveTemp(Parts)).Frame(-1.0, LineHeight, FVekaAlignment::Leading()));
 			}
-			return VStack(0.f, EVekaHAlign::Leading).Children(MoveTemp(Rows))
+			// Lines are never cut: a long one scrolls sideways.
+			return ScrollView(EVekaAxis::Horizontal, false)(VStack(0.f, EVekaHAlign::Leading).Children(MoveTemp(Rows)))
 				.Padding(FMargin(16.f, 12.f))
 				.FillWidth(FVekaAlignment::Leading())
 				.Background(FVekaPaint(FLinearColor(0.035f, 0.038f, 0.048f)), 10.f)
@@ -604,6 +605,10 @@ namespace Veka::Editor::Hub
 					HubCard(LOCTEXT("GuideThemes", "Colors and themes"), VStack(10.f, EVekaHAlign::Leading)(
 						Text(LOCTEXT("GuideThemesText", "Colora tokens (.Accent, .WindowBackground...) resolve from the theme and the Light / Dark scheme of the subtree. A UVekaTheme overrides tokens, metrics and text styles; control tokens restyle every control.")).Font(EVekaTextStyle::Footnote),
 						Code(TEXT(".background(.WindowBackground, radius: 12)\n.foreground(.Accent)\n.background(.Aurora)   // a Veka Paint asset"))
+					)),
+					HubCard(LOCTEXT("GuideMotion", "Math, random and time"), VStack(10.f, EVekaHAlign::Leading)(
+						Text(LOCTEXT("GuideMotionText", "let names a value for the next views of a block. time counts the seconds since the view appeared: a view that reads it is re-evaluated every frame. random(seed) gives the same number for the same seed; sin, cos, sqrt, pow, fract, clamp, lerp, smoothstep, hsv(...) and pi do the rest (see the birthday card example).")).Font(EVekaTextStyle::Footnote),
+						Code(TEXT("ForEach(36) { i in\n    let angle = i * 2 * pi / 36\n    let reach = 24 * fract(time)\n    Circle(fill: hsv(random(i, 0, 360), 0.6, 1))\n        .frame(width: 3, height: 3)\n        .offset(x: cos(angle) * reach, y: sin(angle) * reach)\n        .opacity(1 - fract(time))\n}"))
 					))
 				).FillWidth(FVekaAlignment::TopLeading());
 			}

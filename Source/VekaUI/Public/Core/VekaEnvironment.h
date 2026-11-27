@@ -36,7 +36,7 @@ struct TVekaEnvValue final : public FVekaEnvValueBase
 
 /**
  * Values inherited down the view tree (theme, color scheme, font, foreground color...).
- * Copied by value per node; values are shared, immutable pointers so copies are cheap.
+ * Copied by value per node; the map is shared until written (copy on write) and values are immutable pointers.
  * A given key must always be used with the same C++ type.
  */
 class VEKAUI_API FVekaEnvironment
@@ -45,13 +45,13 @@ public:
 	template <typename T>
 	void Set(FName Key, const T& Value)
 	{
-		Values.Add(Key, MakeShared<TVekaEnvValue<T>>(Value));
+		Mutable().Add(Key, MakeShared<TVekaEnvValue<T>>(Value));
 	}
 
 	template <typename T>
 	const T* Find(FName Key) const
 	{
-		if (const TSharedPtr<const FVekaEnvValueBase>* Found = Values.Find(Key))
+		if (const TSharedPtr<const FVekaEnvValueBase>* Found = Values.IsValid() ? Values->Find(Key) : nullptr)
 		{
 			return &static_cast<const TVekaEnvValue<T>*>(Found->Get())->Value;
 		}
@@ -65,15 +65,38 @@ public:
 		return Found ? *Found : Default;
 	}
 
-	bool Contains(FName Key) const { return Values.Contains(Key); }
-	void Remove(FName Key) { Values.Remove(Key); }
-	int32 Num() const { return Values.Num(); }
+	bool Contains(FName Key) const { return Values.IsValid() && Values->Contains(Key); }
+	void Remove(FName Key)
+	{
+		if (Contains(Key))
+		{
+			Mutable().Remove(Key);
+		}
+	}
+	int32 Num() const { return Values.IsValid() ? Values->Num() : 0; }
 
 	bool operator==(const FVekaEnvironment& Other) const;
 	bool operator!=(const FVekaEnvironment& Other) const { return !(*this == Other); }
 
 private:
-	TMap<FName, TSharedPtr<const FVekaEnvValueBase>> Values;
+	using FMap = TMap<FName, TSharedPtr<const FVekaEnvValueBase>>;
+
+	/** The map to write into: copied first if another environment shares it (copy on write). */
+	FMap& Mutable()
+	{
+		if (!Values.IsValid())
+		{
+			Values = MakeShared<FMap>();
+		}
+		else if (!Values.IsUnique())
+		{
+			Values = MakeShared<FMap>(*Values);
+		}
+		return *Values;
+	}
+
+	/** Shared between copies until one of them writes: copying an environment (every node, every evaluation) is a pointer copy. */
+	TSharedPtr<FMap> Values;
 };
 
 /** Built-in environment keys. */

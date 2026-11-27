@@ -6,13 +6,22 @@
 
 bool FVekaEnvironment::operator==(const FVekaEnvironment& Other) const
 {
-	if (Values.Num() != Other.Values.Num())
+	// Same shared map (a copy nobody wrote to): equal without looking.
+	if (Values == Other.Values)
+	{
+		return true;
+	}
+	if (Num() != Other.Num())
 	{
 		return false;
 	}
-	for (const TPair<FName, TSharedPtr<const FVekaEnvValueBase>>& Pair : Values)
+	if (Num() == 0)
 	{
-		const TSharedPtr<const FVekaEnvValueBase>* OtherValue = Other.Values.Find(Pair.Key);
+		return true;
+	}
+	for (const TPair<FName, TSharedPtr<const FVekaEnvValueBase>>& Pair : *Values)
+	{
+		const TSharedPtr<const FVekaEnvValueBase>* OtherValue = Other.Values->Find(Pair.Key);
 		if (!OtherValue)
 		{
 			return false;

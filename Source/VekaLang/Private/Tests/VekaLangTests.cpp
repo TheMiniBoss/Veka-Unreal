@@ -8,6 +8,7 @@
 
 #include "VekaLanguage.h"
 #include "View/VekaViewAsset.h"
+#include "View/VekaCatalog.h"
 #include "Samples/VekaSampleView.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/FileHelper.h"
@@ -126,6 +127,57 @@ namespace
 		}
 		return FString::Join(Lines, TEXT("\n"));
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaLangExpressionsTest, "VekaUI.Lang.Expressions", VekaLangTestFlags)
+bool FVekaLangExpressionsTest::RunTest(const FString& Parameters)
+{
+	// let, built-in functions, pi and time: parsed, printed back the same, analyzed clean.
+	const FString Source = TEXT(
+		"view Sparks {\n"
+		"    ZStack {\n"
+		"        ForEach(3) { i in\n"
+		"            let angle = i * 2 * pi / 3 + random(i, -0.2, 0.2)\n"
+		"            let reach = 20 * smoothstep(0, 1, fract(time))\n"
+		"            Circle(fill: #FFFFFF)\n"
+		"                .frame(width: 4, height: 4)\n"
+		"                .offset(x: cos(angle) * reach, y: sin(angle) * reach)\n"
+		"                .opacity(clamp(1 - fract(time), 0, 1))\n"
+		"        }\n"
+		"    }\n"
+		"}\n");
+	CheckSource(*this, Source);
+	const FVekaParseResult Parsed = Veka::Lang::Parse(Source);
+	TestEqual(TEXT("printed canonically as written"), Veka::Lang::Print(Parsed.Document, Parsed.ViewName), Source);
+	TestTrue(TEXT("analyzes clean"), Veka::Lang::Analyze(Parsed.Document).IsEmpty());
+	TestTrue(TEXT("time is an expression"), Parsed.Document.Expressions.ContainsByPredicate([](const FVekaAstExpr& E) { return E.Kind == EVekaExprKind::Time; }));
+	TestEqual(TEXT("two let nodes"), Parsed.Document.Nodes.FilterByPredicate([](const FVekaAstNode& N) { return N.Kind == EVekaAstNodeKind::Let; }).Num(), 2);
+
+	// Errors: wrong number of arguments; a let is not visible outside its block.
+	const FVekaParseResult Arity = Veka::Lang::Parse(TEXT("view A {\n    Text(\"\\(sin(1, 2))\")\n}\n"));
+	TestTrue(TEXT("arity error names the signature"), HasDiagnostic(Arity.Diagnostics, TEXT("sin(angle)")));
+	const FVekaParseResult Outside = Veka::Lang::Parse(TEXT("view A {\n    VStack {\n        VStack {\n            let x = 1\n        }\n        Text(\"\\(x)\")\n    }\n}\n"));
+	TestTrue(TEXT("let stays in its block"), HasDiagnostic(Outside.Diagnostics, TEXT("Unknown name 'x'")));
+
+	// The functions: random is the same for a seed, spread for close seeds, scaled to a range.
+	using Veka::Catalog::CallFunction;
+	const double R7 = CallFunction(TEXT("random"), { 7.0 });
+	TestEqual(TEXT("random(7) twice"), CallFunction(TEXT("random"), { 7.0 }), R7);
+	TestTrue(TEXT("random in [0, 1)"), R7 >= 0.0 && R7 < 1.0);
+	TestTrue(TEXT("random(8) differs"), FMath::Abs(CallFunction(TEXT("random"), { 8.0 }) - R7) > 1.0e-6);
+	const double Ranged = CallFunction(TEXT("random"), { 7.0, 10.0, 20.0 });
+	TestTrue(TEXT("random(seed, 10, 20) in range"), Ranged >= 10.0 && Ranged <= 20.0);
+	double Sum = 0.0;
+	for (int32 Seed = 0; Seed < 1000; ++Seed)
+	{
+		Sum += CallFunction(TEXT("random"), { static_cast<double>(Seed) });
+	}
+	TestTrue(FString::Printf(TEXT("random spreads evenly (mean %.3f)"), Sum / 1000.0), FMath::Abs(Sum / 1000.0 - 0.5) < 0.05);
+	TestEqual(TEXT("fract(-0.25)"), CallFunction(TEXT("fract"), { -0.25 }), 0.75);
+	TestEqual(TEXT("smoothstep(0, 1, 0.5)"), CallFunction(TEXT("smoothstep"), { 0.0, 1.0, 0.5 }), 0.5);
+	TestEqual(TEXT("clamp(5, 0, 1)"), CallFunction(TEXT("clamp"), { 5.0, 0.0, 1.0 }), 1.0);
+	TestEqual(TEXT("lerp(10, 20, 0.25)"), CallFunction(TEXT("lerp"), { 10.0, 20.0, 0.25 }), 12.5);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaLangSamplesRoundTripTest, "VekaUI.Lang.RoundTrip.Samples", VekaLangTestFlags)

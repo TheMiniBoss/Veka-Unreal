@@ -2,8 +2,16 @@
 
 The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a release, `-` an entry.
 
+## Effects in .vk only (2026-11-27)
+- let name = value: a named value for the next views of a block.
+- time: seconds since the view appeared (a view that reads it is re-evaluated every frame).
+- Functions: sin, cos, tan, atan2, abs, sqrt, pow, exp, floor, ceil, round, fract, sign, clamp, lerp, smoothstep, random(seed [, low, high]), hsv(...), rgba(...) with computed channels, and pi.
+- The birthday card fireworks are now written in .vk only; the C++ Fireworks component is gone.
+- Faster re-evaluation of views (about 3 times faster for a view animated every frame).
+- Documentation: Veka code colored like the Code tab, indentation kept, long lines scroll.
+- Effects (blur, glass, blend) stay inside their clip: zooming in the view editor no longer draws them over the editor.
+
 ## Fireworks — the birthday card challenge (2026-11-22)
-- Fireworks component: bursts at random places, a flash, sparks that fly out, hang, twinkle and fade (Fireworks(rate:, particles:, radius:, size:)).
 - Birthday card example in the Hub: the iOS 27 card with fireworks inside a frosted card, a glass button drops it in and out.
 - New transitions in .vk: .move (drops in from above) and .blur (comes into focus).
 
