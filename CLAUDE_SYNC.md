@@ -121,6 +121,33 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
 
+### 2026-11-27 — CLOUD + LOCAL → inspecteur, palette et liste des vues plus clairs (UX, suite)
+
+- **Demande de TheMiniBoss** (avec une maquette d'inspecteur style Figma : sections titrées +/−, champs en grille
+  libellé au-dessus, unité « PX » dans le champ, contrôles segmentés, pastilles) : « encore plus simple […] plus
+  friendly et compréhensible, ajoute des explications (en tooltip) ; pareil pour la palette (icônes) et la Views ;
+  pour tout, plus intuitif et plus beau ».
+- **Branche** : `cpp/ux-inspector`, fusionnée dans `C++` (`965b074`).
+- **Mots du catalogue** (`View/VekaCatalogDocs.cpp`, `Veka::Catalog::FindDoc` / `ArgumentLabel`) : pour chaque composant
+  et modificateur un titre simple (« Vertical stack », « Size » pour `.frame`, « Content color » pour `.foreground`…),
+  une icône (symbole de la bibliothèque intégrée), une famille et une phrase ; pour chaque argument un libellé, une
+  phrase et une unité (px, pt, ×, °).
+- **Look partagé** (`SimpleMode/VekaEditorLook.*`) : icône = petit `SVekaHost` avec un `Symbol`, couleur par famille
+  (Layout bleu, Content blanc, Controls vert, Shapes orange, Logique violet, Vues du projet turquoise), `Section`,
+  `Field` (libellé au-dessus + tooltip), `Pair`, `IconButton`, `WithUnit`, `Segmented`, `DescribeNode`.
+- **Inspecteur** : en-tête (icône, titre, nom dans le code s'il diffère, phrase) + « Name in the Views list » ; section
+  Settings / Parameters ; champs courts (nombres, booléens) deux par deux ; « fx » = écrire en code, « × » = revenir au
+  défaut ; enums ≤ 4 valeurs en boutons segmentés (alignements avec icônes), sinon menu avec les noms d'affichage ;
+  chaque modificateur = une section (titre, icône, tooltip, ↑ ↓ −) ; « Add a modifier » par famille avec icônes.
+  If / Repeat / let / Slot : sections avec libellés clairs (« Show when », « Repeat for », « Item name »…).
+- **Palette** : icône sur pastille de couleur, nom simple, description en dessous, tooltip ; recherche sur le nom,
+  le nom du code et la description. **Views** : icône, nom (ou étiquette) + détail (texte affiché, symbole, « 3 views »,
+  condition), tooltip = ce que c'est + comment le renommer / déplacer.
+- **Validé** : build éditeur, 105 tests (104 + 1 avertissement attendu). Vu à l'écran : liste des vues, en-tête et
+  sections de l'inspecteur sur un Text (`Docs/Sync/Screens/ux-inspector-views.jpg`, `ux-inspector-panel.jpg`).
+  **Pas vu à l'écran** : un inspecteur riche (paires, boutons segmentés, unités) et la palette en popup — TheMiniBoss
+  utilisait le PC (autres fenêtres au premier plan), arrêt du pilotage de l'écran pour ne pas cliquer chez lui.
+
 ### 2026-11-27 — CLOUD + LOCAL → éditeur de vue simplifié (UX)
 
 - **Demande de TheMiniBoss** : « refais tout l'UX pour simplifier l'expérience utilisateur et l'éditeur car ça fait un
