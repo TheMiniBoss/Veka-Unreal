@@ -210,12 +210,20 @@ namespace Veka::Editor::Look
 
 	TSharedRef<SWidget> WithUnit(const TSharedRef<SWidget>& Editor, const FText& Unit)
 	{
+		// Always a field-shaped box, also when empty ("Auto"), so it reads as something to type into.
+		const TSharedRef<SWidget> Boxed = SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor(0.015f, 0.015f, 0.017f))
+			.Padding(FMargin(0.f))
+			[
+				SNew(SBox).MinDesiredHeight(22.f).VAlign(VAlign_Center)[Editor]
+			];
 		if (Unit.IsEmpty())
 		{
-			return Editor;
+			return Boxed;
 		}
 		return SNew(SOverlay)
-			+ SOverlay::Slot()[Editor]
+			+ SOverlay::Slot()[Boxed]
 			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 8.f, 0.f))
 			[
 				SNew(STextBlock).Text(Unit).Font(FAppStyle::GetFontStyle("SmallFont")).ColorAndOpacity(Subdued()).Visibility(EVisibility::HitTestInvisible)

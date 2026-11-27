@@ -147,6 +147,13 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
   sections de l'inspecteur sur un Text (`Docs/Sync/Screens/ux-inspector-views.jpg`, `ux-inspector-panel.jpg`).
   **Pas vu à l'écran** : un inspecteur riche (paires, boutons segmentés, unités) et la palette en popup — TheMiniBoss
   utilisait le PC (autres fenêtres au premier plan), arrêt du pilotage de l'écran pour ne pas cliquer chez lui.
+- **Vérifié ensuite** (`ux-inspector-modifiers.jpg`, `ux-palette-popup.jpg`) : inspecteur d'une VStack (Spacing en px,
+  Alignment en 3 boutons à icônes, Padding et Frosted glass en sections, paires), palette « + Add » (familles, pastilles,
+  descriptions). **Deux correctifs** : (1) cliquer une ligne déjà sélectionnée ouvrait le renommage et, au commit, le
+  nom affiché (« Vertical stack ») devenait une étiquette `//` — le commit sans changement (ou du nom du type) est
+  ignoré, vide = retour au type ; l'étiquette posée par erreur sur `VV_ExampleGlassHud` a été annulée (asset non
+  réenregistré, toujours celui du 22) ; (2) champs numériques vides : une vraie case avec « Auto » (au lieu de
+  « default » sans cadre).
 
 ### 2026-11-27 — CLOUD + LOCAL → éditeur de vue simplifié (UX)
 

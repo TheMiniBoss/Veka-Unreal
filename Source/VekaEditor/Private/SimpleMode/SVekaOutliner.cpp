@@ -360,11 +360,14 @@ TSharedRef<ITableRow> SVekaOutliner::MakeRow(TSharedPtr<FVekaOutlinerItem> Item,
 				SNew(SInlineEditableTextBlock)
 				.Text(Main)
 				.IsSelected_Lambda([this, Item]() { return Tree->IsItemSelected(Item); })
-				.OnTextCommitted_Lambda([this, Node](const FText& Text, ETextCommit::Type Commit)
+				.OnTextCommitted_Lambda([this, Node, Main, bLabeled, Title = Look.Title](const FText& Text, ETextCommit::Type Commit)
 				{
-					if (Commit != ETextCommit::OnCleared)
+					// Nothing typed (focus left, or the shown type name kept): no label, no undo step. Empty: back to the type.
+					const FString Typed = Text.ToString().TrimStartAndEnd();
+					const bool bUnchanged = Typed == Main.ToString() || (!bLabeled && Typed == Title.ToString());
+					if (Commit != ETextCommit::OnCleared && !bUnchanged && !(Typed.IsEmpty() && !bLabeled))
 					{
-						const FString Label = Text.ToString();
+						const FString Label = Typed;
 						Context->Edit(LOCTEXT("Rename", "Rename view"), [Node, &Label](FVekaDocument& Document) -> TArray<int32>
 						{
 							Veka::Editor::Doc::SetLabel(Document, Node, Label);
