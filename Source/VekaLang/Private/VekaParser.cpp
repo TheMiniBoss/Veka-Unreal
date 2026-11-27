@@ -1025,7 +1025,17 @@ namespace
 				}
 				else
 				{
+					// Inside a Canvas, its draw commands know the canvas size.
+					const bool bCanvas = Document.Nodes[Index].Type == TEXT("Canvas");
+					if (bCanvas)
+					{
+						Scope.Locals.Add({ FName(TEXT("width")), FName(TEXT("height")) });
+					}
 					const TArray<int32> Children = ParseNodesUntilBrace();
+					if (bCanvas)
+					{
+						Scope.Locals.Pop();
+					}
 					Document.Nodes[Index].Children = Children;
 					if (Peek().IsWord(TEXT("action")))
 					{

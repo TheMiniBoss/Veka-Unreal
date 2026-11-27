@@ -66,6 +66,12 @@ namespace Veka::Catalog
 			E(TEXT("Capsule"), { A(TEXT("fill"), EKind::Paint) }),
 			E(TEXT("Circle"), { A(TEXT("fill"), EKind::Paint) }),
 			E(TEXT("Ellipse"), { A(TEXT("fill"), EKind::Paint) }),
+			// Drawing: a Canvas and the marks it draws every time it paints (width, height and time are known inside).
+			E(TEXT("Canvas"), { A(TEXT("blend"), EKind::Enum, StaticEnum<EVekaBlendMode>()) }, nullptr, true),
+			E(TEXT("Dot"), { A(TEXT("x"), EKind::Number), A(TEXT("y"), EKind::Number), A(TEXT("radius"), EKind::Number), A(TEXT("color"), EKind::Paint), A(TEXT("opacity"), EKind::Number) }),
+			E(TEXT("Line"), { A(TEXT("x1"), EKind::Number), A(TEXT("y1"), EKind::Number), A(TEXT("x2"), EKind::Number), A(TEXT("y2"), EKind::Number),
+				A(TEXT("width"), EKind::Number), A(TEXT("color"), EKind::Paint), A(TEXT("fromOpacity"), EKind::Number), A(TEXT("opacity"), EKind::Number) }),
+			E(TEXT("Glow"), { A(TEXT("x"), EKind::Number), A(TEXT("y"), EKind::Number), A(TEXT("radius"), EKind::Number), A(TEXT("color"), EKind::Paint), A(TEXT("opacity"), EKind::Number) }),
 		};
 		return Entries;
 	}

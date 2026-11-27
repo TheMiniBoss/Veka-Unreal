@@ -71,6 +71,9 @@ public:
 	/** Called after a state changed value (the editor's Test mode logs it). */
 	TFunction<void(FName, const FVekaValue&)> OnValueChanged;
 
+	/** When the store was made: `time` inside a canvas counts from it. */
+	double StartSeconds = FPlatformTime::Seconds();
+
 	/** Timelines of the mounted view by name (the editor's Timeline tab plays and scrubs them). */
 	TMap<FName, TSharedPtr<FVekaTimelinePlayer>> Timelines;
 	/** Timelines already auto-played for this store. */

@@ -2,6 +2,13 @@
 
 The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a release, `-` an entry.
 
+## Drawing in .vk: Canvas — the SwiftUI fireworks challenge (2026-11-27)
+- Canvas { ... }: a drawing area. Inside it, Dot, Line (a color fading along it) and Glow (a soft radial light) are drawn at x / y in points, with width and height for the canvas size.
+- Canvas(blend: .Add): light adds up, overlapping sparks get brighter (SwiftUI .plusLighter).
+- A canvas that reads time repaints every frame without re-evaluating the view: 925 dots for about 3 ms.
+- Arrays have .count: colors[floor(random(seed) * colors.count)].
+- New example VV_Fireworks: Kavsoft's SwiftUI fireworks (TimelineView + Canvas) redone in .vk only, line by line: rockets with a fading trail, a flash, 6 bursts of 180 twinkling sparks that fall and fade.
+
 ## Friendlier inspector, palette and views list (2026-11-27)
 - Every component, modifier and setting has a plain name, an icon and a one-line explanation (tooltips everywhere).
 - Inspector: a header saying what the view is, titled sections, fields with their label above and their unit inside (px, pt, °), sizes side by side, short choices as buttons (alignments with icons), fx to write any setting as code.
