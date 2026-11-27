@@ -2,6 +2,12 @@
 
 The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a release, `-` an entry.
 
+## A simpler view editor (2026-11-27)
+- Three columns: the views (with a + Add button that holds the palette), the viewport over the code, one side panel.
+- The side panel shows what matters: the selected view's inspector, the whole view (states, params, events, asset settings) when nothing is selected, the test panel while testing.
+- One toolbar: Test / Stop, Reset, Fit, Hub. The preview refreshes by itself.
+- The viewport opens on Content: a screen the size of the view (a card is no longer lost in a 1080p screen). Game screens and the UI scale are in the same menu; bounds and padding under Show.
+
 ## Effects in .vk only (2026-11-27)
 - let name = value: a named value for the next views of a block.
 - time: seconds since the view appeared (a view that reads it is re-evaluated every frame).

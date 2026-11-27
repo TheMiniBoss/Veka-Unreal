@@ -570,6 +570,10 @@ void SVekaViewPreview::Refresh()
 		DeclaredInitials.Add(State.Name, State.Initial);
 	}
 	Host->SetRoot(Asset->BuildRoot(NewStore));
+	if (Settings.bFitContent)
+	{
+		ApplyDevice();
+	}
 	++RefreshCount;
 	OnRefreshed.Broadcast();
 }
@@ -606,8 +610,28 @@ void SVekaViewPreview::ResetState()
 	Refresh();
 }
 
+void SVekaViewPreview::SetFitContent(bool bFit)
+{
+	Settings.bFitContent = bFit;
+	ApplyDevice();
+	SaveSettings();
+}
+
+FIntPoint SVekaViewPreview::MeasureContent() const
+{
+	const TSharedPtr<FVekaNode> Root = Host.IsValid() ? Host->GetRuntime()->GetRootNode() : nullptr;
+	if (!Root.IsValid())
+	{
+		return ContentSize;
+	}
+	const FVector2D Natural = Root->Measure(FVekaProposal::Unspecified());
+	constexpr double Margin = 48.0;
+	return FIntPoint(FMath::Clamp(FMath::CeilToInt(Natural.X + 2.0 * Margin), 200, 3840), FMath::Clamp(FMath::CeilToInt(Natural.Y + 2.0 * Margin), 120, 2160));
+}
+
 void SVekaViewPreview::SetDevice(int32 Index)
 {
+	Settings.bFitContent = false;
 	Settings.Device = FMath::Clamp(Index, 0, Veka::Editor::DevicePresets().Num() - 1);
 	ApplyDevice();
 	SaveSettings();
@@ -655,12 +679,20 @@ void SVekaViewPreview::ZoomToFit()
 
 FIntPoint SVekaViewPreview::GetDeviceSize() const
 {
+	if (Settings.bFitContent)
+	{
+		return ContentSize;
+	}
 	return Veka::Editor::DevicePresets()[Settings.Device].Size;
 }
 
 float SVekaViewPreview::GetDPIScale() const
 {
-	return Settings.DPIOverride > 0.f ? Settings.DPIOverride : Veka::Editor::ProjectDPIScale(GetDeviceSize());
+	if (Settings.DPIOverride > 0.f)
+	{
+		return Settings.DPIOverride;
+	}
+	return Settings.bFitContent ? 1.f : Veka::Editor::ProjectDPIScale(GetDeviceSize());
 }
 
 FVector2D SVekaViewPreview::GetLogicalSize() const
@@ -699,6 +731,10 @@ void SVekaViewPreview::ApplyEnvironment()
 
 void SVekaViewPreview::ApplyDevice()
 {
+	if (Settings.bFitContent)
+	{
+		ContentSize = MeasureContent();
+	}
 	const FIntPoint Size = GetDeviceSize();
 	Canvas->SetDevice(Size, GetDPIScale(), GetDeviceLabel());
 }
@@ -714,6 +750,11 @@ FSlateColor SVekaViewPreview::GetScreenColor() const
 
 FText SVekaViewPreview::GetDeviceLabel() const
 {
+	if (Settings.bFitContent)
+	{
+		return FText::Format(LOCTEXT("ContentLabel", "Content  {0} x {1}"), FText::AsNumber(ContentSize.X, &FNumberFormattingOptions::DefaultNoGrouping()),
+			FText::AsNumber(ContentSize.Y, &FNumberFormattingOptions::DefaultNoGrouping()));
+	}
 	const FVekaDevicePreset& Preset = Veka::Editor::DevicePresets()[Settings.Device];
 	return FText::Format(LOCTEXT("DeviceLabel", "{0}  {1} x {2}"), Preset.Name, FText::AsNumber(Preset.Size.X, &FNumberFormattingOptions::DefaultNoGrouping()),
 		FText::AsNumber(Preset.Size.Y, &FNumberFormattingOptions::DefaultNoGrouping()));
@@ -766,22 +807,11 @@ TSharedRef<SWidget> SVekaViewPreview::MakeToolbar()
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
 				SNew(SComboButton)
-				.ToolTipText(LOCTEXT("DeviceTooltip", "Screen the view is previewed on"))
+				.ToolTipText(LOCTEXT("DeviceTooltip", "Screen the view is previewed on: its own size (Content) or a game resolution, and the UI scale"))
 				.OnGetMenuContent(this, &SVekaViewPreview::MakeDeviceMenu)
 				.ButtonContent()
 				[
 					SNew(STextBlock).Text(this, &SVekaViewPreview::GetDeviceLabel)
-				]
-			]
-			+ SHorizontalBox::Slot().AutoWidth()[Gap()]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-			[
-				SNew(SComboButton)
-				.ToolTipText(LOCTEXT("DPITooltip", "UI scale. Auto follows the project's DPI curve (Project Settings > User Interface), like the game."))
-				.OnGetMenuContent(this, &SVekaViewPreview::MakeDPIMenu)
-				.ButtonContent()
-				[
-					SNew(STextBlock).Text(this, &SVekaViewPreview::GetDPILabel)
 				]
 			]
 			+ SHorizontalBox::Slot().AutoWidth()[Gap()]
@@ -798,7 +828,8 @@ TSharedRef<SWidget> SVekaViewPreview::MakeToolbar()
 			+ SHorizontalBox::Slot().AutoWidth()[Gap()]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
-				SNew(SBox).WidthOverride(220.f)
+				SNew(SBox).WidthOverride(200.f)
+				.ToolTipText(LOCTEXT("ThemeTooltip", "Colora theme of the preview (empty: the built-in Veka theme)"))
 				[
 					SNew(SObjectPropertyEntryBox)
 					.AllowedClass(UVekaTheme::StaticClass())
@@ -808,19 +839,16 @@ TSharedRef<SWidget> SVekaViewPreview::MakeToolbar()
 					.OnObjectChanged_Lambda([this](const FAssetData& Asset) { SetTheme(Cast<UVekaTheme>(Asset.GetAsset())); })
 				]
 			]
-			+ SHorizontalBox::Slot().AutoWidth()[Gap()]
+			+ SHorizontalBox::Slot().FillWidth(1.f)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
-				Toggle(LOCTEXT("Select", "Select"), LOCTEXT("SelectTooltip", "Click a view to select it (off: use the view: buttons, toggles...). Ctrl+click adds to the selection."),
-					[this]() { return Settings.bSelectMode; }, [this](bool bOn) { SetSelectMode(bOn); })
-			]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-			[
-				Toggle(LOCTEXT("Bounds", "Bounds"), LOCTEXT("BoundsTooltip", "Outline every view"), [this]() { return Settings.bShowBounds; }, [this](bool bOn) { SetShowBounds(bOn); })
-			]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-			[
-				Toggle(LOCTEXT("Padding", "Padding"), LOCTEXT("PaddingTooltip", "Show padding areas"), [this]() { return Settings.bShowPadding; }, [this](bool bOn) { SetShowPadding(bOn); })
+				SNew(SComboButton)
+				.ToolTipText(LOCTEXT("ViewOptionsTooltip", "What the viewport draws over the view"))
+				.OnGetMenuContent(this, &SVekaViewPreview::MakeViewMenu)
+				.ButtonContent()
+				[
+					SNew(STextBlock).Text(LOCTEXT("ViewOptions", "Show"))
+				]
 			]
 		];
 }
@@ -828,6 +856,11 @@ TSharedRef<SWidget> SVekaViewPreview::MakeToolbar()
 TSharedRef<SWidget> SVekaViewPreview::MakeDeviceMenu()
 {
 	FMenuBuilder Menu(true, nullptr);
+	Menu.AddMenuEntry(LOCTEXT("ContentEntry", "Content (the view's own size)"), LOCTEXT("ContentEntryTooltip", "A screen just around the view, at DPI 1: for cards, buttons, panels"),
+		FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([this]() { SetFitContent(true); }), FCanExecuteAction(),
+			FIsActionChecked::CreateLambda([this]() { return Settings.bFitContent; })),
+		NAME_None, EUserInterfaceActionType::RadioButton);
+	Menu.BeginSection(TEXT("Screens"), LOCTEXT("Screens", "Game screens"));
 	const TArray<FVekaDevicePreset>& Presets = Veka::Editor::DevicePresets();
 	for (int32 Index = 0; Index < Presets.Num(); ++Index)
 	{
@@ -835,9 +868,37 @@ TSharedRef<SWidget> SVekaViewPreview::MakeDeviceMenu()
 			FText::AsNumber(Presets[Index].Size.Y, &FNumberFormattingOptions::DefaultNoGrouping()));
 		Menu.AddMenuEntry(Label, FText::GetEmpty(), FSlateIcon(),
 			FUIAction(FExecuteAction::CreateLambda([this, Index]() { SetDevice(Index); }), FCanExecuteAction(),
-				FIsActionChecked::CreateLambda([this, Index]() { return Settings.Device == Index; })),
+				FIsActionChecked::CreateLambda([this, Index]() { return !Settings.bFitContent && Settings.Device == Index; })),
 			NAME_None, EUserInterfaceActionType::RadioButton);
 	}
+	Menu.EndSection();
+	Menu.AddSubMenu(TAttribute<FText>::CreateLambda([this]() { return FText::Format(LOCTEXT("UIScaleMenu", "UI scale: {0}"), GetDPILabel()); }),
+		LOCTEXT("UIScaleTooltip", "Auto follows the project's DPI curve (Project Settings > User Interface), like the game."),
+		FNewMenuDelegate::CreateLambda([this](FMenuBuilder& Sub)
+		{
+			const float Scales[] = { 0.f, 0.5f, 0.75f, 1.f, 1.25f, 1.5f, 2.f, 3.f };
+			for (const float Scale : Scales)
+			{
+				Sub.AddMenuEntry(Scale > 0.f ? FText::AsNumber(Scale) : LOCTEXT("DPIAutoEntryScale", "Auto (project DPI curve)"), FText::GetEmpty(), FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([this, Scale]() { SetDPIOverride(Scale); }), FCanExecuteAction(),
+						FIsActionChecked::CreateLambda([this, Scale]() { return FMath::IsNearlyEqual(Settings.DPIOverride, Scale); })),
+					NAME_None, EUserInterfaceActionType::RadioButton);
+			}
+		}));
+	return Menu.MakeWidget();
+}
+
+TSharedRef<SWidget> SVekaViewPreview::MakeViewMenu()
+{
+	FMenuBuilder Menu(true, nullptr);
+	Menu.AddMenuEntry(LOCTEXT("Bounds", "Bounds"), LOCTEXT("BoundsTooltip", "Outline every view"), FSlateIcon(),
+		FUIAction(FExecuteAction::CreateLambda([this]() { SetShowBounds(!Settings.bShowBounds); }), FCanExecuteAction(),
+			FIsActionChecked::CreateLambda([this]() { return Settings.bShowBounds; })),
+		NAME_None, EUserInterfaceActionType::ToggleButton);
+	Menu.AddMenuEntry(LOCTEXT("Padding", "Padding"), LOCTEXT("PaddingTooltip", "Show padding areas"), FSlateIcon(),
+		FUIAction(FExecuteAction::CreateLambda([this]() { SetShowPadding(!Settings.bShowPadding); }), FCanExecuteAction(),
+			FIsActionChecked::CreateLambda([this]() { return Settings.bShowPadding; })),
+		NAME_None, EUserInterfaceActionType::ToggleButton);
 	return Menu.MakeWidget();
 }
 
@@ -865,6 +926,9 @@ void SVekaViewPreview::LoadSettings()
 	GConfig->GetInt(ConfigSection, TEXT("Device"), Device, GEditorPerProjectIni);
 	GConfig->GetFloat(ConfigSection, TEXT("DPIOverride"), DPI, GEditorPerProjectIni);
 	GConfig->GetBool(ConfigSection, TEXT("Light"), bLight, GEditorPerProjectIni);
+	bool bFit = true;
+	GConfig->GetBool(ConfigSection, TEXT("FitContent"), bFit, GEditorPerProjectIni);
+	Settings.bFitContent = bFit;
 	GConfig->GetBool(ConfigSection, TEXT("ShowBounds"), Settings.bShowBounds, GEditorPerProjectIni);
 	GConfig->GetBool(ConfigSection, TEXT("ShowPadding"), Settings.bShowPadding, GEditorPerProjectIni);
 	GConfig->GetString(ConfigSection, TEXT("Theme"), ThemePath, GEditorPerProjectIni);
@@ -880,6 +944,7 @@ void SVekaViewPreview::SaveSettings() const
 	{
 		return;
 	}
+	GConfig->SetBool(ConfigSection, TEXT("FitContent"), Settings.bFitContent, GEditorPerProjectIni);
 	GConfig->SetInt(ConfigSection, TEXT("Device"), Settings.Device, GEditorPerProjectIni);
 	GConfig->SetFloat(ConfigSection, TEXT("DPIOverride"), Settings.DPIOverride, GEditorPerProjectIni);
 	GConfig->SetBool(ConfigSection, TEXT("Light"), Settings.Scheme == EVekaColorScheme::Light, GEditorPerProjectIni);

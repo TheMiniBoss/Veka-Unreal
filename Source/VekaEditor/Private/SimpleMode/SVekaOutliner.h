@@ -99,7 +99,9 @@ struct FVekaPaletteEntry
 class SVekaPalette : public SCompoundWidget
 {
 public:
-	SLATE_BEGIN_ARGS(SVekaPalette) {}
+	SLATE_BEGIN_ARGS(SVekaPalette) : _PickOnClick(false) {}
+		/** One click adds the entry and closes the menu it is in (the Outliner's "+ Add" popup); otherwise double-click or drag. */
+		SLATE_ARGUMENT(bool, PickOnClick)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs, const TSharedRef<FVekaViewEditorContext>& InContext);
@@ -117,6 +119,7 @@ private:
 	TSharedPtr<SListView<TSharedPtr<FVekaPaletteEntry>>> List;
 	TArray<TSharedPtr<FVekaPaletteEntry>> Entries;
 	FString Filter;
+	bool bPickOnClick = false;
 	/** Views added, removed, renamed or changed, or a library changed: the palette is gathered again. */
 	bool bStale = false;
 	uint32 LibraryRevision = 0;

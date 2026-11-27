@@ -16,6 +16,13 @@
 #include "Widgets/Text/SInlineEditableTextBlock.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/STableRow.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBox.h"
 
 #define LOCTEXT_NAMESPACE "VekaOutliner"
 
@@ -179,9 +186,50 @@ namespace Veka::Editor
 void SVekaOutliner::Construct(const FArguments& InArgs, const TSharedRef<FVekaViewEditorContext>& InContext)
 {
 	Context = InContext;
+	TWeakPtr<FVekaViewEditorContext> WeakContext = InContext;
 	ChildSlot
 	[
 		SNew(SVerticalBox)
+		// Header: the view's layers and the button that adds one (the palette, searchable, in a popup).
+		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(8.f, 6.f, 6.f, 6.f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("NormalFontBold"))
+				.Text(LOCTEXT("OutlinerTitle", "Views"))
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+				.ComboButtonStyle(&FAppStyle::Get().GetWidgetStyle<FComboButtonStyle>("SimpleComboButton"))
+				.HasDownArrow(false)
+				.ToolTipText(LOCTEXT("AddTooltip", "Add a component, a shape or a view of the project inside the selection (or after it)"))
+				.IsEnabled_Lambda([WeakContext]() { const TSharedPtr<FVekaViewEditorContext> Pinned = WeakContext.Pin(); return Pinned && !Pinned->IsReadOnly(); })
+				.OnGetMenuContent_Lambda([WeakContext]() -> TSharedRef<SWidget>
+				{
+					const TSharedPtr<FVekaViewEditorContext> Pinned = WeakContext.Pin();
+					if (!Pinned)
+					{
+						return SNullWidget::NullWidget;
+					}
+					return SNew(SBox).WidthOverride(300.f).HeightOverride(460.f)[SNew(SVekaPalette, Pinned.ToSharedRef()).PickOnClick(true)];
+				})
+				.ButtonContent()
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 4.f, 0.f))
+					[
+						SNew(SImage).Image(FAppStyle::GetBrush("Icons.Plus")).ColorAndOpacity(FSlateColor::UseForeground())
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Text(LOCTEXT("Add", "Add"))
+					]
+				]
+			]
+		]
 		+ SVerticalBox::Slot().FillHeight(1.f)
 		[
 			SAssignNew(Tree, STreeView<TSharedPtr<FVekaOutlinerItem>>)
@@ -214,7 +262,7 @@ void SVekaOutliner::Construct(const FArguments& InArgs, const TSharedRef<FVekaVi
 			.Visibility_Lambda([this]() { return RootItems.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })
 			.AutoWrapText(true)
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			.Text(LOCTEXT("Empty", "Empty view: double-click a component in the Palette to start."))
+			.Text(LOCTEXT("Empty", "Empty view: click + Add to start."))
 		]
 	];
 	DocumentHandle = Context->OnDocumentChanged.AddSP(this, &SVekaOutliner::Rebuild);
@@ -649,6 +697,7 @@ void SVekaPalette::Tick(const FGeometry& AllottedGeometry, const double InCurren
 void SVekaPalette::Construct(const FArguments& InArgs, const TSharedRef<FVekaViewEditorContext>& InContext)
 {
 	Context = InContext;
+	bPickOnClick = InArgs._PickOnClick;
 	LibraryRevision = Veka::Components::GetRevision();
 	{
 		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
@@ -681,6 +730,15 @@ void SVekaPalette::Construct(const FArguments& InArgs, const TSharedRef<FVekaVie
 				if (Entry.IsValid() && !Entry->bHeader)
 				{
 					Veka::Editor::InsertAtSelection(*Context, Entry->Type, Entry->Component.Get());
+				}
+			})
+			// In the "+ Add" popup one click adds and closes.
+			.OnMouseButtonClick_Lambda([this](TSharedPtr<FVekaPaletteEntry> Entry)
+			{
+				if (bPickOnClick && Entry.IsValid() && !Entry->bHeader)
+				{
+					Veka::Editor::InsertAtSelection(*Context, Entry->Type, Entry->Component.Get());
+					FSlateApplication::Get().DismissAllMenus();
 				}
 			})
 		]

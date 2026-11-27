@@ -85,7 +85,7 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 | Phase | **4** ✅ terminée (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn, 4f Perf + démo in-game fusionnés ; budgets §13 tenus) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
 | Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` + langage : `let`, `time`, fonctions maths / `random` / `hsv` ; 105 tests automation ✅ |
-| Prochaine étape | Refonte de l'UX de l'éditeur et du Hub (demande de TheMiniBoss du 2026-11-27 : « ça fait un peu bordel ») — plan à valider avant le code |
+| Prochaine étape | Retour de TheMiniBoss sur l'éditeur de vue simplifié (2026-11-27) ; puis TODO : verre sombre de la galerie du Hub, perf `time` (nœuds qui le lisent seulement) |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -120,6 +120,32 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-27 — CLOUD + LOCAL → éditeur de vue simplifié (UX)
+
+- **Demande de TheMiniBoss** : « refais tout l'UX pour simplifier l'expérience utilisateur et l'éditeur car ça fait un
+  peu bordel » ; il a choisi « Fonce, propose » (pas de questions préalables).
+- **Constat** (avant : `Docs/Sync/Screens/ux-editor-before.jpg`) : 6 zones dont une pile de 4 onglets à droite
+  (Inspector, State, Test, Details), Palette en panneau permanent, deux barres d'outils (~15 boutons : Refresh, Reset
+  state, Fit, Symbols, Hub ; écran, DPI, Light, Dark, thème, Select, Bounds, Padding), aperçu en 1080p où une carte est un
+  point au milieu d'un écran noir.
+- **Après** (`ux-editor-design.jpg`, `ux-editor-test.jpg`, branche `cpp/ux-editor`) :
+  - **3 colonnes** (layout `Standalone_VekaViewEditor_Layout_v5`, les anciens layouts sont remplacés) : « Views »
+    (l'outliner, avec un bouton **+ Add** = la palette en popup : recherche, un clic ajoute et ferme) | aperçu au-dessus
+    de Code / Timeline | **un seul panneau** à droite.
+  - **Panneau de droite qui suit le contexte** (`MakeSidePanel`, `SWidgetSwitcher`) : en test → panneau Test ; une
+    sélection → inspecteur ; rien de sélectionné → « This view » (états, params, événements, slots, modèle) + « Asset
+    settings » (le Details, replié). Les onglets State / Test / Details n'existent plus ; Palette reste dans Window.
+  - **Une barre d'outils** : **Test / Stop** (bascule conception ↔ test, remplace le bouton Select de l'aperçu et le
+    Play du panneau Test), Reset, Fit, Hub. Refresh supprimé (l'aperçu se rafraîchit seul), Symbols supprimé (Tools / Hub).
+  - **Aperçu** : nouvel écran **Content** par défaut (taille naturelle de la vue + 48 px de marge, DPI 1, recalculé à
+    chaque modification ; `FVekaPreviewSettings::bFitContent`, sauvé dans la config) ; le menu d'écran contient Content,
+    les écrans de jeu et l'échelle UI (sous-menu) ; Bounds / Padding sous « Show ». Barre : écran, Light / Dark, thème, Show.
+- **Tests** : 105 (104 verts + 1 avec l'avertissement attendu) ; les tests d'aperçu fixent leur écran (le défaut
+  Content ne s'applique qu'avec les réglages persistés). Vérifié à l'œil : ajout par + Add (popup), sélection →
+  inspecteur, Test → Stop + panneau Test, retour.
+- **Piège** : avec un éditeur d'asset ouvert en onglet, `taskkill` ne ferme pas UE (aucune boîte) ; fermer l'onglet
+  puis File > Exit de l'onglet du niveau.
 
 ### 2026-11-27 — CLOUD + LOCAL → tout en `.vk` : `let`, `time`, fonctions ; feux d'artifice sans C++ ; doc colorée
 

@@ -37,6 +37,8 @@ struct FVekaPreviewLogEntry
 /** What the viewport shows (kept between sessions in EditorPerProjectUserSettings). */
 struct FVekaPreviewSettings
 {
+	/** The screen is the view's own size (plus a margin), at DPI 1: a card or a button is not lost in a 1080p screen. */
+	bool bFitContent = false;
 	int32 Device = 0;
 	/** 0 = the project's DPI curve (Project Settings > User Interface), as the game would scale it. */
 	float DPIOverride = 0.f;
@@ -78,7 +80,10 @@ public:
 	/** Back to the declared initial states. */
 	void ResetState();
 
+	/** One of DevicePresets() (turns Content off). */
 	void SetDevice(int32 Index);
+	/** The screen follows the view's size (recomputed when the view changes). */
+	void SetFitContent(bool bFit);
 	void SetDPIOverride(float Scale);
 	void SetScheme(EVekaColorScheme Scheme);
 	void SetTheme(UVekaTheme* Theme);
@@ -118,6 +123,9 @@ private:
 	TSharedRef<SWidget> MakeToolbar();
 	TSharedRef<SWidget> MakeDeviceMenu();
 	TSharedRef<SWidget> MakeDPIMenu();
+	TSharedRef<SWidget> MakeViewMenu();
+	/** The view's natural size plus a margin, in pixels (Content screen). */
+	FIntPoint MeasureContent() const;
 	FText GetDeviceLabel() const;
 	FText GetDPILabel() const;
 	FText GetStatusText() const;
@@ -136,6 +144,7 @@ private:
 	TSharedPtr<FVekaViewEditorContext> Context;
 	FDelegateHandle SelectionHandle;
 	FVekaPreviewSettings Settings;
+	FIntPoint ContentSize = FIntPoint(640, 480);
 	bool bPersistSettings = true;
 	int32 RefreshCount = 0;
 	FText LastEvent;

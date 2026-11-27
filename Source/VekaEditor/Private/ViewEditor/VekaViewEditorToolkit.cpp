@@ -18,6 +18,10 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/MultiBox/MultiBoxExtender.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Layout/SWidgetSwitcher.h"
+#include "Widgets/Layout/SExpandableArea.h"
+#include "Widgets/Text/STextBlock.h"
 #include "ScopedTransaction.h"
 #include "Styling/AppStyle.h"
 
@@ -97,24 +101,20 @@ void FVekaViewEditorToolkit::InitEditor(EToolkitMode::Type Mode, const TSharedPt
 
 	TestPanel = SNew(SVekaTestPanel, Context.ToSharedRef(), Preview.ToSharedRef());
 	TimelinePanel = SNew(SVekaTimelinePanel, Context.ToSharedRef(), Preview.ToSharedRef());
+	SidePanel = MakeSidePanel();
 
-	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout(TEXT("Standalone_VekaViewEditor_Layout_v4"))
+	// Three columns, no tab to hunt for: Outliner | viewport over code | one side panel. The Palette, State, Test and
+	// Details tabs of v4 now live in the Outliner's "+ Add" button and in the side panel.
+	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout(TEXT("Standalone_VekaViewEditor_Layout_v5"))
 		->AddArea(
 			FTabManager::NewPrimaryArea()
 			->SetOrientation(Orient_Horizontal)
-			->Split(FTabManager::NewSplitter()->SetOrientation(Orient_Vertical)->SetSizeCoefficient(0.2f)
-				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.6f)->AddTab(OutlinerTabId, ETabState::OpenedTab))
-				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.4f)->AddTab(PaletteTabId, ETabState::OpenedTab)))
-			->Split(FTabManager::NewSplitter()->SetOrientation(Orient_Vertical)->SetSizeCoefficient(0.55f)
-				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.6f)->AddTab(ViewportTabId, ETabState::OpenedTab)->SetHideTabWell(true))
-				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.4f)->AddTab(CodeTabId, ETabState::OpenedTab)->AddTab(TimelineTabId, ETabState::OpenedTab)
+			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.18f)->AddTab(OutlinerTabId, ETabState::OpenedTab)->SetHideTabWell(true))
+			->Split(FTabManager::NewSplitter()->SetOrientation(Orient_Vertical)->SetSizeCoefficient(0.57f)
+				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.62f)->AddTab(ViewportTabId, ETabState::OpenedTab)->SetHideTabWell(true))
+				->Split(FTabManager::NewStack()->SetSizeCoefficient(0.38f)->AddTab(CodeTabId, ETabState::OpenedTab)->AddTab(TimelineTabId, ETabState::OpenedTab)
 					->SetForegroundTab(CodeTabId)))
-			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.25f)
-				->AddTab(InspectorTabId, ETabState::OpenedTab)
-				->AddTab(StateTabId, ETabState::OpenedTab)
-				->AddTab(TestTabId, ETabState::OpenedTab)
-				->AddTab(DetailsTabId, ETabState::OpenedTab)
-				->SetForegroundTab(InspectorTabId)));
+			->Split(FTabManager::NewStack()->SetSizeCoefficient(0.25f)->AddTab(InspectorTabId, ETabState::OpenedTab)->SetHideTabWell(true)));
 
 	TSharedPtr<FExtender> ToolbarExtender = MakeShared<FExtender>();
 	ToolbarExtender->AddToolBarExtension(TEXT("Asset"), EExtensionHook::After, GetToolkitCommands(), FToolBarExtensionDelegate::CreateSP(this, &FVekaViewEditorToolkit::FillToolbar));
@@ -154,10 +154,6 @@ void FVekaViewEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& 
 		.SetDisplayName(LOCTEXT("ViewportTab", "Viewport"))
 		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Viewports"));
-	InTabManager->RegisterTabSpawner(DetailsTabId, FOnSpawnTab::CreateSP(this, &FVekaViewEditorToolkit::SpawnDetailsTab))
-		.SetDisplayName(LOCTEXT("DetailsTab", "Details"))
-		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
-		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
 	InTabManager->RegisterTabSpawner(CodeTabId, FOnSpawnTab::CreateSP(this, &FVekaViewEditorToolkit::SpawnCodeTab))
 		.SetDisplayName(LOCTEXT("CodeTab", "Code"))
 		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
@@ -170,24 +166,79 @@ void FVekaViewEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& 
 			.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), Icon));
 	};
 	Panel(OutlinerTabId, LOCTEXT("OutlinerTab", "Outliner"), Outliner, "LevelEditor.Tabs.Outliner");
+	// Still in Window > Veka View Editor for whoever wants the palette docked (the "+ Add" menu has its own).
 	Panel(PaletteTabId, LOCTEXT("PaletteTab", "Palette"), Palette, "Kismet.Tabs.Palette");
-	Panel(InspectorTabId, LOCTEXT("InspectorTab", "Inspector"), Inspector, "LevelEditor.Tabs.Details");
-	Panel(StateTabId, LOCTEXT("StateTab", "State"), StatePanel, "Kismet.Tabs.Variables");
-	Panel(TestTabId, LOCTEXT("TestTab", "Test"), TestPanel, "Icons.Play");
+	Panel(InspectorTabId, LOCTEXT("InspectorTab", "Inspector"), SidePanel, "LevelEditor.Tabs.Details");
 	Panel(TimelineTabId, LOCTEXT("TimelineTab", "Timeline"), TimelinePanel, "Sequencer.Tabs.SequencerMain");
+}
+
+bool FVekaViewEditorToolkit::IsTesting() const
+{
+	return TestPanel.IsValid() && TestPanel->IsPlaying();
+}
+
+void FVekaViewEditorToolkit::SetTesting(bool bTesting)
+{
+	if (TestPanel.IsValid())
+	{
+		TestPanel->SetPlaying(bTesting);
+	}
+}
+
+TSharedRef<SWidget> FVekaViewEditorToolkit::MakeSidePanel()
+{
+	// Asset settings (preview model, component library...) under the view's own states, params and events.
+	TSharedRef<SWidget> ViewPage = SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(10.f, 8.f, 10.f, 2.f))
+		[
+			SNew(STextBlock)
+			.Font(FAppStyle::GetFontStyle("NormalFontBold"))
+			.Text(LOCTEXT("ViewPageTitle", "This view"))
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(10.f, 0.f, 10.f, 4.f))
+		[
+			SNew(STextBlock)
+			.AutoWrapText(true)
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.Text(LOCTEXT("ViewPageHint", "Select a view in the Outliner or the viewport to edit it. Here: the states, params and events of the whole view."))
+		]
+		+ SVerticalBox::Slot().FillHeight(0.6f)
+		[
+			StatePanel.ToSharedRef()
+		]
+		+ SVerticalBox::Slot().FillHeight(0.4f)
+		[
+			SNew(SExpandableArea)
+			.AreaTitle(LOCTEXT("SettingsArea", "Asset settings"))
+			.InitiallyCollapsed(true)
+			.BodyContent()
+			[
+				Details.ToSharedRef()
+			]
+		];
+
+	return SNew(SWidgetSwitcher)
+		.WidgetIndex_Lambda([this]()
+		{
+			if (IsTesting())
+			{
+				return 2;
+			}
+			return Context.IsValid() && !Context->GetSelectedNodes().IsEmpty() ? 0 : 1;
+		})
+		+ SWidgetSwitcher::Slot()[Inspector.ToSharedRef()]
+		+ SWidgetSwitcher::Slot()[ViewPage]
+		+ SWidgetSwitcher::Slot()[TestPanel.ToSharedRef()];
 }
 
 void FVekaViewEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
 {
 	FAssetEditorToolkit::UnregisterTabSpawners(InTabManager);
 	InTabManager->UnregisterTabSpawner(ViewportTabId);
-	InTabManager->UnregisterTabSpawner(DetailsTabId);
 	InTabManager->UnregisterTabSpawner(CodeTabId);
 	InTabManager->UnregisterTabSpawner(OutlinerTabId);
 	InTabManager->UnregisterTabSpawner(PaletteTabId);
 	InTabManager->UnregisterTabSpawner(InspectorTabId);
-	InTabManager->UnregisterTabSpawner(StateTabId);
-	InTabManager->UnregisterTabSpawner(TestTabId);
 	InTabManager->UnregisterTabSpawner(TimelineTabId);
 }
 
@@ -221,22 +272,26 @@ TSharedRef<SDockTab> FVekaViewEditorToolkit::SpawnDetailsTab(const FSpawnTabArgs
 
 void FVekaViewEditorToolkit::FillToolbar(FToolBarBuilder& Builder)
 {
+	// Two things to do with a view: design it (clicks select) or test it (clicks use it). The preview refreshes by itself.
 	Builder.BeginSection(TEXT("Veka"));
 	Builder.AddToolBarButton(
-		FUIAction(FExecuteAction::CreateSP(this, &FVekaViewEditorToolkit::RefreshPreview)), NAME_None, LOCTEXT("Refresh", "Refresh"),
-		LOCTEXT("RefreshTooltip", "Rebuild the preview from the asset"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Refresh"));
+		FUIAction(FExecuteAction::CreateLambda([this]() { SetTesting(!IsTesting()); }), FCanExecuteAction(),
+			FIsActionChecked::CreateLambda([this]() { return IsTesting(); })),
+		NAME_None,
+		TAttribute<FText>::CreateLambda([this]() { return IsTesting() ? LOCTEXT("StopTest", "Stop") : LOCTEXT("Test", "Test"); }),
+		LOCTEXT("TestTooltip", "Test: use the view in the viewport (clicks, hover, focus), watch its states and events on the right. Stop: back to designing (clicks select)."),
+		TAttribute<FSlateIcon>::CreateLambda([this]() { return FSlateIcon(FAppStyle::GetAppStyleSetName(), IsTesting() ? "PlayWorld.StopPlaySession" : "Icons.Play"); }),
+		EUserInterfaceActionType::ToggleButton);
 	Builder.AddToolBarButton(
-		FUIAction(FExecuteAction::CreateLambda([this]() { Preview->ResetState(); })), NAME_None, LOCTEXT("ResetState", "Reset state"),
-		LOCTEXT("ResetStateTooltip", "Back to the declared initial states"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Reset"));
+		FUIAction(FExecuteAction::CreateLambda([this]() { Preview->ResetState(); })), NAME_None, LOCTEXT("ResetState", "Reset"),
+		LOCTEXT("ResetStateTooltip", "Back to the declared initial states"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Refresh"));
 	Builder.AddToolBarButton(
 		FUIAction(FExecuteAction::CreateLambda([this]() { Preview->ZoomToFit(); })), NAME_None, LOCTEXT("Fit", "Fit"),
-		LOCTEXT("FitTooltip", "Zoom to fit the screen (F)"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Fullscreen"));
-	Builder.AddToolBarButton(
-		FUIAction(FExecuteAction::CreateLambda([]() { FGlobalTabmanager::Get()->TryInvokeTab(Veka::Editor::SymbolLibrary::TabId); })), NAME_None, LOCTEXT("Symbols", "Symbols"),
-		LOCTEXT("SymbolsTooltip", "Open the Veka Symbol Library"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"));
+		LOCTEXT("FitTooltip", "Zoom to fit (F)"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Fullscreen"));
+	Builder.AddSeparator();
 	Builder.AddToolBarButton(
 		FUIAction(FExecuteAction::CreateLambda([]() { FGlobalTabmanager::Get()->TryInvokeTab(Veka::Editor::Hub::TabId); })), NAME_None, LOCTEXT("Hub", "Hub"),
-		LOCTEXT("HubTooltip", "Open the Veka Hub (DesignLab)"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Layout"));
+		LOCTEXT("HubTooltip", "Veka Hub: components, colors, symbols, examples and documentation"), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Layout"));
 	Builder.EndSection();
 }
 

@@ -73,24 +73,13 @@ void SVekaTestPanel::Construct(const FArguments& InArgs, const TSharedRef<FVekaV
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(6.f)
 		[
+			// Test / Stop and Reset are in the editor toolbar; here what testing shows.
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 			[
-				SNew(SCheckBox)
-				.Style(&FAppStyle::Get().GetWidgetStyle<FCheckBoxStyle>("ToggleButtonCheckbox"))
-				.ToolTipText(LOCTEXT("PlayTooltip", "Play: clicks, hover and focus go to the view (no PIE). Off: clicks select views."))
-				.IsChecked_Lambda([this]() { return IsPlaying() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-				.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { SetPlaying(State == ECheckBoxState::Checked); })
-				[
-					SNew(SBox).Padding(FMargin(10.f, 2.f))
-					[
-						SNew(STextBlock).Text(LOCTEXT("Play", "Play"))
-					]
-				]
-			]
-			+ SHorizontalBox::Slot().AutoWidth().Padding(FMargin(6.f, 0.f))
-			[
-				SmallButton(LOCTEXT("ResetState", "Reset state"), LOCTEXT("ResetStateTooltip", "Back to the declared initial states"), [this]() { Preview->ResetState(); })
+				SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("NormalFontBold"))
+				.Text(LOCTEXT("Testing", "Testing: use the view in the viewport"))
 			]
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
