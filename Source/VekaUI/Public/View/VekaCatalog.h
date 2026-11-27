@@ -61,8 +61,43 @@ struct FVekaCatalogFunction
 	bool bColor = false;
 };
 
+/** Plain words for one argument (inspector label, tooltip, unit shown in the field). */
+struct FVekaArgumentDoc
+{
+	FName Name;
+	FText Label;
+	FText Help;
+	/** "px", "pt", "°", "×" or empty. */
+	FText Unit;
+};
+
+/** Plain words and an icon for a component or a modifier (palette, outliner, inspector, documentation). */
+struct FVekaCatalogDoc
+{
+	FName Name;
+	/** "Vertical stack", "Padding"... */
+	FText Title;
+	/** A symbol of the built-in library ("line.3.horizontal"). */
+	FName Icon;
+	/** Components: Layout, Content, Controls, Shapes. Modifiers: Layout, Style, Text, Controls, Effects, Animation, Interaction. */
+	FText Category;
+	/** One sentence: what it does. */
+	FText Description;
+	TArray<FVekaArgumentDoc> Arguments;
+
+	const FVekaArgumentDoc* FindArgument(FName Argument) const
+	{
+		return Arguments.FindByPredicate([Argument](const FVekaArgumentDoc& Doc) { return Doc.Name == Argument; });
+	}
+};
+
 namespace Veka::Catalog
 {
+	/** Words and icon of a catalog component or modifier (nullptr for an unknown name). */
+	VEKAUI_API const FVekaCatalogDoc* FindDoc(FName Name, bool bModifier);
+	/** Label of an argument: its documented label, else the name with spaces ("isOn" -> "Is on"). */
+	VEKAUI_API FText ArgumentLabel(FName Owner, bool bModifier, FName Argument);
+
 	VEKAUI_API const TArray<FVekaCatalogEntry>& Components();
 	VEKAUI_API const TArray<FVekaCatalogEntry>& Modifiers();
 	VEKAUI_API const FVekaCatalogEntry* FindComponent(FName Name);

@@ -88,6 +88,9 @@ struct FVekaPaletteEntry
 {
 	FName Type;
 	FText Label;
+	/** A symbol of the built-in library. */
+	FName Icon;
+	FLinearColor IconColor = FLinearColor::White;
 	FText Category;
 	TWeakObjectPtr<UVekaView> Component;
 	/** Parameters and slots of a component view. */

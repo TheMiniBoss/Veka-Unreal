@@ -3,6 +3,7 @@
 #include "SimpleMode/SVekaOutliner.h"
 #include "SimpleMode/VekaViewEditorContext.h"
 #include "SimpleMode/VekaDocumentEdit.h"
+#include "SimpleMode/VekaEditorLook.h"
 #include "View/VekaCatalog.h"
 #include "View/VekaViewAsset.h"
 #include "View/VekaComponentLibrary.h"
@@ -57,21 +58,6 @@ namespace
 			Key += FString::Printf(TEXT("%d/"), Step);
 		}
 		return Key;
-	}
-
-	FLinearColor KindColor(const FVekaDocument& Document, int32 Node)
-	{
-		const FVekaAstNode& N = Document.Nodes[Node];
-		if (N.Kind != EVekaAstNodeKind::Element)
-		{
-			return FLinearColor(0.80f, 0.47f, 0.95f);
-		}
-		if (N.Component)
-		{
-			return FLinearColor(0.98f, 0.62f, 0.30f);
-		}
-		const FVekaCatalogEntry* Entry = Veka::Catalog::FindComponent(N.Type);
-		return Entry && Entry->bContainer ? FLinearColor(0.35f, 0.82f, 0.78f) : FLinearColor(0.45f, 0.65f, 1.f);
 	}
 }
 
@@ -357,19 +343,22 @@ TSharedRef<ITableRow> SVekaOutliner::MakeRow(TSharedPtr<FVekaOutlinerItem> Item,
 	}
 	else
 	{
+		const Veka::Editor::Look::FNodeLook Look = Veka::Editor::Look::DescribeNode(*Document, Node);
+		const FVekaAstNode& N = Document->Nodes[Node];
+		const bool bLabeled = !N.Comments.IsEmpty() && !N.Comments[0].IsEmpty();
+		// A label replaces the type's name; the type then shows as the detail.
+		const FText Main = bLabeled ? FText::FromString(N.Comments[0]) : Look.Title;
+		const FText Detail = bLabeled ? Look.Title : Look.Detail;
 		Content = SNew(SHorizontalBox)
+			.ToolTipText(FText::Format(LOCTEXT("RowTooltip", "{0}\n\nDouble-click or F2 to give it a name. Drag to move it, right-click for more."), Look.Description))
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 6.f, 0.f))
 			[
-				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-				.BorderBackgroundColor(KindColor(*Document, Node))
-				.Padding(FMargin(3.f))
+				Veka::Editor::Look::Icon(Look.Icon, 14.f, Look.Color)
 			]
-			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
 				SNew(SInlineEditableTextBlock)
-				.Text(FText::FromString(Veka::Editor::Doc::DisplayName(*Document, Node)))
-				.ToolTipText(LOCTEXT("RenameTooltip", "Double-click or F2: label of the view (a // comment in code)"))
+				.Text(Main)
 				.IsSelected_Lambda([this, Item]() { return Tree->IsItemSelected(Item); })
 				.OnTextCommitted_Lambda([this, Node](const FText& Text, ETextCommit::Type Commit)
 				{
@@ -383,11 +372,16 @@ TSharedRef<ITableRow> SVekaOutliner::MakeRow(TSharedPtr<FVekaOutlinerItem> Item,
 						});
 					}
 				})
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(FMargin(8.f, 0.f, 4.f, 0.f))
+			[
+				SNew(STextBlock).Text(Detail).Font(FAppStyle::GetFontStyle("SmallFont")).ColorAndOpacity(Veka::Editor::Look::Subdued())
+				.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 			];
 	}
 
 	return SNew(STableRow<TSharedPtr<FVekaOutlinerItem>>, Owner)
-		.Padding(FMargin(2.f, 1.f))
+		.Padding(FMargin(2.f, 3.f))
 		.OnDragDetected_Lambda([this, Item](const FGeometry&, const FPointerEvent& Event) -> FReply
 		{
 			if (Item->bElseGroup || !Event.IsMouseButtonDown(EKeys::LeftMouseButton))
@@ -631,8 +625,22 @@ TArray<FVekaPaletteEntry> SVekaPalette::GatherEntries(const UVekaView* Exclude)
 	{
 		FVekaPaletteEntry& Entry = Out.AddDefaulted_GetRef();
 		Entry.Type = Type;
-		Entry.Label = FText::FromString(Type);
 		Entry.Category = Category;
+		Entry.IconColor = Veka::Editor::Look::FamilyColor(Category);
+		if (const FVekaCatalogDoc* Doc = Veka::Catalog::FindDoc(Type, false))
+		{
+			Entry.Label = Doc->Title;
+			Entry.Icon = Doc->Icon;
+			Entry.Tooltip = Doc->Description;
+			return;
+		}
+		// Logic.
+		const FString Name = Type;
+		Entry.Label = Name == TEXT("if") ? LOCTEXT("PaletteIf", "Condition") : Name == TEXT("ForEach") ? LOCTEXT("PaletteForEach", "Repeat") : LOCTEXT("PaletteSlot", "Slot");
+		Entry.Icon = Name == TEXT("if") ? FName(TEXT("questionmark")) : Name == TEXT("ForEach") ? FName(TEXT("repeat")) : FName(TEXT("tray"));
+		Entry.Tooltip = Name == TEXT("if") ? LOCTEXT("PaletteIfHelp", "Shows its views only when a condition is true.")
+			: Name == TEXT("ForEach") ? LOCTEXT("PaletteForEachHelp", "Repeats its views a number of times, or once per item of a list.")
+			: LOCTEXT("PaletteSlotHelp", "In a component: where the content given by its caller goes.");
 	};
 	const FText Layout = LOCTEXT("CategoryLayout", "Layout");
 	const FText Content = LOCTEXT("CategoryContent", "Content");
@@ -665,6 +673,8 @@ TArray<FVekaPaletteEntry> SVekaPalette::GatherEntries(const UVekaView* Exclude)
 		Entry.Type = Component.View->GetFName();
 		Entry.Label = FText::FromName(Entry.Type);
 		Entry.Category = Component.Group;
+		Entry.Icon = TEXT("cube");
+		Entry.IconColor = Veka::Editor::Look::FamilyColor(LOCTEXT("Views", "Views"));
 		Entry.Component = Component.View;
 		Entry.Tooltip = FText::FromString(Veka::Editor::Components::DescribeComponent(*Component.View));
 	}
@@ -752,7 +762,7 @@ void SVekaPalette::Refresh()
 	FString LastCategory;
 	for (const FVekaPaletteEntry& Entry : GatherEntries(Context->GetView()))
 	{
-		if (!Filter.IsEmpty() && !Entry.Label.ToString().Contains(Filter))
+		if (!Filter.IsEmpty() && !Entry.Label.ToString().Contains(Filter) && !Entry.Type.ToString().Contains(Filter) && !Entry.Tooltip.ToString().Contains(Filter))
 		{
 			continue;
 		}
@@ -776,21 +786,42 @@ TSharedRef<ITableRow> SVekaPalette::MakeRow(TSharedPtr<FVekaPaletteEntry> Entry,
 	{
 		return SNew(STableRow<TSharedPtr<FVekaPaletteEntry>>, Owner)
 			.ShowSelection(false)
-			.Padding(FMargin(2.f, 6.f, 2.f, 2.f))
+			.Padding(FMargin(6.f, 10.f, 2.f, 3.f))
 			[
-				SNew(STextBlock).Text(Entry->Label).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				SNew(STextBlock).Text(Entry->Label.ToUpper()).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(Veka::Editor::Look::Subdued())
 			];
 	}
+	const FText How = bPickOnClick ? LOCTEXT("PaletteHowClick", "Click to add it at the selection.") : LOCTEXT("PaletteHow", "Drag it into the Views list, or double-click to add it at the selection.");
 	return SNew(STableRow<TSharedPtr<FVekaPaletteEntry>>, Owner)
-		.Padding(FMargin(10.f, 2.f, 2.f, 2.f))
-		.ToolTipText(Entry->Tooltip.IsEmpty() ? LOCTEXT("PaletteTooltip", "Drag onto the Outliner, or double-click to add it at the selection")
-			: FText::Format(LOCTEXT("PaletteComponentTooltip", "{0}\nDrag onto the Outliner, or double-click to add it at the selection"), Entry->Tooltip))
+		.Padding(FMargin(6.f, 3.f, 2.f, 3.f))
+		.ToolTipText(Entry->Tooltip.IsEmpty() ? How : FText::Format(LOCTEXT("PaletteComponentTooltip", "{0}\n\n{1}"), Entry->Tooltip, How))
 		.OnDragDetected_Lambda([Entry](const FGeometry&, const FPointerEvent& Event) -> FReply
 		{
 			return FReply::Handled().BeginDragDrop(FVekaNodeDragDrop::New({}, Entry->Type, Entry->Component.Get(), Entry->Label));
 		})
 		[
-			SNew(STextBlock).Text(Entry->Label)
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 8.f, 0.f))
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+				.BorderBackgroundColor(FLinearColor(Entry->IconColor.R, Entry->IconColor.G, Entry->IconColor.B, 0.14f))
+				.Padding(FMargin(4.f))
+				[
+					Veka::Editor::Look::Icon(Entry->Icon.IsNone() ? FName(TEXT("cube")) : Entry->Icon, 14.f, Entry->IconColor)
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(Entry->Label)]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(Entry->Tooltip).Font(FAppStyle::GetFontStyle("SmallFont")).ColorAndOpacity(Veka::Editor::Look::Subdued())
+					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.Visibility(Entry->Tooltip.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+				]
+			]
 		];
 }
 
