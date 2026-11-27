@@ -128,6 +128,15 @@ bool FVekaHubLearnTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("in /Game/VekaExamples"), View->GetPackage()->GetName(), FString(TEXT("/Game/VekaExamples/VV_ExampleSettings")));
 			TestTrue(TEXT("document filled"), View->Document.Nodes.Num() > 3);
 			TestTrue(TEXT("same asset the second time"), OpenExample(*Settings, false) == View);
+			// A copy that no longer matches its example (here: the example changed after the copy was made) is spotted
+			// and updated on request, code included.
+			TestFalse(TEXT("a fresh copy matches its example"), IsExampleCopyOutdated(View, *Settings));
+			View->Document = Veka::Lang::Parse(TEXT("view VV_ExampleSettings {\n    Text(\"Old\")\n}\n")).Document;
+			View->SourceText = TEXT("old");
+			TestTrue(TEXT("an old copy is spotted"), IsExampleCopyOutdated(View, *Settings));
+			TestTrue(TEXT("the copy is updated"), UpdateExampleCopy(View, *Settings));
+			TestFalse(TEXT("the updated copy matches"), IsExampleCopyOutdated(View, *Settings));
+			TestEqual(TEXT("its code is the example's"), View->SourceText, Settings->Source);
 			View->ClearFlags(RF_Public | RF_Standalone);
 			View->MarkAsGarbage();
 		}
