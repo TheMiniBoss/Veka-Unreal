@@ -263,6 +263,23 @@ namespace
 
 namespace Veka::Editor
 {
+	FLinearColor TokenColor(EVekaCodeToken Kind)
+	{
+		switch (Kind)
+		{
+		case EVekaCodeToken::Keyword: return FLinearColor(0.80f, 0.47f, 0.95f);
+		case EVekaCodeToken::Declaration: return FLinearColor(0.98f, 0.62f, 0.30f);
+		case EVekaCodeToken::Component: return FLinearColor(0.35f, 0.82f, 0.78f);
+		case EVekaCodeToken::Modifier: return FLinearColor(0.45f, 0.65f, 1.f);
+		case EVekaCodeToken::EnumValue: return FLinearColor(0.95f, 0.55f, 0.70f);
+		case EVekaCodeToken::String: return FLinearColor(0.98f, 0.45f, 0.38f);
+		case EVekaCodeToken::Number:
+		case EVekaCodeToken::Color: return FLinearColor(0.82f, 0.78f, 0.45f);
+		case EVekaCodeToken::Comment: return FLinearColor(0.45f, 0.48f, 0.52f);
+		default: return FLinearColor(0.84f, 0.85f, 0.88f);
+		}
+	}
+
 	TArray<FVekaCodeSpan> TokenizeLine(const FString& Line)
 	{
 		TArray<FVekaCodeSpan> Spans;

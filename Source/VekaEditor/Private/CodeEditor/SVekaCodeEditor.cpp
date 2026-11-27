@@ -73,22 +73,14 @@ public:
 	{
 		Base = FAppStyle::Get().GetWidgetStyle<FTextBlockStyle>("NormalText");
 		Base.SetFont(Font);
-		Base.SetColorAndOpacity(FLinearColor(0.84f, 0.85f, 0.88f));
-		auto Style = [this](const FLinearColor& Color)
+		Base.SetColorAndOpacity(Veka::Editor::TokenColor(EVekaCodeToken::Plain));
+		for (const EVekaCodeToken Kind : { EVekaCodeToken::Keyword, EVekaCodeToken::Declaration, EVekaCodeToken::Component, EVekaCodeToken::Modifier,
+			EVekaCodeToken::EnumValue, EVekaCodeToken::String, EVekaCodeToken::Number, EVekaCodeToken::Color, EVekaCodeToken::Comment })
 		{
 			FTextBlockStyle Out = Base;
-			Out.SetColorAndOpacity(Color);
-			return Out;
-		};
-		Styles.Add(EVekaCodeToken::Keyword, Style(FLinearColor(0.80f, 0.47f, 0.95f)));
-		Styles.Add(EVekaCodeToken::Declaration, Style(FLinearColor(0.98f, 0.62f, 0.30f)));
-		Styles.Add(EVekaCodeToken::Component, Style(FLinearColor(0.35f, 0.82f, 0.78f)));
-		Styles.Add(EVekaCodeToken::Modifier, Style(FLinearColor(0.45f, 0.65f, 1.f)));
-		Styles.Add(EVekaCodeToken::EnumValue, Style(FLinearColor(0.95f, 0.55f, 0.70f)));
-		Styles.Add(EVekaCodeToken::String, Style(FLinearColor(0.98f, 0.45f, 0.38f)));
-		Styles.Add(EVekaCodeToken::Number, Style(FLinearColor(0.82f, 0.78f, 0.45f)));
-		Styles.Add(EVekaCodeToken::Color, Style(FLinearColor(0.82f, 0.78f, 0.45f)));
-		Styles.Add(EVekaCodeToken::Comment, Style(FLinearColor(0.45f, 0.48f, 0.52f)));
+			Out.SetColorAndOpacity(Veka::Editor::TokenColor(Kind));
+			Styles.Add(Kind, Out);
+		}
 		Squiggle = MakeShared<FVekaSquiggle>();
 		Warning = MakeShared<FVekaSquiggle>();
 		Warning->Color = FLinearColor(1.f, 0.75f, 0.2f);
