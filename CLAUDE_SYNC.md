@@ -121,6 +121,20 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
 
+### 2026-11-27 — CLOUD + LOCAL → « Open as asset » propose de mettre à jour une copie périmée
+
+- **Constat de TheMiniBoss** (capture) : « Unknown 'Fireworks' » dans `/Game/VekaExamples/VV_ExampleBirthdayCard`. Cette
+  copie date du 22 (« Open as asset ») et appelait encore le composant C++ `Fireworks`, supprimé depuis ; « Open as
+  asset » réutilisait la copie existante sans regarder l'exemple.
+- **Branche** : `cpp/example-copy-update`. `Hub::IsExampleCopyOutdated` (document de la copie ≠ document de l'exemple,
+  `Veka::Lang::StructurallyEqual`) et `Hub::UpdateExampleCopy` (via `Veka::Editor::ApplyDocument` : une étape
+  annulable, les éditeurs ouverts se rafraîchissent, code de l'onglet Code = celui de l'exemple). « Open as asset » sur
+  une copie périmée : dialogue Oui (mettre à jour) / Non (ouvrir la copie telle quelle) / Annuler. Jamais remplacé sans
+  demander.
+- **Validé** : build éditeur, 106 tests (105 + 1 avertissement attendu) ; `HubLearn` couvre copie fraîche, copie
+  périmée repérée, mise à jour, code repris. La copie de TheMiniBoss n'est **pas** modifiée : à lui de répondre au
+  dialogue (Hub > Examples > Birthday card > Open as asset > Oui, puis enregistrer).
+
 ### 2026-11-27 — CLOUD + LOCAL → `Canvas` en `.vk` : les feux d'artifice SwiftUI refaits sans C++
 
 - **Demande de TheMiniBoss** (avec `ContentView.swift` et `Fireworks.swift`, Kavsoft : `TimelineView` + `Canvas`,

@@ -2,6 +2,10 @@
 
 The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a release, `-` an entry.
 
+## Examples stay up to date (2026-11-27)
+- "Open as asset" on an example you already opened before: if your copy no longer matches the example (the example changed since, or you edited the copy), the editor asks whether to update it from the example or to open your copy as it is. Edit > Undo brings your copy back.
+- Fixes "Unknown 'Fireworks'" in copies of the birthday card made before the fireworks moved to .vk.
+
 ## Drawing in .vk: Canvas — the SwiftUI fireworks challenge (2026-11-27)
 - Canvas { ... }: a drawing area. Inside it, Dot, Line (a color fading along it) and Glow (a soft radial light) are drawn at x / y in points, with width and height for the canvas size.
 - Canvas(blend: .Add): light adds up, overlapping sparks get brighter (SwiftUI .plusLighter).
