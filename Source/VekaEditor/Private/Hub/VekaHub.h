@@ -52,8 +52,14 @@ namespace Veka::Editor::Hub
 	/**
 	 * Creates the example as a Veka View in /Game/VekaExamples (or finds it there) and opens it in the view editor.
 	 * The new asset is left unsaved (the user saves it). nullptr if its source does not parse.
+	 * When the copy already exists but no longer matches the example (the example changed since, or the copy was
+	 * edited), the editor asks first: update the copy from the example, or open the copy as it is.
 	 */
 	UVekaView* OpenExample(const FExample& Example, bool bOpenEditor = true);
+	/** True when the copy no longer matches its example: its document differs from the example's. */
+	bool IsExampleCopyOutdated(const UVekaView* View, const FExample& Example);
+	/** Replaces the copy's document and code with the example's, as one undoable step (open editors refresh). */
+	bool UpdateExampleCopy(UVekaView* View, const FExample& Example);
 
 	/** A release of Docs/CHANGELOG.md (`## title`, `- entries`). */
 	struct FChangelogRelease

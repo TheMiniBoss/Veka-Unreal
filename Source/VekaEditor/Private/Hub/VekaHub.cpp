@@ -35,6 +35,8 @@
 #include "CodeEditor/VekaCodeAssist.h"
 #include "Fonts/FontMeasure.h"
 #include "Rendering/SlateRenderer.h"
+#include "ViewEditor/VekaViewEditorToolkit.h"
+#include "Misc/MessageDialog.h"
 
 #define LOCTEXT_NAMESPACE "VekaHub"
 
@@ -762,11 +764,60 @@ namespace Veka::Editor::Hub
 			FAssetRegistryModule::AssetCreated(View);
 			View->MarkPackageDirty();
 		}
+		else if (bOpenEditor && IsExampleCopyOutdated(View, Example))
+		{
+			// A copy made earlier: the example changed since (or the copy was edited). Never replaced without asking.
+			const FText Message = FText::Format(LOCTEXT("ExampleCopyOutdated",
+				"Your copy of {0} (/Game/VekaExamples) no longer matches the example.\n\n"
+				"Yes: update the copy from the example (your changes in the copy are replaced; Edit > Undo brings them back).\n"
+				"No: open your copy as it is."), Example.Title);
+			const EAppReturnType::Type Answer = FMessageDialog::Open(EAppMsgType::YesNoCancel, Message, LOCTEXT("ExampleCopyOutdatedTitle", "Update the example?"));
+			if (Answer == EAppReturnType::Cancel)
+			{
+				return View;
+			}
+			if (Answer == EAppReturnType::Yes)
+			{
+				UpdateExampleCopy(View, Example);
+			}
+		}
 		if (bOpenEditor && GEditor)
 		{
 			GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(View);
 		}
 		return View;
+	}
+
+	namespace
+	{
+		FVekaParseResult ParseExample(const FExample& Example)
+		{
+			FVekaParseOptions Options;
+			Options.ResolveComponent = Veka::Lang::MakeAssetResolver();
+			return Veka::Lang::Parse(Example.Source, Options);
+		}
+	}
+
+	bool IsExampleCopyOutdated(const UVekaView* View, const FExample& Example)
+	{
+		if (!View)
+		{
+			return false;
+		}
+		const FVekaParseResult Result = ParseExample(Example);
+		return !Result.HasErrors() && !Veka::Lang::StructurallyEqual(View->Document, Result.Document);
+	}
+
+	bool UpdateExampleCopy(UVekaView* View, const FExample& Example)
+	{
+		const FVekaParseResult Result = ParseExample(Example);
+		if (!View || Result.HasErrors())
+		{
+			return false;
+		}
+		Veka::Editor::ApplyDocument(View, Result.Document, LOCTEXT("UpdateExampleCopy", "Update from the example"), &Example.Source);
+		View->MarkPackageDirty();
+		return true;
 	}
 
 	TArray<FChangelogRelease> GetChangelog()
