@@ -32,8 +32,10 @@ namespace Veka::Editor
 }
 
 /**
- * The Veka View asset editor (double-click a Veka View): Simple mode (Outliner, Palette, Inspector, State: 3d), Code
- * (3c), Viewport and Details tabs, toolbar, undo / redo. Selection is shared by the viewport, the outliner and the code.
+ * The Veka View asset editor (double-click a Veka View). Three columns: the Outliner (its "+ Add" button holds the
+ * palette), the viewport over the Code / Timeline tabs, and one side panel (inspector, the view's states and settings,
+ * or the Test panel while testing). The toolbar switches between designing and testing. Selection is shared by the
+ * viewport, the outliner and the code; undo / redo cover every edit.
  */
 class FVekaViewEditorToolkit : public FAssetEditorToolkit, public FSelfRegisteringEditorUndoClient
 {
@@ -79,6 +81,13 @@ private:
 	TSharedRef<SDockTab> SpawnDetailsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnCodeTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnPanelTab(const FSpawnTabArgs& Args, FText Label, TSharedPtr<SWidget> Content);
+	/**
+	 * The one panel on the right: the Test panel while testing, the selected views' inspector, or (nothing selected) the
+	 * view itself: its states, params and events, then the asset settings.
+	 */
+	TSharedRef<SWidget> MakeSidePanel();
+	bool IsTesting() const;
+	void SetTesting(bool bTesting);
 	void DocumentChanged();
 	void FillToolbar(FToolBarBuilder& Builder);
 	void HandleObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& Event);
@@ -95,5 +104,6 @@ private:
 	TSharedPtr<SVekaStatePanel> StatePanel;
 	TSharedPtr<SVekaTestPanel> TestPanel;
 	TSharedPtr<SVekaTimelinePanel> TimelinePanel;
+	TSharedPtr<SWidget> SidePanel;
 	FDelegateHandle PropertyChangedHandle;
 };
