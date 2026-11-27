@@ -3,6 +3,7 @@
 #include "SimpleMode/SVekaInspector.h"
 #include "SimpleMode/VekaViewEditorContext.h"
 #include "SimpleMode/VekaDocumentEdit.h"
+#include "SimpleMode/VekaEditorLook.h"
 #include "VekaLanguage.h"
 #include "VekaBuilders.h"
 #include "View/VekaCatalog.h"
@@ -158,7 +159,7 @@ void SVekaInspector::Construct(const FArguments& InArgs, const TSharedRef<FVekaV
 	ChildSlot
 	[
 		SNew(SScrollBox)
-		+ SScrollBox::Slot().Padding(6.f)
+		+ SScrollBox::Slot()
 		[
 			SAssignNew(Content, SVerticalBox)
 			.IsEnabled_Lambda([this]() { return !Context->IsReadOnly(); })
@@ -178,20 +179,45 @@ SVekaInspector::~SVekaInspector()
 	}
 }
 
-void SVekaInspector::AddSection(const FText& Title)
+void SVekaInspector::AddSection(const FText& Title, FName Icon, const FText& Tooltip, const TSharedRef<SWidget>& Body, const TSharedPtr<SWidget>& Buttons)
 {
-	Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 10.f, 0.f, 4.f))
-	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight()
-		[
-			SNew(STextBlock).Text(Title).Font(FAppStyle::GetFontStyle("SmallFontBold"))
-		]
-		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(0.f, 2.f))
-		[
-			SNew(SSeparator)
-		]
-	];
+	Content->AddSlot().AutoHeight()[Look::Section(Title, Icon, Tooltip, Body, Buttons)];
+}
+
+TSharedRef<SWidget> SVekaInspector::MakeArgumentsGrid(int32 Node, int32 Modifier, const TArray<FVekaCatalogArgument>& Arguments, FName Owner)
+{
+	// Short fields (numbers, on / off) go two by two, like width and height; the others take the whole line.
+	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
+	TSharedPtr<SWidget> Pending;
+	auto Flush = [&]()
+	{
+		if (Pending.IsValid())
+		{
+			Box->AddSlot().AutoHeight().Padding(FMargin(0.f, 0.f, 0.f, Look::FieldGap))[Look::Pair(Pending.ToSharedRef(), SNew(SBox))];
+			Pending.Reset();
+		}
+	};
+	for (const FVekaCatalogArgument& Argument : Arguments)
+	{
+		const TSharedRef<SWidget> Field = MakeArgumentRow(Node, Modifier, Argument, Owner);
+		const bool bShort = Argument.Kind == EVekaArgumentKind::Number || Argument.Kind == EVekaArgumentKind::Bool;
+		if (!bShort)
+		{
+			Flush();
+			Box->AddSlot().AutoHeight().Padding(FMargin(0.f, 0.f, 0.f, Look::FieldGap))[Field];
+		}
+		else if (Pending.IsValid())
+		{
+			Box->AddSlot().AutoHeight().Padding(FMargin(0.f, 0.f, 0.f, Look::FieldGap))[Look::Pair(Pending.ToSharedRef(), Field)];
+			Pending.Reset();
+		}
+		else
+		{
+			Pending = Field;
+		}
+	}
+	Flush();
+	return Box;
 }
 
 void SVekaInspector::Rebuild()
@@ -201,122 +227,141 @@ void SVekaInspector::Rebuild()
 	const int32 Node = Context->GetPrimarySelection();
 	if (Context->IsReadOnly())
 	{
-		Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 0.f, 0.f, 8.f))
+		Content->AddSlot().AutoHeight().Padding(FMargin(Look::SectionPadding, Look::SectionPadding, Look::SectionPadding, 0.f))
 		[
 			SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(FLinearColor(1.f, 0.5f, 0.4f))
-			.Text(LOCTEXT("ReadOnly", "The code has errors: the Simple mode is read-only until they are fixed (your text is never overwritten)."))
+			.Text(LOCTEXT("ReadOnly", "The code has errors: fix them in the Code tab to edit here again (your text is never overwritten)."))
 		];
 	}
 	if (!Document || !Document->Nodes.IsValidIndex(Node))
 	{
-		Content->AddSlot().AutoHeight()
+		Content->AddSlot().AutoHeight().Padding(Look::SectionPadding)
 		[
-			SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			.Text(LOCTEXT("NoSelection", "Select a view in the Outliner or the Viewport."))
+			SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(Look::Subdued())
+			.Text(LOCTEXT("NoSelection", "Select a view in the Views list or the viewport."))
 		];
 		return;
 	}
 	const FVekaAstNode& N = Document->Nodes[Node];
+	const Look::FNodeLook Described = Look::DescribeNode(*Document, Node);
 
-	// Header: type and label.
+	// Header: what it is, in plain words, and its name in the Views list.
 	Content->AddSlot().AutoHeight()
 	[
-		SNew(STextBlock).Text(FText::FromString(Doc::DisplayName(*Document, Node))).Font(FAppStyle::GetFontStyle("HeadingExtraSmall"))
-	];
-	Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 6.f, 0.f, 0.f))
-	[
-		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot().AutoWidth()[NameLabel(LOCTEXT("Label", "Label"))]
-		+ SHorizontalBox::Slot().FillWidth(1.f)
-		[
-			SNew(SEditableTextBox)
-			.HintText(LOCTEXT("LabelHint", "Name in the Outliner (// comment)"))
-			.Text(FText::FromString(N.Comments.IsEmpty() ? FString() : N.Comments[0]))
-			.OnTextCommitted_Lambda([this, Node](const FText& Text, ETextCommit::Type)
-			{
-				const FString Label = Text.ToString();
-				Context->Edit(LOCTEXT("SetLabel", "Rename view"), [Node, &Label](FVekaDocument& Doc) -> TArray<int32>
-				{
-					Doc::SetLabel(Doc, Node, Label);
-					return { Node };
-				});
-			})
-		]
-	];
-
-	const TArray<FName> Locals = Doc::LocalsAt(*Document, Node);
-	if (N.Kind == EVekaAstNodeKind::Let)
-	{
-		AddSection(LOCTEXT("LetValue", "Value"));
-		const FString Key = RowKey(Node, -2, TEXT("expr"));
-		Content->AddSlot().AutoHeight()
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(Look::SectionPadding, 14.f, Look::SectionPadding, 4.f))
 		[
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()[NameLabel(FText::FromString(TEXT("let ") + N.LoopVariable.ToString()))]
-			+ SHorizontalBox::Slot().FillWidth(1.f)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 10.f, 0.f))
 			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+				.BorderBackgroundColor(FLinearColor(Described.Color.R, Described.Color.G, Described.Color.B, 0.16f))
+				.Padding(FMargin(6.f))
+				[
+					Look::Icon(Described.Icon, 18.f, Described.Color)
+				]
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(Described.Title).Font(FAppStyle::GetFontStyle("HeadingExtraSmall"))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(FText::FromName(N.Kind == EVekaAstNodeKind::Element ? N.Type : NAME_None)).Font(FAppStyle::GetFontStyle("SmallFont")).ColorAndOpacity(Look::Subdued())
+					.Visibility(N.Kind == EVekaAstNodeKind::Element && !Described.Title.EqualTo(FText::FromName(N.Type)) ? EVisibility::Visible : EVisibility::Collapsed)
+					.ToolTipText(LOCTEXT("CodeNameTooltip", "Its name in the code"))
+				]
+			]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(Look::SectionPadding, 2.f, Look::SectionPadding, 10.f))
+		[
+			SNew(STextBlock).AutoWrapText(true).Text(Described.Description).ColorAndOpacity(Look::Subdued())
+			.Visibility(Described.Description.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(Look::SectionPadding, 0.f, Look::SectionPadding, Look::SectionPadding))
+		[
+			Look::Field(LOCTEXT("Label", "Name in the Views list"), LOCTEXT("LabelTooltip", "Helps you find it in the Views list; written as a // comment in the code. Empty: its type is shown."),
+				SNew(SEditableTextBox)
+				.HintText(Described.Title)
+				.Text(FText::FromString(N.Comments.IsEmpty() ? FString() : N.Comments[0]))
+				.OnTextCommitted_Lambda([this, Node](const FText& Text, ETextCommit::Type)
+				{
+					const FString Label = Text.ToString();
+					Context->Edit(LOCTEXT("SetLabel", "Rename view"), [Node, &Label](FVekaDocument& Doc) -> TArray<int32>
+					{
+						Doc::SetLabel(Doc, Node, Label);
+						return { Node };
+					});
+				}))
+		]
+		+ SVerticalBox::Slot().AutoHeight()[SNew(SSeparator).Thickness(1.f).ColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 0.06f))]
+	];
+
+	if (N.Kind == EVekaAstNodeKind::Let)
+	{
+		const FString Key = RowKey(Node, -2, TEXT("expr"));
+		AddSection(LOCTEXT("LetValue", "Value"), TEXT("equal"), LOCTEXT("LetValueTooltip", "A formula: numbers, states, loop variables, functions (sin, random, time...)."),
+			Look::Field(FText::FromString(TEXT("let ") + N.LoopVariable.ToString() + TEXT(" =")), LOCTEXT("LetFieldTooltip", "Its value, written in Veka."),
 				MakeCodeBox(Key, Veka::Lang::PrintExpression(*Document, N.Expr), [this, Node, Key](const FString& Code)
 				{
 					return EditCodeExpression(LOCTEXT("SetLet", "Edit value"), Key, Code, Node, INDEX_NONE, [Node](FVekaDocument& Doc, int32 Expr) { Doc.Nodes[Node].Expr = Expr; });
-				})
-			]
-		];
+				})));
 		return;
 	}
 	if (N.Kind == EVekaAstNodeKind::If || N.Kind == EVekaAstNodeKind::ForEach)
 	{
-		AddSection(N.Kind == EVekaAstNodeKind::If ? LOCTEXT("Condition", "Condition") : LOCTEXT("Items", "Items"));
+		const bool bIf = N.Kind == EVekaAstNodeKind::If;
 		const FString Key = RowKey(Node, -2, TEXT("expr"));
-		Content->AddSlot().AutoHeight()
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()[NameLabel(N.Kind == EVekaAstNodeKind::If ? LOCTEXT("If", "if") : LOCTEXT("ForEachOf", "ForEach"))]
-			+ SHorizontalBox::Slot().FillWidth(1.f)
+		TSharedRef<SVerticalBox> Body = SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(0.f, 0.f, 0.f, Look::FieldGap))
 			[
-				MakeCodeBox(Key, Veka::Lang::PrintExpression(*Document, N.Expr), [this, Node, Key](const FString& Code)
-				{
-					return EditCodeExpression(LOCTEXT("SetCondition", "Edit expression"), Key, Code, Node, INDEX_NONE, [Node](FVekaDocument& Doc, int32 Expr) { Doc.Nodes[Node].Expr = Expr; });
-				})
-			]
-		];
-		if (N.Kind == EVekaAstNodeKind::ForEach)
+				Look::Field(bIf ? LOCTEXT("ConditionField", "Show when") : LOCTEXT("ItemsField", "Repeat for"),
+					bIf ? LOCTEXT("ConditionTooltip", "A condition: a Bool state, a comparison (count > 3), !state...") : LOCTEXT("ItemsTooltip", "A number (36: 36 times) or a list (model.Items: once per item)."),
+					MakeCodeBox(Key, Veka::Lang::PrintExpression(*Document, N.Expr), [this, Node, Key](const FString& Code)
+					{
+						return EditCodeExpression(LOCTEXT("SetCondition", "Edit expression"), Key, Code, Node, INDEX_NONE, [Node](FVekaDocument& Doc, int32 Expr) { Doc.Nodes[Node].Expr = Expr; });
+					}))
+			];
+		if (!bIf)
 		{
-			auto VariableRow = [this, Node](const FText& Label, FName Current, bool bIndex) -> TSharedRef<SWidget>
+			auto VariableField = [this, Node](const FText& Label, const FText& Tooltip, FName Current, bool bIndex) -> TSharedRef<SWidget>
 			{
-				return SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth()[NameLabel(Label)]
-					+ SHorizontalBox::Slot().FillWidth(1.f)
-					[
-						SNew(SEditableTextBox)
-						.Text(FText::FromName(Current))
-						.OnTextCommitted_Lambda([this, Node, bIndex](const FText& Text, ETextCommit::Type)
+				return Look::Field(Label, Tooltip, SNew(SEditableTextBox)
+					.Text(FText::FromName(Current))
+					.OnTextCommitted_Lambda([this, Node, bIndex](const FText& Text, ETextCommit::Type)
+					{
+						const FName Name(*Text.ToString().TrimStartAndEnd());
+						Context->Edit(LOCTEXT("SetLoopVariable", "Rename loop variable"), [Node, Name, bIndex](FVekaDocument& Doc) -> TArray<int32>
 						{
-							const FName Name(*Text.ToString().TrimStartAndEnd());
-							Context->Edit(LOCTEXT("SetLoopVariable", "Rename loop variable"), [Node, Name, bIndex](FVekaDocument& Doc) -> TArray<int32>
+							FVekaAstNode& Loop = Doc.Nodes[Node];
+							const FName Old = bIndex ? Loop.IndexVariable : Loop.LoopVariable;
+							(bIndex ? Loop.IndexVariable : Loop.LoopVariable) = Name;
+							// Uses of the variable inside the loop follow.
+							for (FVekaAstExpr& Expr : Doc.Expressions)
 							{
-								FVekaAstNode& Loop = Doc.Nodes[Node];
-								const FName Old = bIndex ? Loop.IndexVariable : Loop.LoopVariable;
-								(bIndex ? Loop.IndexVariable : Loop.LoopVariable) = Name;
-								// Uses of the variable inside the loop follow.
-								for (FVekaAstExpr& Expr : Doc.Expressions)
+								if (Expr.Kind == EVekaExprKind::Local && Expr.Name == Old && !Old.IsNone())
 								{
-									if (Expr.Kind == EVekaExprKind::Local && Expr.Name == Old && !Old.IsNone())
-									{
-										Expr.Name = Name;
-									}
+									Expr.Name = Name;
 								}
-								return { Node };
-							});
-						})
-					];
+							}
+							return { Node };
+						});
+					}));
 			};
-			Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[VariableRow(LOCTEXT("ItemVariable", "Item"), N.LoopVariable, false)];
-			Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[VariableRow(LOCTEXT("IndexVariable", "Index"), N.IndexVariable, true)];
+			Body->AddSlot().AutoHeight()
+			[
+				Look::Pair(VariableField(LOCTEXT("ItemVariable", "Item name"), LOCTEXT("ItemVariableTooltip", "How the views inside call the current item (or number)."), N.LoopVariable, false),
+					VariableField(LOCTEXT("IndexVariable", "Index name"), LOCTEXT("IndexVariableTooltip", "Optional: how they call its position (0, 1, 2...)."), N.IndexVariable, true))
+			];
 		}
+		AddSection(Described.Title, Described.Icon, Described.Description, Body);
 	}
 	else if (N.Kind == EVekaAstNodeKind::Slot)
 	{
-		AddSection(LOCTEXT("SlotSection", "Slot"));
 		TArray<FText> Labels = { LOCTEXT("DefaultSlot", "default") };
 		TArray<FName> Names = { NAME_None };
 		for (const FVekaSlotDeclaration& Slot : Document->Slots)
@@ -327,37 +372,25 @@ void SVekaInspector::Rebuild()
 				Names.Add(Slot.Name);
 			}
 		}
-		Content->AddSlot().AutoHeight()
-		[
-			MakeChoice(N.Type.IsNone() ? LOCTEXT("DefaultSlot", "default") : FText::FromName(N.Type), Labels, [this, Node, Names](int32 Index)
-			{
-				Context->Edit(LOCTEXT("SetSlot", "Change slot"), [Node, &Names, Index](FVekaDocument& Doc) -> TArray<int32>
+		AddSection(LOCTEXT("SlotSection", "Slot"), TEXT("tray"), Described.Description,
+			Look::Field(LOCTEXT("SlotField", "Shows the content of"), LOCTEXT("SlotFieldTooltip", "Which slot of this component."),
+				MakeChoice(N.Type.IsNone() ? LOCTEXT("DefaultSlot", "default") : FText::FromName(N.Type), Labels, [this, Node, Names](int32 Index)
 				{
-					Doc.Nodes[Node].Type = Names[Index];
-					return { Node };
-				});
-			})
-		];
+					Context->Edit(LOCTEXT("SetSlot", "Change slot"), [Node, &Names, Index](FVekaDocument& Doc) -> TArray<int32>
+					{
+						Doc.Nodes[Node].Type = Names[Index];
+						return { Node };
+					});
+				})));
 	}
 	else
 	{
-		// Arguments: the catalog's, or a component's params.
-		AddSection(LOCTEXT("Arguments", "Arguments"));
-		if (const FVekaCatalogEntry* Entry = Veka::Catalog::FindComponent(N.Type))
+		// Its settings: the catalog's arguments, or a component's params.
+		TArray<FVekaCatalogArgument> Arguments;
+		const FVekaCatalogEntry* Entry = Veka::Catalog::FindComponent(N.Type);
+		if (Entry)
 		{
-			for (const FVekaCatalogArgument& Argument : Entry->Arguments)
-			{
-				Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[MakeArgumentRow(Node, INDEX_NONE, Argument, N.Type)];
-			}
-			if (Entry->Arguments.IsEmpty())
-			{
-				Content->AddSlot().AutoHeight()[SNew(STextBlock).ColorAndOpacity(FSlateColor::UseSubduedForeground()).Text(LOCTEXT("NoArguments", "No arguments."))];
-			}
-			if (Entry->bActions)
-			{
-				AddSection(LOCTEXT("Actions", "Actions"));
-				Content->AddSlot().AutoHeight()[MakeActionsEditor(Node, INDEX_NONE)];
-			}
+			Arguments = Entry->Arguments;
 		}
 		else if (N.Component)
 		{
@@ -366,7 +399,7 @@ void SVekaInspector::Rebuild()
 				FVekaCatalogArgument Argument;
 				Argument.Name = Param.Name;
 				Argument.Kind = KindForType(Param.Type);
-				Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[MakeArgumentRow(Node, INDEX_NONE, Argument, N.Type)];
+				Arguments.Add(Argument);
 			}
 		}
 		else
@@ -375,8 +408,18 @@ void SVekaInspector::Rebuild()
 			{
 				FVekaCatalogArgument Argument;
 				Argument.Name = Given.Name;
-				Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[MakeArgumentRow(Node, INDEX_NONE, Argument, N.Type)];
+				Arguments.Add(Argument);
 			}
+		}
+
+		TSharedRef<SVerticalBox> Body = SNew(SVerticalBox);
+		if (Arguments.IsEmpty())
+		{
+			Body->AddSlot().AutoHeight()[SNew(STextBlock).ColorAndOpacity(Look::Subdued()).Text(LOCTEXT("NoArguments", "Nothing to set: shape it with the modifiers below."))];
+		}
+		else
+		{
+			Body->AddSlot().AutoHeight()[MakeArgumentsGrid(Node, INDEX_NONE, Arguments, N.Type)];
 		}
 
 		// Content of a component's slot.
@@ -391,12 +434,9 @@ void SVekaInspector::Rebuild()
 				Labels.Add(Slot.Name.IsNone() ? LOCTEXT("DefaultSlot", "default") : FText::FromName(Slot.Name));
 				Names.Add(Slot.Name);
 			}
-			Content->AddSlot().AutoHeight().Padding(FMargin(0.f, 6.f, 0.f, 2.f))
+			Body->AddSlot().AutoHeight().Padding(FMargin(0.f, Look::FieldGap, 0.f, 0.f))
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth()[NameLabel(LOCTEXT("InSlot", "In slot"))]
-				+ SHorizontalBox::Slot().AutoWidth()
-				[
+				Look::Field(LOCTEXT("InSlot", "In slot"), LOCTEXT("InSlotTooltip", "Which slot of the component this view fills."),
 					MakeChoice(N.SlotName.IsNone() ? LOCTEXT("DefaultSlot", "default") : FText::FromName(N.SlotName), Labels, [this, Node, Names](int32 Index)
 					{
 						Context->Edit(LOCTEXT("SetInSlot", "Change slot"), [Node, &Names, Index](FVekaDocument& Doc) -> TArray<int32>
@@ -404,13 +444,19 @@ void SVekaInspector::Rebuild()
 							Doc.Nodes[Node].SlotName = Names[Index];
 							return { Node };
 						});
-					})
-				]
+					}))
 			];
+		}
+		AddSection(N.Component ? LOCTEXT("ParamsSection", "Parameters") : LOCTEXT("SettingsSection", "Settings"), NAME_None,
+			N.Component ? LOCTEXT("ParamsTooltip", "The values this component asks for (its @Param).") : Described.Description, Body);
+
+		if (Entry && Entry->bActions)
+		{
+			AddSection(LOCTEXT("Actions", "When clicked"), TEXT("hand.thumbsup"), LOCTEXT("ActionsTooltip", "What happens on a click: change a state, send an event, play a timeline..."),
+				MakeActionsEditor(Node, INDEX_NONE));
 		}
 	}
 
-	AddSection(LOCTEXT("Modifiers", "Modifiers"));
 	Content->AddSlot().AutoHeight()[MakeModifierSection(Node)];
 }
 
@@ -498,32 +544,46 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentRow(int32 Node, int32 Modifier, 
 {
 	const FString Key = RowKey(Node, Modifier, Spec.Name);
 	const FName Name = Spec.Name;
-	return SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot().AutoWidth()[NameLabel(FText::FromName(Spec.Name))]
-		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+	const bool bModifier = Modifier != INDEX_NONE;
+	const FVekaCatalogDoc* Doc = Veka::Catalog::FindDoc(Owner, bModifier);
+	const FVekaArgumentDoc* ArgumentDoc = Doc ? Doc->FindArgument(Name) : nullptr;
+	const FText Label = Veka::Catalog::ArgumentLabel(Owner, bModifier, Name);
+	const FText Help = ArgumentDoc ? ArgumentDoc->Help : FText::GetEmpty();
+	const FVekaDocument* Document = Context->GetDocument();
+	const bool bSet = Document && Doc::FindArgument(*Document, Node, Modifier, Name) != INDEX_NONE;
+	const bool bCode = CodeRows.Contains(Key);
+
+	// fx: write it as code (a state, a formula); x: back to its default.
+	TSharedRef<SHorizontalBox> Extra = SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().AutoWidth()
 		[
-			MakeArgumentEditor(Node, Modifier, Spec, Owner)
-		]
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(2.f, 0.f, 0.f, 0.f))
-		[
-			SNew(SComboButton)
-			.HasDownArrow(true)
+			SNew(SButton)
 			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-			.OnGetMenuContent_Lambda([this, Key, Node, Modifier, Name]()
+			.ContentPadding(FMargin(3.f, 0.f))
+			.ToolTipText(bCode ? LOCTEXT("EditAsValueTooltip", "Back to the simple editor") : LOCTEXT("EditAsCodeTooltip", "Write it as code: a state (count), a formula (count * 2), a function (sin(time))..."))
+			.OnClicked_Lambda([this, Key, bCode]()
 			{
-				FMenuBuilder Menu(true, nullptr);
-				const bool bCode = CodeRows.Contains(Key);
-				Menu.AddMenuEntry(bCode ? LOCTEXT("EditAsValue", "Edit as value") : LOCTEXT("EditAsCode", "Edit as code"), FText::GetEmpty(), FSlateIcon(),
-					FUIAction(FExecuteAction::CreateLambda([this, Key, bCode]()
-					{
-						bCode ? (void)CodeRows.Remove(Key) : (void)CodeRows.Add(Key);
-						Rebuild();
-					})));
-				Menu.AddMenuEntry(LOCTEXT("ClearArgument", "Clear"), LOCTEXT("ClearTooltip", "Remove the argument (its default applies)"), FSlateIcon(),
-					FUIAction(FExecuteAction::CreateLambda([this, Node, Modifier, Name]() { ApplyArgumentValue(Node, Modifier, Name, FVekaValue()); })));
-				return Menu.MakeWidget();
+				bCode ? (void)CodeRows.Remove(Key) : (void)CodeRows.Add(Key);
+				Rebuild();
+				return FReply::Handled();
+			})
+			[
+				SNew(STextBlock).Text(LOCTEXT("Fx", "fx")).Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				.ColorAndOpacity(bCode ? FLinearColor(0.45f, 0.65f, 1.f) : Look::Subdued())
+			]
+		];
+	if (bSet)
+	{
+		Extra->AddSlot().AutoWidth()
+		[
+			Look::IconButton(TEXT("xmark"), LOCTEXT("ClearTooltip", "Remove it: its default applies"), [this, Node, Modifier, Name]()
+			{
+				ApplyArgumentValue(Node, Modifier, Name, FVekaValue());
+				return FReply::Handled();
 			})
 		];
+	}
+	return Look::Field(Label, Help, MakeArgumentEditor(Node, Modifier, Spec, Owner), Extra);
 }
 
 TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifier, const FVekaCatalogArgument& Spec, FName Owner)
@@ -586,7 +646,9 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 			return Code();
 		}
 		const bool bWasFloat = Value.Type == EVekaValueType::Float;
-		return SNew(SNumericEntryBox<double>)
+		const FVekaCatalogDoc* Doc = Veka::Catalog::FindDoc(Owner, Modifier != INDEX_NONE);
+		const FVekaArgumentDoc* ArgumentDoc = Doc ? Doc->FindArgument(Name) : nullptr;
+		return Look::WithUnit(SNew(SNumericEntryBox<double>)
 			.AllowSpin(true)
 			.MinSliderValue(0.0)
 			.MaxSliderValue(Owner == TEXT("opacity") || Owner == TEXT("ProgressView") || Owner == TEXT("Slider") ? 1.0 : 400.0)
@@ -596,7 +658,7 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 			{
 				const bool bInt = !bWasFloat && FMath::IsNearlyEqual(NewValue, FMath::RoundToDouble(NewValue));
 				ApplyArgumentValue(Node, Modifier, Name, bInt ? FVekaValue::Int(static_cast<int64>(FMath::RoundToDouble(NewValue))) : FVekaValue::Float(NewValue));
-			});
+			}), ArgumentDoc ? ArgumentDoc->Unit : FText::GetEmpty());
 	}
 	case EVekaArgumentKind::Enum:
 	{
@@ -606,15 +668,25 @@ TSharedRef<SWidget> SVekaInspector::MakeArgumentEditor(int32 Node, int32 Modifie
 		}
 		TArray<FText> Labels;
 		TArray<FString> Names;
+		TArray<FName> Icons;
 		for (int32 Index = 0; Index < Spec.Enum->NumEnums() - 1; ++Index)
 		{
 			Names.Add(Spec.Enum->GetNameStringByIndex(Index));
-			Labels.Add(FText::FromString(TEXT(".") + Names.Last()));
+			Labels.Add(Spec.Enum->GetDisplayNameTextByIndex(Index));
+			const FString& Item = Names.Last();
+			const bool bHorizontal = Spec.Enum == StaticEnum<EVekaHAlign>();
+			const bool bVertical = Spec.Enum == StaticEnum<EVekaVAlign>();
+			Icons.Add(bHorizontal ? FName(Item == TEXT("Leading") ? TEXT("text.alignleft") : Item == TEXT("Trailing") ? TEXT("text.alignright") : TEXT("text.aligncenter"))
+				: bVertical ? FName(Item == TEXT("Top") ? TEXT("arrow.up.to.line") : Item == TEXT("Bottom") ? TEXT("arrow.down.to.line") : TEXT("minus"))
+				: NAME_None);
 		}
-		return MakeChoice(Expr ? FText::FromString(TEXT(".") + Value.StringValue) : LOCTEXT("Unset", "default"), Labels, [this, Node, Modifier, Name, Names](int32 Index)
+		const int32 Current = Expr ? Names.IndexOfByKey(Value.StringValue) : INDEX_NONE;
+		auto Pick = [this, Node, Modifier, Name, Names](int32 Index) { ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Names[Index])); };
+		if (Names.Num() <= 4)
 		{
-			ApplyArgumentValue(Node, Modifier, Name, FVekaValue::String(Names[Index]));
-		});
+			return Look::Segmented(Labels, Icons, Labels, Current, Pick);
+		}
+		return MakeChoice(Labels.IsValidIndex(Current) ? Labels[Current] : LOCTEXT("Unset", "default"), Labels, Pick);
 	}
 	case EVekaArgumentKind::Paint:
 	{
@@ -966,6 +1038,7 @@ TSharedRef<SWidget> SVekaInspector::MakeModifierSection(int32 Node)
 	{
 		const FVekaAstModifier& Modifier = N.Modifiers[Index];
 		const FVekaCatalogEntry* Entry = Veka::Catalog::FindModifier(Modifier.Name);
+		const FVekaCatalogDoc* Doc = Veka::Catalog::FindDoc(Modifier.Name, true);
 		auto Step = [this, Node, Index](int32 Delta)
 		{
 			Context->Edit(LOCTEXT("MoveModifier", "Reorder modifiers"), [Node, Index, Delta](FVekaDocument& Doc) -> TArray<int32>
@@ -975,17 +1048,10 @@ TSharedRef<SWidget> SVekaInspector::MakeModifierSection(int32 Node)
 			});
 			return FReply::Handled();
 		};
-		TSharedRef<SVerticalBox> Body = SNew(SVerticalBox);
+		TArray<FVekaCatalogArgument> Arguments;
 		if (Entry)
 		{
-			for (const FVekaCatalogArgument& Argument : Entry->Arguments)
-			{
-				Body->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[MakeArgumentRow(Node, Index, Argument, Modifier.Name)];
-			}
-			if (Entry->bActions)
-			{
-				Body->AddSlot().AutoHeight()[MakeActionsEditor(Node, Index)];
-			}
+			Arguments = Entry->Arguments;
 		}
 		else
 		{
@@ -993,68 +1059,86 @@ TSharedRef<SWidget> SVekaInspector::MakeModifierSection(int32 Node)
 			{
 				FVekaCatalogArgument Argument;
 				Argument.Name = Given.Name;
-				Body->AddSlot().AutoHeight().Padding(FMargin(0.f, 2.f))[MakeArgumentRow(Node, Index, Argument, Modifier.Name)];
+				Arguments.Add(Argument);
 			}
 		}
-		Box->AddSlot().AutoHeight().Padding(FMargin(0.f, 3.f))
+		TSharedRef<SVerticalBox> Body = SNew(SVerticalBox);
+		if (!Arguments.IsEmpty())
+		{
+			Body->AddSlot().AutoHeight()[MakeArgumentsGrid(Node, Index, Arguments, Modifier.Name)];
+		}
+		if (Entry && Entry->bActions)
+		{
+			Body->AddSlot().AutoHeight()[MakeActionsEditor(Node, Index)];
+		}
+		if (Arguments.IsEmpty() && !(Entry && Entry->bActions))
+		{
+			Body->AddSlot().AutoHeight()[SNew(STextBlock).ColorAndOpacity(Look::Subdued()).AutoWrapText(true).Text(Doc ? Doc->Description : FText::GetEmpty())];
+		}
+		const TSharedRef<SWidget> Buttons = SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth()[Look::IconButton(TEXT("chevron.up"), LOCTEXT("UpTooltip", "Move up: applied earlier, closer to the view"), [Step]() { return Step(-1); }, Index > 0)]
+			+ SHorizontalBox::Slot().AutoWidth()[Look::IconButton(TEXT("chevron.down"), LOCTEXT("DownTooltip", "Move down: applied later, around what is above"), [Step]() { return Step(1); }, Index < N.Modifiers.Num() - 1)]
+			+ SHorizontalBox::Slot().AutoWidth()[Look::IconButton(TEXT("minus"), LOCTEXT("RemoveModifierTooltip", "Remove"), [this, Node, Index]()
+			{
+				Context->Edit(LOCTEXT("RemoveModifierStep", "Remove modifier"), [Node, Index](FVekaDocument& Doc) -> TArray<int32>
+				{
+					Doc::RemoveModifier(Doc, Node, Index);
+					return { Node };
+				});
+				return FReply::Handled();
+			})];
+		Box->AddSlot().AutoHeight()
 		[
-			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-			.Padding(FMargin(6.f, 4.f))
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
-					[
-						SNew(STextBlock).Text(FText::FromString(TEXT(".") + Modifier.Name.ToString())).ColorAndOpacity(FLinearColor(0.45f, 0.65f, 1.f))
-					]
-					+ SHorizontalBox::Slot().AutoWidth()
-					[
-						SNew(SButton).ButtonStyle(FAppStyle::Get(), "SimpleButton").Text(LOCTEXT("Up", "^")).ToolTipText(LOCTEXT("UpTooltip", "Apply earlier (inner)"))
-						.IsEnabled(Index > 0).OnClicked_Lambda([Step]() { return Step(-1); })
-					]
-					+ SHorizontalBox::Slot().AutoWidth()
-					[
-						SNew(SButton).ButtonStyle(FAppStyle::Get(), "SimpleButton").Text(LOCTEXT("Down", "v")).ToolTipText(LOCTEXT("DownTooltip", "Apply later (outer)"))
-						.IsEnabled(Index < N.Modifiers.Num() - 1).OnClicked_Lambda([Step]() { return Step(1); })
-					]
-					+ SHorizontalBox::Slot().AutoWidth()
-					[
-						SNew(SButton).ButtonStyle(FAppStyle::Get(), "SimpleButton").Text(LOCTEXT("RemoveModifier", "x"))
-						.OnClicked_Lambda([this, Node, Index]()
-						{
-							Context->Edit(LOCTEXT("RemoveModifierStep", "Remove modifier"), [Node, Index](FVekaDocument& Doc) -> TArray<int32>
-							{
-								Doc::RemoveModifier(Doc, Node, Index);
-								return { Node };
-							});
-							return FReply::Handled();
-						})
-					]
-				]
-				+ SVerticalBox::Slot().AutoHeight()[Body]
-			]
+			Look::Section(Doc ? Doc->Title : FText::FromString(TEXT(".") + Modifier.Name.ToString()), Doc ? Doc->Icon : FName(TEXT("wand.and.stars")),
+				Doc ? FText::Format(LOCTEXT("ModifierTooltip", "{0}\n.{1} in the code. Modifiers apply from top to bottom."), Doc->Description, FText::FromName(Modifier.Name)) : FText::GetEmpty(),
+				Body, Buttons)
 		];
 	}
-	TArray<FText> Labels;
-	TArray<FName> Names;
-	for (const FVekaCatalogEntry& Entry : Veka::Catalog::Modifiers())
-	{
-		Labels.Add(FText::FromString(TEXT(".") + Entry.Name.ToString()));
-		Names.Add(Entry.Name);
-	}
-	Box->AddSlot().AutoHeight().Padding(FMargin(0.f, 6.f))
+
+	// Add a modifier: a menu by family, each with its icon and what it does.
+	Box->AddSlot().AutoHeight().Padding(FMargin(Look::SectionPadding, 10.f, Look::SectionPadding, 16.f))
 	[
-		MakeChoice(LOCTEXT("AddModifier", "+ Modifier"), Labels, [this, Node, Names](int32 Index)
+		SNew(SComboButton)
+		.HasDownArrow(false)
+		.ToolTipText(LOCTEXT("AddModifierTooltip", "Size, padding, colors, text style, effects, animations, clicks..."))
+		.OnGetMenuContent_Lambda([this, Node]()
 		{
-			Context->Edit(LOCTEXT("AddModifierStep", "Add modifier"), [Node, &Names, Index](FVekaDocument& Doc) -> TArray<int32>
+			FMenuBuilder Menu(true, nullptr);
+			static const TCHAR* Families[] = { TEXT("Layout"), TEXT("Style"), TEXT("Text"), TEXT("Controls"), TEXT("Effects"), TEXT("Animation"), TEXT("Interaction") };
+			for (const TCHAR* Family : Families)
 			{
-				Doc::AddModifier(Doc, Node, Names[Index]);
-				return { Node };
-			});
+				Menu.BeginSection(NAME_None, FText::FromString(Family));
+				for (const FVekaCatalogEntry& Entry : Veka::Catalog::Modifiers())
+				{
+					const FVekaCatalogDoc* Doc = Veka::Catalog::FindDoc(Entry.Name, true);
+					if (!Doc || Doc->Category.ToString() != Family)
+					{
+						continue;
+					}
+					const FName Name = Entry.Name;
+					Menu.AddMenuEntry(FUIAction(FExecuteAction::CreateLambda([this, Node, Name]()
+						{
+							Context->Edit(LOCTEXT("AddModifierStep", "Add modifier"), [Node, Name](FVekaDocument& Doc) -> TArray<int32>
+							{
+								Doc::AddModifier(Doc, Node, Name);
+								return { Node };
+							});
+						})),
+						SNew(SHorizontalBox)
+						.ToolTipText(Doc->Description)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 8.f, 0.f))[Look::Icon(Doc->Icon, 14.f)]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(Doc->Title)]);
+				}
+				Menu.EndSection();
+			}
+			return Menu.MakeWidget();
 		})
+		.ButtonContent()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 6.f, 0.f))[Look::Icon(TEXT("plus"), 12.f)]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(LOCTEXT("AddModifier", "Add a modifier"))]
+		]
 	];
 	return Box;
 }

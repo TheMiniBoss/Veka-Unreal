@@ -2,6 +2,13 @@
 
 The Veka Hub shows this file (Learn > Changelog). Newest first. `##` starts a release, `-` an entry.
 
+## Friendlier inspector, palette and views list (2026-11-27)
+- Every component, modifier and setting has a plain name, an icon and a one-line explanation (tooltips everywhere).
+- Inspector: a header saying what the view is, titled sections, fields with their label above and their unit inside (px, pt, °), sizes side by side, short choices as buttons (alignments with icons), fx to write any setting as code.
+- Modifiers: one section each with up / down / remove; "Add a modifier" is sorted by family (Layout, Style, Text, Effects, Animation, Interaction).
+- Palette: icons, plain names and what each one does; search finds names, code names and descriptions.
+- Views list: an icon per type and what each view shows (its text, its symbol, how many views inside).
+
 ## A simpler view editor (2026-11-27)
 - Three columns: the views (with a + Add button that holds the palette), the viewport over the code, one side panel.
 - The side panel shows what matters: the selected view's inspector, the whole view (states, params, events, asset settings) when nothing is selected, the test panel while testing.

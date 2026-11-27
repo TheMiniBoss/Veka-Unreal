@@ -41,7 +41,9 @@ private:
 	TSharedRef<SWidget> MakeActionsEditor(int32 Node, int32 Modifier);
 	TSharedRef<SWidget> MakeModifierSection(int32 Node);
 	TSharedRef<SWidget> MakeSymbolPicker(TFunction<void(FName)> OnPicked);
-	void AddSection(const FText& Title);
+	void AddSection(const FText& Title, FName Icon, const FText& Tooltip, const TSharedRef<SWidget>& Body, const TSharedPtr<SWidget>& Buttons = nullptr);
+	/** Fields of arguments: short ones (numbers, on / off) two by two, the others on their own line. */
+	TSharedRef<SWidget> MakeArgumentsGrid(int32 Node, int32 Modifier, const TArray<FVekaCatalogArgument>& Arguments, FName Owner);
 	bool EditCodeExpression(const FText& Description, const FString& Key, const FString& Code, int32 Node, int32 Modifier, TFunction<void(FVekaDocument&, int32)> Assign);
 
 	TSharedPtr<FVekaViewEditorContext> Context;
