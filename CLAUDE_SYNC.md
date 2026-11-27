@@ -50,6 +50,7 @@ Documents de référence : [`Docs/VEKAUI_PHASE0.md`](Docs/VEKAUI_PHASE0.md) (arc
 | Chemin moteur | `E:\Epic Games\UE_5.8` |
 | Projet hôte | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\VekaHost.uproject` (module `VekaHost`, créé à la main, C++ vide) |
 | Chemin du plugin | `C:\Users\TheMiniBoss\Documents\Unreal Projects\VekaHost\Plugins\VekaUI` (clone de ce dépôt ; plugin activé dans `VekaHost.uproject` depuis D-002) |
+| Dépôt GitHub | **`https://github.com/TheMiniBoss/Veka-Unreal`** depuis le 2026-11-27 (`origin` du plugin et du clone `Documents\GitHub\Veka`). L'ancien `TheMiniBoss/Veka` est maintenant **un autre projet** (Veka natif en Rust sur `main`) : ne pas y pousser ; ses branches `C++` et `cpp/fix-effects-clip` sont des restes d'un push du 2026-11-27 (copies identiques dans `Veka-Unreal`). |
 | Compilateur | UBT via `Build.bat` ; compilateur Visual Studio **non détecté** (« Unable to find Visual Studio SDK ») |
 | Mac dispo ? | non |
 
@@ -83,8 +84,8 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 |---|---|
 | Phase | **4** ✅ terminée (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn, 4f Perf + démo in-game fusionnés ; budgets §13 tenus) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` + composant `Fireworks` ; 103 tests automation ✅ |
-| Prochaine étape | Phases 0–4 de §16.2 terminées : suite à décider avec TheMiniBoss (démo Shipping faite : `Packaged/Windows`, `-VekaHudDemo`) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` + langage : `let`, `time`, fonctions maths / `random` / `hsv` ; 105 tests automation ✅ |
+| Prochaine étape | Refonte de l'UX de l'éditeur et du Hub (demande de TheMiniBoss du 2026-11-27 : « ça fait un peu bordel ») — plan à valider avant le code |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -119,6 +120,45 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-27 — CLOUD + LOCAL → tout en `.vk` : `let`, `time`, fonctions ; feux d'artifice sans C++ ; doc colorée
+
+- **Demandes de TheMiniBoss** : (1) le code de la doc avec couleurs et indentation ; (2) « supprime le challenge des
+  fireworks en C++ car à partir de maintenant tout doit être possible dans le .vk ; s'il manque des éléments il faut
+  les ajouter ».
+- **Branches** : `cpp/doc-code-colors` puis `cpp/vk-expressions` (partie de la première), fusionnées dans `C++`.
+- **Doc du Hub** : les blocs de code passent par `Veka::Editor::TokenizeLine` (le même découpage que l'onglet Code) ;
+  couleurs partagées (`Veka::Editor::TokenColor`, l'onglet Code les utilise aussi), fond sombre en Light comme en Dark,
+  espaces = largeurs fixes (l'indentation reste), lignes longues dans un défilement horizontal (plus de « … »).
+  Nouvelle carte du guide : « Math, random and time ».
+- **Langage `.vk`** :
+  - `let nom = valeur` (nœud `EVekaAstNodeKind::Let`) : visible des vues suivantes du bloc et de leurs enfants ; outliner,
+    inspecteur (« Value »), complétion et `LocalsAt` le connaissent ; hors du bloc → « Unknown name ».
+  - `time` (`EVekaExprKind::Time`) : secondes depuis l'apparition de la vue ; une timeline interne `__clock` (1 h en
+    boucle) qui joue tant que le document lit `time` → vue réévaluée à chaque image.
+  - Fonctions (`EVekaExprKind::Call`, table `Veka::Catalog::Functions()`) : `sin cos tan atan2 abs sqrt pow exp floor
+    ceil round fract sign clamp lerp smoothstep random(seed [, bas, haut])`, `pi`, et couleurs `hsv(teinte, s, v [, a])`,
+    `rgba(...)` à canaux calculés (constants → littéral comme avant). Mauvais nombre d'arguments → « Call it as … ».
+    `random` = SplitMix64 des bits de la graine (même graine → même nombre, moyenne 0,5 vérifiée sur 1000 graines).
+- **Feux d'artifice 100 % `.vk`** (`VV_ExampleBirthdayCard.vk`) : 4 gerbes qui renaissent à un nouvel endroit et une
+  nouvelle couleur à chaque cycle (`floor(cycle)` dans la graine), éclair, 36 étincelles par gerbe (angle + `random`,
+  portée en `sqrt`, ralentissement cubique, gravité `7·t²`, scintillement `sin`, fondu `smoothstep`, couleur `hsv` du
+  blanc à la teinte). **Composant C++ `FVekaFireworks` et son test supprimés.** `.move` / `.blur` restent (langage).
+- **Perf de la réévaluation complète** (la vue des feux : ~165 nœuds chaque image) : **6,6 → 2,0 ms** par image.
+  - interpréteur : chemin numérique sans `FVekaValue` (`EvalNumber`, mêmes règles Int / Float), noms comparés en
+    `FName` mis en cache (`VEKA_FNAME`) au lieu de 52 comparaisons de chaînes, ids `item`/`then`/`else` sans `Printf` ;
+    `CallFunction` sans `ToString` ;
+  - réconciliation : clés des enfants hachées (plus de chaîne + `FName` par élément), `SyncWidget` sauté si rien n'a
+    changé, environnement en copy-on-write (copie = pointeur), et surtout `FVekaImplicitAnimator::UpdateNode` sans
+    transaction ni animation en cours = simple copie (avant : parcours par réflexion de chaque champ, 1,8 ms).
+  - Reste (TODO) : ne réévaluer que les nœuds qui lisent `time` ; repeindre seulement quand seul l'aspect change.
+- **Tests** : `VekaUI.Lang.Expressions` (aller-retour, analyse, erreurs, valeurs des fonctions),
+  `VekaUI.Editor.FireworksInVeka` (étincelles colorées sur la carte en pixels, coût logué, garde < 4 ms).
+- **Validé** : build éditeur, **105 tests** (104 verts + 1 avec l'avertissement attendu ; ressorts 0,082 ms, budgets
+  4f tenus). Vérifié dans l'éditeur : `Docs/Sync/Screens/vk-doc-code.jpg`, `vk-fireworks.jpg`.
+- **Dépôt** : nouvelle adresse `TheMiniBoss/Veka-Unreal` (voir Environnement Local).
+- **Ancien asset** : `/Game/VekaExamples/VV_ExampleBirthdayCard` (sauvegardé par TheMiniBoss le 22) appelle encore
+  `Fireworks(...)` → « unknown component » ; le supprimer, puis « Open as asset » recrée la version `.vk`.
 
 ### 2026-11-27 — CLOUD + LOCAL → correctif : les effets GPU respectent le clip Slate (zoom de l'éditeur de vue)
 

@@ -48,10 +48,31 @@ struct VEKAUI_API FVekaCatalogEntry
 	const FVekaCatalogArgument* FindArgument(FName Argument) const;
 };
 
+/** A built-in function of the Veka language (`sin(x)`, `random(seed)`...): numbers in, a number out. */
+struct FVekaCatalogFunction
+{
+	FName Name;
+	int32 MinArguments = 1;
+	int32 MaxArguments = 1;
+	/** How it is called and what it gives (documentation, completion). */
+	const TCHAR* Signature = TEXT("");
+	const TCHAR* Description = TEXT("");
+	/** Gives a color (hsv, rgba) instead of a number: see Veka::Catalog::CallColorFunction. */
+	bool bColor = false;
+};
+
 namespace Veka::Catalog
 {
 	VEKAUI_API const TArray<FVekaCatalogEntry>& Components();
 	VEKAUI_API const TArray<FVekaCatalogEntry>& Modifiers();
 	VEKAUI_API const FVekaCatalogEntry* FindComponent(FName Name);
 	VEKAUI_API const FVekaCatalogEntry* FindModifier(FName Name);
+
+	/** Built-in functions (math, random). Also: the constant `pi` and `time` (seconds since the view appeared). */
+	VEKAUI_API const TArray<FVekaCatalogFunction>& Functions();
+	VEKAUI_API const FVekaCatalogFunction* FindFunction(FName Name);
+	/** Calls a built-in function (Name from Functions()); 0 for an unknown name. */
+	VEKAUI_API double CallFunction(FName Name, TConstArrayView<double> Arguments);
+	/** Calls a color function (bColor): hsv(hue in degrees, saturation, value [, alpha]), rgba(r, g, b, a) in 0..1. */
+	VEKAUI_API FLinearColor CallColorFunction(FName Name, TConstArrayView<double> Arguments);
 }

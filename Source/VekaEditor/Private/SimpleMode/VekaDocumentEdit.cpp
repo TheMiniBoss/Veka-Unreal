@@ -291,6 +291,26 @@ namespace Veka::Editor::Doc
 	TArray<FName> LocalsAt(const FVekaDocument& Document, int32 Node, int32 Modifier)
 	{
 		TArray<FName> Out;
+		// `let` values written before the node in its block and in every enclosing block.
+		for (int32 Current = Node; Document.Nodes.IsValidIndex(Current);)
+		{
+			const FVekaNodeLocation Location = FindLocation(Document, Current);
+			if (Location.Parent == INDEX_NONE)
+			{
+				break;
+			}
+			const FVekaAstNode& Parent = Document.Nodes[Location.Parent];
+			const TArray<int32>& Siblings = Location.bElse ? Parent.ElseChildren : Parent.Children;
+			for (int32 Before = 0; Before < Location.Index && Siblings.IsValidIndex(Before); ++Before)
+			{
+				const int32 Sibling = Siblings[Before];
+				if (Document.Nodes.IsValidIndex(Sibling) && Document.Nodes[Sibling].Kind == EVekaAstNodeKind::Let)
+				{
+					Out.AddUnique(Document.Nodes[Sibling].LoopVariable);
+				}
+			}
+			Current = Location.Parent;
+		}
 		for (int32 At = FindLocation(Document, Node).Parent; At != INDEX_NONE; At = FindLocation(Document, At).Parent)
 		{
 			const FVekaAstNode& N = Document.Nodes[At];
@@ -325,6 +345,7 @@ namespace Veka::Editor::Doc
 		{
 		case EVekaAstNodeKind::If: Kind = TEXT("if ") + Veka::Lang::PrintExpression(Document, N.Expr); break;
 		case EVekaAstNodeKind::ForEach: Kind = TEXT("ForEach(") + Veka::Lang::PrintExpression(Document, N.Expr) + TEXT(")"); break;
+		case EVekaAstNodeKind::Let: Kind = TEXT("let ") + N.LoopVariable.ToString() + TEXT(" = ") + Veka::Lang::PrintExpression(Document, N.Expr); break;
 		case EVekaAstNodeKind::Slot: Kind = TEXT("Slot(") + (N.Type.IsNone() ? FString(TEXT("default")) : N.Type.ToString()) + TEXT(")"); break;
 		default: Kind = N.Type.ToString(); break;
 		}

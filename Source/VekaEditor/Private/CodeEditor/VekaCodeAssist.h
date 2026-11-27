@@ -81,6 +81,9 @@ namespace Veka::Editor
 	/** Colors of one line (strings never span lines in Veka). Spans are sorted and do not overlap; gaps are Plain. */
 	TArray<FVekaCodeSpan> TokenizeLine(const FString& Line);
 
+	/** Color of a token in Veka code (Code tab, Hub documentation), on a dark background. Plain: the base text color. */
+	FLinearColor TokenColor(EVekaCodeToken Kind);
+
 	/**
 	 * Suggestions at the cursor, from the context: components / views / keywords at the start of a line, modifiers
 	 * after `.`, argument names inside a call, enum values or Colora tokens after `.` in an argument, `@` declarations,

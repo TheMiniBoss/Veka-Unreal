@@ -245,6 +245,24 @@ void SVekaInspector::Rebuild()
 	];
 
 	const TArray<FName> Locals = Doc::LocalsAt(*Document, Node);
+	if (N.Kind == EVekaAstNodeKind::Let)
+	{
+		AddSection(LOCTEXT("LetValue", "Value"));
+		const FString Key = RowKey(Node, -2, TEXT("expr"));
+		Content->AddSlot().AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth()[NameLabel(FText::FromString(TEXT("let ") + N.LoopVariable.ToString()))]
+			+ SHorizontalBox::Slot().FillWidth(1.f)
+			[
+				MakeCodeBox(Key, Veka::Lang::PrintExpression(*Document, N.Expr), [this, Node, Key](const FString& Code)
+				{
+					return EditCodeExpression(LOCTEXT("SetLet", "Edit value"), Key, Code, Node, INDEX_NONE, [Node](FVekaDocument& Doc, int32 Expr) { Doc.Nodes[Node].Expr = Expr; });
+				})
+			]
+		];
+		return;
+	}
 	if (N.Kind == EVekaAstNodeKind::If || N.Kind == EVekaAstNodeKind::ForEach)
 	{
 		AddSection(N.Kind == EVekaAstNodeKind::If ? LOCTEXT("Condition", "Condition") : LOCTEXT("Items", "Items"));

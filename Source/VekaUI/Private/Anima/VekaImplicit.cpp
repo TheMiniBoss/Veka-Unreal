@@ -236,6 +236,32 @@ FInstancedStruct* FVekaImplicitAnimator::GetSlot(FVekaNode& Node, int32 Slot)
 
 void FVekaImplicitAnimator::UpdateNode(FVekaNode& Node, const FInstancedStruct* NewPrimitive, const TArray<FInstancedStruct>& NewModifiers, const FVekaAnimationSpec* Transaction)
 {
+	// Nothing to animate (no transaction) and nothing animating on this node: the new values are presented as they are,
+	// without walking every field (a view re-evaluated every frame updates hundreds of nodes).
+	if (!Transaction)
+	{
+		bool bAnimating = false;
+		for (const TPair<FString, TSharedPtr<FLeaf>>& Pair : Leaves)
+		{
+			if (Pair.Value.IsValid() && Pair.Value->NodeRaw == &Node)
+			{
+				bAnimating = true;
+				break;
+			}
+		}
+		if (!bAnimating)
+		{
+			if (NewPrimitive)
+			{
+				Node.Primitive = *NewPrimitive;
+				Node.TargetPrimitive = *NewPrimitive;
+			}
+			Node.Modifiers = NewModifiers;
+			Node.TargetModifiers = NewModifiers;
+			return;
+		}
+	}
+
 	if (NewPrimitive)
 	{
 		const FInstancedStruct OldPresented = Node.Primitive;

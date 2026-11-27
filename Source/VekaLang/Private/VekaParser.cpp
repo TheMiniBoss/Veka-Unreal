@@ -5,6 +5,7 @@
 #include "View/VekaViewAsset.h"
 #include "Internationalization/Internationalization.h"
 #include "Misc/SecureHash.h"
+#include "Misc/ScopeExit.h"
 
 #define LOCTEXT_NAMESPACE "VekaLang"
 
@@ -857,6 +858,22 @@ namespace
 			{
 				Index = ParseForEach();
 			}
+			else if (Head.Text == TEXT("let") && Peek(1).Kind == ETok::Ident && Peek(2).Is(TEXT("=")))
+			{
+				// let name = value: a named value for the next views of this block.
+				Next();
+				Index = NewNode(EVekaAstNodeKind::Let, Head);
+				const FToken Name = Next();
+				ExpectPunct(TEXT("="));
+				Document.Nodes[Index].Expr = ParseExpression();
+				Document.Nodes[Index].LoopVariable = FName(*Name.Text);
+				if (Scope.Locals.IsEmpty())
+				{
+					Scope.Locals.AddDefaulted();
+				}
+				Scope.Locals.Last().Add(Document.Nodes[Index].LoopVariable);
+				return Index;
+			}
 			else if (Head.Text == TEXT("Slot"))
 			{
 				Next();
@@ -936,6 +953,16 @@ namespace
 		/** Nodes up to and including the closing brace. */
 		TArray<int32> ParseNodesUntilBrace()
 		{
+			// The block's own names (`let`): visible to the next views of the block and inside them.
+			Scope.Locals.AddDefaulted();
+			const int32 Depth = Scope.Locals.Num();
+			ON_SCOPE_EXIT
+			{
+				if (Scope.Locals.Num() >= Depth)
+				{
+					Scope.Locals.SetNum(Depth - 1);
+				}
+			};
 			TArray<int32> Children;
 			while (!Peek().Is(TEXT("}")) && Peek().Kind != ETok::End)
 			{
@@ -1517,6 +1544,13 @@ namespace
 					Error(Token, FText::Format(LOCTEXT("CallArity", "'{0}' takes {1} numbers"), FText::FromString(Word), FText::AsNumber(Wanted)));
 					return AddLiteral(FVekaValue(), Token);
 				}
+				// Computed channels: a color made when the view is evaluated (constant ones stay a literal).
+				if (Word == TEXT("rgba") && Arguments.ContainsByPredicate([this](int32 Argument) { return !IsLiteral(Argument) || !Document.Expressions[Argument].Value.IsNumber(); }))
+				{
+					const int32 Expr = AddExpr(EVekaExprKind::Call, Token, EVekaExprOp::None, Arguments);
+					Document.Expressions[Expr].Name = FName(TEXT("rgba"));
+					return Expr;
+				}
 				TArray<double> N;
 				for (const int32 Argument : Arguments)
 				{
@@ -1526,6 +1560,32 @@ namespace
 					? FVekaValue::Color(FLinearColor(static_cast<float>(N[0]), static_cast<float>(N[1]), static_cast<float>(N[2]), static_cast<float>(N[3])))
 					: FVekaValue::Vector2(FVector2D(N[0], N[1]));
 				return AddLiteral(Value, Token);
+			}
+			const bool bDeclared = Scope.IsLocal(FName(*Word)) || Scope.Params.Contains(FName(*Word)) || Scope.States.Contains(FName(*Word))
+				|| Scope.Timelines.Contains(FName(*Word));
+			if (Peek().Is(TEXT("(")))
+			{
+				if (const FVekaCatalogFunction* Function = Veka::Catalog::FindFunction(FName(*Word)))
+				{
+					const TArray<int32> Arguments = ParseCallArguments();
+					if (Arguments.Num() < Function->MinArguments || Arguments.Num() > Function->MaxArguments)
+					{
+						Error(Token, FText::Format(LOCTEXT("FunctionArity", "Call it as {0}"), FText::FromString(Function->Signature)));
+					}
+					const int32 Expr = AddExpr(EVekaExprKind::Call, Token, EVekaExprOp::None, Arguments);
+					Document.Expressions[Expr].Name = FName(*Word);
+					return Expr;
+				}
+			}
+			if (Word == TEXT("pi") && !bDeclared)
+			{
+				const int32 Expr = AddExpr(EVekaExprKind::Call, Token);
+				Document.Expressions[Expr].Name = FName(TEXT("pi"));
+				return Expr;
+			}
+			if (Word == TEXT("time") && !bDeclared)
+			{
+				return AddExpr(EVekaExprKind::Time, Token);
 			}
 			if (Word == TEXT("min") || Word == TEXT("max"))
 			{

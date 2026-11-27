@@ -6,17 +6,20 @@
 ## À faire maintenant (après la Phase 4, 2026-11-22)
 
 ### Langage `.vk` : des effets sans C++
-Issu du défi « feux d'artifice » : le composant `Fireworks` est en C++ ; en `.vk` on n'en ferait qu'une approximation.
-- [ ] Fonctions maths dans les expressions : `sin`, `cos`, `abs`, `sqrt`, `pow`, `clamp`, `lerp`
-- [ ] Hasard déterministe : `random(seed)` et `random(seed, min, max)`
-- [ ] Une valeur de temps qui avance (l'équivalent de `TimelineView`), par ex. `time` ou une horloge `@Clock`
-- [ ] Composant générique « émetteur de particules » (forme, couleurs, vitesse, durée, gravité, rythme) réglable dans l'inspecteur
-- [ ] Expérience : refaire `Fireworks` 100 % `.vk` (timeline en boucle + `ForEach` + `.rotation`) et mesurer le coût face au composant C++
+Règle de TheMiniBoss (2026-11-27) : **tout doit être faisable en `.vk`** ; s'il manque une brique, on l'ajoute au langage.
+- [x] Fonctions maths dans les expressions : `sin`, `cos`, `abs`, `sqrt`, `pow`, `clamp`, `lerp`… — fait le 2026-11-27
+- [x] Hasard déterministe : `random(seed)` et `random(seed, min, max)` — fait le 2026-11-27
+- [x] Une valeur de temps qui avance : `time` — fait le 2026-11-27
+- [x] `let`, `hsv(...)`, `rgba(...)` calculé — fait le 2026-11-27
+- [x] Refaire `Fireworks` 100 % `.vk` et supprimer le C++ — fait le 2026-11-27 (2,0 ms / image)
+- [ ] Perf : ne réévaluer chaque image que les nœuds qui lisent `time` (aujourd'hui toute la vue : ~2 ms pour 150 étincelles ; estimé ~1 ms)
+- [ ] Perf : un changement de remplissage / offset / opacité venu d'une réévaluation ne devrait que repeindre (comme les animations implicites depuis 4f)
+- [ ] Composant générique « émetteur de particules » réglable dans l'inspecteur (si le besoin revient)
 
 ### Rendu
 - [ ] **(P)** Galerie d'exemples du Hub : le verre de `VV_ExampleBirthdayCard` y paraît sombre. Un hôte ne prend qu'une capture par image (au premier effet dessiné) et tous les aperçus partagent l'hôte du Hub. Pistes : un modificateur qui isole un sous-arbre (sa propre capture), ou une nouvelle capture quand un effet est sur une couche Slate au-dessus de la précédente
 - [x] Les effets (backdrop, glass) débordent d'un `.clip` : ils ignorent le clip Slate (vu dans la galerie d'exemples, et au zoom de l'éditeur de vue) — corrigé le 2026-11-27
-- [ ] Primitives animées : relancer les images quand une propriété change (`NeedsAnimationFrame` est lu avant le paint, donc un `active: false → true` ne redémarre rien) ; permettrait un `Fireworks(active:)`
+- [ ] Primitives animées : relancer les images quand une propriété change (`NeedsAnimationFrame` est lu avant le paint, donc un `active: false → true` ne redémarre rien)
 
 ### Hub
 - [ ] Recharger les exemples sans fermer et rouvrir l'onglet (les fichiers `.vk` sont gardés en cache)

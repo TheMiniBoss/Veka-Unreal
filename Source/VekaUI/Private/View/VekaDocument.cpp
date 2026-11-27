@@ -157,7 +157,7 @@ TArray<FString> FVekaDocument::Validate() const
 			CheckActions(Modifier.Actions, Index);
 		}
 		CheckActions(Node.Actions, Index);
-		if (Node.Kind == EVekaAstNodeKind::If || Node.Kind == EVekaAstNodeKind::ForEach)
+		if (Node.Kind == EVekaAstNodeKind::If || Node.Kind == EVekaAstNodeKind::ForEach || Node.Kind == EVekaAstNodeKind::Let)
 		{
 			if (!Expressions.IsValidIndex(Node.Expr))
 			{
