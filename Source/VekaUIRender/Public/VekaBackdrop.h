@@ -5,11 +5,18 @@
 #include "CoreMinimal.h"
 #include "Rendering/RenderingCommon.h"
 
+class FSlateWindowElementList;
+
+/** No clipping: Min X, Min Y, Max X, Max Y in Slate absolute space. */
+inline const FVector4f VekaNoClip = FVector4f(-1.0e7f, -1.0e7f, 1.0e7f, 1.0e7f);
+
 /** One backdrop: an axis-aligned rect in Slate absolute space (pixels), blurred and composited. */
 struct FVekaBackdropParams
 {
 	FVector2f Min = FVector2f::ZeroVector;
 	FVector2f Max = FVector2f::ZeroVector;
+	/** Slate's clip when it was painted (Min X, Min Y, Max X, Max Y, absolute): nothing is drawn outside. */
+	FVector4f Clip = VekaNoClip;
 	/** Blur radius in pixels (0: the copy itself). Any value: two pyramid levels are blended. */
 	float BlurRadius = 20.f;
 	/** Top left, top right, bottom right, bottom left, in pixels. */
@@ -36,6 +43,8 @@ struct FVekaBlendParams
 {
 	FVector2f Min = FVector2f::ZeroVector;
 	FVector2f Max = FVector2f::ZeroVector;
+	/** See FVekaBackdropParams::Clip. */
+	FVector4f Clip = VekaNoClip;
 	int32 Mode = 0;
 };
 
@@ -80,6 +89,8 @@ struct FVekaGlassParams
 	FLinearColor Tint = FLinearColor(1.f, 1.f, 1.f, 0.04f);
 	float Saturation = 1.2f;
 	float Opacity = 1.f;
+	/** See FVekaBackdropParams::Clip. */
+	FVector4f Clip = VekaNoClip;
 };
 
 /** Backdrop quality (r.Veka.Backdrop.Quality, a scalability setting). */
@@ -154,4 +165,7 @@ namespace Veka::Render
 
 	/** Elements of a blend against the backdrop (see FVekaBlendParams). */
 	VEKAUIRENDER_API FVekaBlendElements MakeBlendElements(const FVekaBlendParams& Params);
+
+	/** Slate's active clip of an element list (bounding box of its scissor / stencil zones), for the params' Clip. */
+	VEKAUIRENDER_API FVector4f CurrentClip(const FSlateWindowElementList& Elements);
 }
