@@ -15,7 +15,7 @@ Issu du défi « feux d'artifice » : le composant `Fireworks` est en C++ ; en `
 
 ### Rendu
 - [ ] **(P)** Galerie d'exemples du Hub : le verre de `VV_ExampleBirthdayCard` y paraît sombre. Un hôte ne prend qu'une capture par image (au premier effet dessiné) et tous les aperçus partagent l'hôte du Hub. Pistes : un modificateur qui isole un sous-arbre (sa propre capture), ou une nouvelle capture quand un effet est sur une couche Slate au-dessus de la précédente
-- [ ] Les effets (backdrop, glass) débordent d'un `.clip` : ils ignorent le clip Slate (vu dans la galerie d'exemples)
+- [x] Les effets (backdrop, glass) débordent d'un `.clip` : ils ignorent le clip Slate (vu dans la galerie d'exemples, et au zoom de l'éditeur de vue) — corrigé le 2026-11-27
 - [ ] Primitives animées : relancer les images quand une propriété change (`NeedsAnimationFrame` est lu avant le paint, donc un `active: false → true` ne redémarre rien) ; permettrait un `Fireworks(active:)`
 
 ### Hub

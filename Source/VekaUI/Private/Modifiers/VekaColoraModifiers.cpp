@@ -43,6 +43,7 @@ int32 FVekaBlendModeModifier::PaintBehind(FVekaPaintContext& Context, const FVek
 	Params.Min = FVector2f(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
 	Params.Max = FVector2f(FMath::Max(A.X, B.X), FMath::Max(A.Y, B.Y));
 	Params.Mode = static_cast<int32>(Mode) - static_cast<int32>(EVekaBlendMode::Multiply);
+	Params.Clip = Veka::Render::CurrentClip(Context.DrawElements);
 	Elements = MakeShared<FVekaBlendElements>(Veka::Render::MakeBlendElements(Params));
 	FSlateDrawElement::MakeCustom(Context.DrawElements, Context.LayerId, Elements->Begin);
 	return Context.LayerId + 1;

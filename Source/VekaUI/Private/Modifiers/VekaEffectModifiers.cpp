@@ -47,6 +47,7 @@ namespace
 		Params->Tint = FLinearColor(Tint.R, Tint.G, Tint.B, FMath::Clamp(Material.TintAmount, 0.f, 1.f) * Tint.A);
 		Params->Saturation = Material.Saturation;
 		Params->Opacity = Context.WidgetStyle.GetColorAndOpacityTint().A;
+		Params->Clip = Veka::Render::CurrentClip(Context.DrawElements);
 		if (FSlateApplication::IsInitialized())
 		{
 			Params->LightPosition = FVector2f(FSlateApplication::Get().GetCursorPos());
@@ -119,6 +120,7 @@ int32 FVekaBackdropModifier::PaintBehind(FVekaPaintContext& Context, const FVeka
 	Params.Saturation = Saturation;
 	Params.Noise = Noise;
 	Params.Opacity = Opacity;
+	Params.Clip = Veka::Render::CurrentClip(Context.DrawElements);
 
 	// Inside a host: one capture for all of its backdrops; elsewhere, a capture of its own.
 	FVekaBackdropLayer* Layer = Veka::Backdrop::CurrentLayer();
@@ -144,6 +146,7 @@ int32 FVekaLiquidDistortionModifier::PaintBehind(FVekaPaintContext& Context, con
 	Params.DistortionScale = Scale * Scale_;
 	Params.DistortionTime = static_cast<float>(FMath::Fmod(FPlatformTime::Seconds() * Speed, 3600.0));
 	Params.Opacity = Context.WidgetStyle.GetColorAndOpacityTint().A;
+	Params.Clip = Veka::Render::CurrentClip(Context.DrawElements);
 	FSlateDrawElement::MakeCustom(Context.DrawElements, Context.LayerId, Layer->Add(Params));
 	return Context.LayerId + 1;
 }

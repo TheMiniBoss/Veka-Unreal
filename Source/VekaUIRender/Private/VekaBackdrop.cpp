@@ -11,6 +11,8 @@
 #include "RenderGraphEvent.h"
 #include "RenderingThread.h"
 #include "HAL/IConsoleManager.h"
+#include "Rendering/DrawElements.h"
+#include "Layout/Clipping.h"
 
 DECLARE_GPU_STAT_NAMED(VekaBackdrop, TEXT("Veka Backdrop"));
 
@@ -171,6 +173,17 @@ namespace
 		Out.Max = FVector2f(FMath::Max(A.X, B.X), FMath::Max(A.Y, B.Y));
 		Out.Scale = (Out.Max.X - Out.Min.X) / FMath::Max(1.f, FMath::Abs(Params.Max.X - Params.Min.X));
 		return Out;
+	}
+
+	/** A Clip (Slate absolute Min / Max) in output pixels, inside the output. */
+	FIntRect ClipPixels(const FVector4f& Clip, const ICustomSlateElement::FDrawPassInputs& Inputs)
+	{
+		const FIntPoint Extent = Inputs.OutputTexture->Desc.Extent;
+		const FVector2f A = ToPixel(FVector2f(Clip.X, Clip.Y), Inputs);
+		const FVector2f B = ToPixel(FVector2f(Clip.Z, Clip.W), Inputs);
+		auto Bound = [](float Value, int32 Max) { return FMath::Clamp(Value, 0.f, static_cast<float>(Max)); };
+		return FIntRect(FIntPoint(FMath::FloorToInt(Bound(FMath::Min(A.X, B.X), Extent.X)), FMath::FloorToInt(Bound(FMath::Min(A.Y, B.Y), Extent.Y))),
+			FIntPoint(FMath::CeilToInt(Bound(FMath::Max(A.X, B.X), Extent.X)), FMath::CeilToInt(Bound(FMath::Max(A.Y, B.Y), Extent.Y))));
 	}
 
 	template <typename ShaderType>
@@ -380,6 +393,7 @@ public:
 		const FPixelRect Pixels = ToPixels(Params, Inputs);
 		FIntRect Element(FIntPoint(FMath::FloorToInt(Pixels.Min.X), FMath::FloorToInt(Pixels.Min.Y)), FIntPoint(FMath::CeilToInt(Pixels.Max.X), FMath::CeilToInt(Pixels.Max.Y)));
 		Element.Clip(FIntRect(FIntPoint::ZeroValue, Output->Desc.Extent));
+		Element.Clip(ClipPixels(Params.Clip, Inputs));
 		if (Element.Width() < 1 || Element.Height() < 1)
 		{
 			return;
@@ -464,6 +478,7 @@ public:
 		FIntRect Region(FIntPoint(FMath::FloorToInt(BoundsMin.X) - Grow, FMath::FloorToInt(BoundsMin.Y) - Grow),
 			FIntPoint(FMath::CeilToInt(BoundsMax.X) + Grow, FMath::CeilToInt(BoundsMax.Y) + Grow));
 		Region.Clip(FIntRect(FIntPoint::ZeroValue, Output->Desc.Extent));
+		Region.Clip(ClipPixels(G.Clip, Inputs));
 		if (Region.Width() < 1 || Region.Height() < 1)
 		{
 			return;
@@ -572,6 +587,7 @@ namespace
 		const FPixelRect Pixels = ToPixels(AsBackdrop, Inputs);
 		FIntRect Region(FIntPoint(FMath::FloorToInt(Pixels.Min.X), FMath::FloorToInt(Pixels.Min.Y)), FIntPoint(FMath::CeilToInt(Pixels.Max.X), FMath::CeilToInt(Pixels.Max.Y)));
 		Region.Clip(FIntRect(FIntPoint::ZeroValue, Inputs.OutputTexture->Desc.Extent));
+		Region.Clip(ClipPixels(Params.Clip, Inputs));
 		return Region;
 	}
 
@@ -670,6 +686,30 @@ namespace Veka::Render
 		KeepUntilRendered(Out.Begin);
 		KeepUntilRendered(Out.Between);
 		KeepUntilRendered(Out.End);
+		return Out;
+	}
+
+	FVector4f CurrentClip(const FSlateWindowElementList& Elements)
+	{
+		FVector4f Out = VekaNoClip;
+		const TOptional<FSlateClippingState> State = Elements.GetClippingState();
+		if (!State.IsSet())
+		{
+			return Out;
+		}
+		auto Intersect = [&Out](const FSlateClippingZone& Zone)
+		{
+			const FSlateRect Box = Zone.GetBoundingBox();
+			Out = FVector4f(FMath::Max(Out.X, Box.Left), FMath::Max(Out.Y, Box.Top), FMath::Min(Out.Z, Box.Right), FMath::Min(Out.W, Box.Bottom));
+		};
+		if (State->ScissorRect.IsSet())
+		{
+			Intersect(State->ScissorRect.GetValue());
+		}
+		for (const FSlateClippingZone& Stencil : State->StencilQuads)
+		{
+			Intersect(Stencil);
+		}
 		return Out;
 	}
 

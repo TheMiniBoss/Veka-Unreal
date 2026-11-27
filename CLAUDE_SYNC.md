@@ -120,6 +120,19 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
 
+### 2026-11-27 — CLOUD + LOCAL → correctif : les effets GPU respectent le clip Slate (zoom de l'éditeur de vue)
+
+- **Bug signalé par TheMiniBoss** : en zoomant dans l'éditeur de vue, « le widget sort de sa zone et se met par-dessus
+  tout Unreal ». Le canevas clippe bien (`ClipToBounds`), mais les éléments custom de VekaUIRender (backdrop,
+  frosted, glass, distorsion, blend modes) dessinaient au GPU sans tenir compte du clip Slate.
+- **Correctif** (`cpp/fix-effects-clip`) : chaque effet note le clip Slate actif au paint
+  (`Veka::Render::CurrentClip`, boîte englobante du scissor / des stencils) dans `FVekaBackdropParams::Clip`,
+  `FVekaGlassParams::Clip`, `FVekaBlendParams::Clip` ; au rendu, la zone dessinée (viewport de la passe, région du
+  blend) est coupée à ce clip. Les shaders lisent des positions absolues : rien d'autre à changer. Règle aussi les
+  effets qui débordaient d'un `.clip` (galerie du Hub).
+- **Test** : `VekaUI.Render.EffectsClip` (backdrop rouge de 200 px dans un cadre clippé de 100 px : rouge dedans, rien
+  dehors). Vérifié à l'œil : exemple de la carte zoomé très fort, le flou remplit le viewport sans en sortir.
+
 ### 2026-11-22 — CLOUD + LOCAL → défi : carte d'anniversaire « feux d'artifice » (iOS 27) refaite en Veka
 
 - **Demande de TheMiniBoss** : refaire avec Veka la vidéo Kavsoft « Apple's Birthday Card Fireworks Animation Using

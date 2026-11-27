@@ -232,6 +232,33 @@ namespace
 	FVector3f ToVector(const FColor& Color) { return FVector3f(Channel(Color.R), Channel(Color.G), Channel(Color.B)); }
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaEffectClipTest, "VekaUI.Render.EffectsClip", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaEffectClipTest::RunTest(const FString& Parameters)
+{
+	using namespace Veka;
+	// A red backdrop 200 wide in a clipped 100 x 100 frame (it spans x = -50..150): GPU effects stay inside Slate's clip
+	// (the view editor zoomed in drew them over the whole editor).
+	FVekaBackdropModifier Red;
+	Red.Radius = 4.f;
+	Red.Tint = FVekaPaint(FLinearColor::Red);
+	Red.TintAmount = 1.f;
+	const FIntPoint Size(200, 100);
+	const TArray<FColor> Pixels = RenderPixels(
+		ZStack(FVekaAlignment::Leading())(
+			Rectangle().Fill(FLinearColor::Black).Frame(200.f, 100.f),
+			ZStack()(Rectangle().Fill(FLinearColor::Transparent).Frame(200.f, 100.f).AddModifier(FInstancedStruct::Make(Red))).Frame(100.f, 100.f).Clip()
+		).Frame(200.f, 100.f), Size);
+	if (!TestEqual(TEXT("pixels read"), Pixels.Num(), Size.X * Size.Y))
+	{
+		return false;
+	}
+	const FColor Inside = Pixels[50 * Size.X + 50];
+	const FColor Outside = Pixels[50 * Size.X + 125];
+	TestTrue(FString::Printf(TEXT("red inside the clip (%s)"), *Inside.ToString()), Inside.R > 150 && Inside.G < 60);
+	TestTrue(FString::Printf(TEXT("nothing outside the clip (%s)"), *Outside.ToString()), Outside.R < 30);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaBlendModeTest, "VekaUI.Render.BlendModes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FVekaBlendModeTest::RunTest(const FString& Parameters)
 {
