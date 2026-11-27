@@ -103,6 +103,28 @@ namespace
 			Doc(TEXT("Capsule"), LOCTEXT("Capsule", "Capsule"), TEXT("capsule"), Shapes, LOCTEXT("CapsuleHelp", "A pill: the short sides are fully round."), { Fill() }),
 			Doc(TEXT("Circle"), LOCTEXT("Circle", "Circle"), TEXT("circle"), Shapes, LOCTEXT("CircleHelp", "A circle as big as its frame allows."), { Fill() }),
 			Doc(TEXT("Ellipse"), LOCTEXT("Ellipse", "Ellipse"), TEXT("circle"), Shapes, LOCTEXT("EllipseHelp", "An oval that fills its frame."), { Fill() }),
+			Doc(TEXT("Canvas"), LOCTEXT("Canvas", "Canvas"), TEXT("paintbrush"), LOCTEXT("Drawing", "Drawing"),
+				LOCTEXT("CanvasHelp", "Draws dots, lines and glows with formulas, thousands per frame (particles, charts...). Inside: width, height and time."), {
+				Arg(TEXT("blend"), LOCTEXT("CanvasBlend", "Blend"), LOCTEXT("CanvasBlendHelp", "Add: overlapping marks add their light (fireworks, sparks).")) }),
+			Doc(TEXT("Dot"), LOCTEXT("Dot", "Dot"), TEXT("circle"), LOCTEXT("Drawing", "Drawing"), LOCTEXT("DotHelp", "In a Canvas: a filled circle."), {
+				Arg(TEXT("x"), LOCTEXT("DotX", "X"), LOCTEXT("DotXHelp", "From the left of the canvas."), TEXT("px")),
+				Arg(TEXT("y"), LOCTEXT("DotY", "Y"), LOCTEXT("DotYHelp", "From the top of the canvas."), TEXT("px")),
+				Arg(TEXT("radius"), LOCTEXT("DotRadius", "Radius"), LOCTEXT("DotRadiusHelp", "Half its size."), TEXT("px")),
+				Color(TEXT("color")), Arg(TEXT("opacity"), LOCTEXT("DotOpacity", "Opacity"), LOCTEXT("DotOpacityHelp", "0 to 1.")) }),
+			Doc(TEXT("Line"), LOCTEXT("LineMark", "Line"), TEXT("pencil"), LOCTEXT("Drawing", "Drawing"), LOCTEXT("LineMarkHelp", "In a Canvas: a straight line, its opacity can fade along it."), {
+				Arg(TEXT("x1"), LOCTEXT("X1", "Start X"), LOCTEXT("X1Help", "Where it starts."), TEXT("px")),
+				Arg(TEXT("y1"), LOCTEXT("Y1", "Start Y"), LOCTEXT("Y1Help", "Where it starts."), TEXT("px")),
+				Arg(TEXT("x2"), LOCTEXT("X2", "End X"), LOCTEXT("X2Help", "Where it ends."), TEXT("px")),
+				Arg(TEXT("y2"), LOCTEXT("Y2", "End Y"), LOCTEXT("Y2Help", "Where it ends."), TEXT("px")),
+				Arg(TEXT("width"), LOCTEXT("LineWidthMark", "Thickness"), LOCTEXT("LineWidthMarkHelp", "Thickness of the line."), TEXT("px")),
+				Color(TEXT("color")),
+				Arg(TEXT("fromOpacity"), LOCTEXT("FromOpacity", "Start opacity"), LOCTEXT("FromOpacityHelp", "Opacity at the start (a trail: 0).")),
+				Arg(TEXT("opacity"), LOCTEXT("LineOpacity", "End opacity"), LOCTEXT("LineOpacityHelp", "Opacity at the end, 0 to 1.")) }),
+			Doc(TEXT("Glow"), LOCTEXT("Glow", "Glow"), TEXT("sparkle"), LOCTEXT("Drawing", "Drawing"), LOCTEXT("GlowHelp", "In a Canvas: a soft light, bright in the middle, fading to nothing."), {
+				Arg(TEXT("x"), LOCTEXT("GlowX", "X"), LOCTEXT("DotXHelp", "From the left of the canvas."), TEXT("px")),
+				Arg(TEXT("y"), LOCTEXT("GlowY", "Y"), LOCTEXT("DotYHelp", "From the top of the canvas."), TEXT("px")),
+				Arg(TEXT("radius"), LOCTEXT("GlowRadius", "Radius"), LOCTEXT("GlowRadiusHelp", "Where it fades out."), TEXT("px")),
+				Color(TEXT("color")), Arg(TEXT("opacity"), LOCTEXT("GlowOpacity", "Opacity"), LOCTEXT("GlowOpacityHelp", "In the middle, 0 to 1.")) }),
 		};
 		return Docs;
 	}

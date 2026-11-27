@@ -14,6 +14,10 @@ Règle de TheMiniBoss (2026-11-27) : **tout doit être faisable en `.vk`** ; s'i
 - [x] Refaire `Fireworks` 100 % `.vk` et supprimer le C++ — fait le 2026-11-27 (2,0 ms / image)
 - [ ] Perf : ne réévaluer chaque image que les nœuds qui lisent `time` (aujourd'hui toute la vue : ~2 ms pour 150 étincelles ; estimé ~1 ms)
 - [ ] Perf : un changement de remplissage / offset / opacité venu d'une réévaluation ne devrait que repeindre (comme les animations implicites depuis 4f)
+- [x] Zone de dessin `Canvas` + `Dot`, `Line`, `Glow`, `blend: .Add`, `array.count` ; feux d'artifice SwiftUI refaits en `.vk` (`VV_Fireworks`) — fait le 2026-11-27 (925 points, ~3 ms / image, aucune réévaluation de la vue)
+- [ ] Perf `Canvas` : le contenu est réinterprété à chaque image (~3 ms pour 925 points) ; pistes : compiler le sous-arbre une fois (expressions précalculées), ou dessiner les points en un seul lot de sommets
+- [ ] `Canvas` : formes de plus (`Rect`, `Ring`, chemin) et dégradés par marque si le besoin vient
+- [ ] Refaire les feux d'artifice de `VV_ExampleBirthdayCard` avec un `Canvas` (aujourd'hui des nœuds réévalués chaque image, ~2 ms)
 - [ ] Composant générique « émetteur de particules » réglable dans l'inspecteur (si le besoin revient)
 
 ### Rendu

@@ -18,6 +18,8 @@
 #include "Symbols/VekaSymbolView.h"
 #include "VekaBuilders.h"
 #include "VekaUILog.h"
+#include "Primitives/VekaCanvas.h"
+#include "Colora/VekaTheme.h"
 #include "UObject/UnrealType.h"
 #include "UObject/StructOnScope.h"
 
@@ -300,6 +302,17 @@ namespace
 		TMap<FName, FVekaTimelineHandle> Timelines;
 		/** `time`: a timeline that never stops (only when the document reads it): the view re-evaluates every frame. */
 		TOptional<FVekaTimelineHandle> Clock;
+		/** `time` while a canvas draws (seconds since the store was made): the canvas repaints without re-evaluating the view. */
+		TOptional<double> TimeOverride;
+
+		double CurrentTime() const
+		{
+			if (TimeOverride.IsSet())
+			{
+				return TimeOverride.GetValue();
+			}
+			return Clock.IsSet() && Clock->GetPlayer().IsValid() ? Clock->GetPlayer()->GetTime() : 0.0;
+		}
 
 		/**
 		 * Players of the document's timelines, kept by the view node: cues become events that run their actions, autoplay
@@ -307,7 +320,7 @@ namespace
 		 */
 		void SetupTimelines(FVekaContext& Ctx)
 		{
-			if (Document.Expressions.ContainsByPredicate([](const FVekaAstExpr& Expr) { return Expr.Kind == EVekaExprKind::Time; }))
+			if (UsesTime(Document.Root, false))
 			{
 				// An hour that loops (float time stays precise); playing, it re-evaluates the view every frame.
 				FVekaTimelineData Data;
@@ -393,7 +406,7 @@ namespace
 			case EVekaExprKind::Literal: return FromValue(&Expr.Value);
 			case EVekaExprKind::Local: return FromValue(Locals.Find(Expr.Name));
 			case EVekaExprKind::Time:
-				Out = { Clock.IsSet() && Clock->GetPlayer().IsValid() ? Clock->GetPlayer()->GetTime() : 0.0, false };
+				Out = { CurrentTime(), false };
 				return true;
 			case EVekaExprKind::Unary:
 			{
@@ -533,7 +546,15 @@ namespace
 				const FVekaParamDeclaration* Declaration = Document.FindParam(Expr.Name);
 				return Declaration ? Declaration->Default : FVekaValue();
 			}
-			case EVekaExprKind::Member: return Operand(0).GetField(Expr.Name);
+			case EVekaExprKind::Member:
+			{
+				const FVekaValue Base = Operand(0);
+				if (Base.Type == EVekaValueType::Array && Expr.Name == VEKA_FNAME("count"))
+				{
+					return FVekaValue::Int(Base.Num());
+				}
+				return Base.GetField(Expr.Name);
+			}
 			case EVekaExprKind::Timeline:
 			{
 				// Every track now, as a struct (`Intro.fade` takes a field).
@@ -566,7 +587,7 @@ namespace
 				}
 				return FVekaValue::Float(Veka::Catalog::CallFunction(Expr.Name, Arguments));
 			}
-			case EVekaExprKind::Time: return FVekaValue::Float(Clock.IsSet() && Clock->GetPlayer().IsValid() ? Clock->GetPlayer()->GetTime() : 0.0);
+			case EVekaExprKind::Time: return FVekaValue::Float(CurrentTime());
 			case EVekaExprKind::Unary:
 			{
 				const FVekaValue A = Operand(0);
@@ -730,6 +751,195 @@ namespace
 		/** Runs Actions with the interpreter's scope plus `payload` (component event handlers). */
 		TFunction<void(const FVekaValue&)> MakeHandler(const TArray<FVekaAstAction>& Actions) const;
 		FVekaElement MakeComponent(const FVekaAstNode& Node, int32 Depth);
+		FVekaElement MakeCanvas(const FVekaAstNode& Node);
+
+		/** True if `time` is read in Node's subtree (bInsideCanvas: also inside canvases; else their drawing is skipped). */
+		bool UsesTime(int32 NodeIndex, bool bInsideCanvas, int32 Depth = 0) const
+		{
+			if (!Document.Nodes.IsValidIndex(NodeIndex) || Depth > 64)
+			{
+				return false;
+			}
+			const FVekaAstNode& Node = Document.Nodes[NodeIndex];
+			if (ExprUsesTime(Node.Expr))
+			{
+				return true;
+			}
+			for (const FVekaAstArgument& Argument : Node.Arguments)
+			{
+				if (ExprUsesTime(Argument.Expr))
+				{
+					return true;
+				}
+			}
+			for (const FVekaAstModifier& Modifier : Node.Modifiers)
+			{
+				for (const FVekaAstArgument& Argument : Modifier.Arguments)
+				{
+					if (ExprUsesTime(Argument.Expr))
+					{
+						return true;
+					}
+				}
+			}
+			if (!bInsideCanvas && Node.Kind == EVekaAstNodeKind::Element && Node.Type == VEKA_FNAME("Canvas"))
+			{
+				return false;
+			}
+			for (const int32 Child : Node.Children)
+			{
+				if (UsesTime(Child, bInsideCanvas, Depth + 1))
+				{
+					return true;
+				}
+			}
+			for (const int32 Child : Node.ElseChildren)
+			{
+				if (UsesTime(Child, bInsideCanvas, Depth + 1))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		bool ExprUsesTime(int32 Index, int32 Depth = 0) const
+		{
+			if (!Document.Expressions.IsValidIndex(Index) || Depth > 64)
+			{
+				return false;
+			}
+			const FVekaAstExpr& Expr = Document.Expressions[Index];
+			if (Expr.Kind == EVekaExprKind::Time)
+			{
+				return true;
+			}
+			for (const int32 Operand : Expr.Operands)
+			{
+				if (Operand != Index && ExprUsesTime(Operand, Depth + 1))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/** Runs a canvas's draw commands (Dot, Line, Glow, with let / if / ForEach between them). */
+		void DrawNodes(const TArray<int32>& Children, FVekaCanvasDrawing& Drawing, TMap<FString, FLinearColor>& ColorCache, int32 Depth = 0)
+		{
+			if (Depth > 32)
+			{
+				return;
+			}
+			for (const int32 Child : Children)
+			{
+				if (!Document.Nodes.IsValidIndex(Child))
+				{
+					continue;
+				}
+				const FVekaAstNode& Node = Document.Nodes[Child];
+				switch (Node.Kind)
+				{
+				case EVekaAstNodeKind::Let:
+					Locals.Add(Node.LoopVariable, Eval(Node.Expr));
+					break;
+				case EVekaAstNodeKind::If:
+					DrawNodes(Eval(Node.Expr).AsBool() ? Node.Children : Node.ElseChildren, Drawing, ColorCache, Depth + 1);
+					break;
+				case EVekaAstNodeKind::ForEach:
+				{
+					const FVekaValue Source = Eval(Node.Expr);
+					const bool bArray = Source.Type == EVekaValueType::Array;
+					const int64 Count = FMath::Clamp<int64>(bArray ? Source.Num() : Source.AsInt(), 0, 100000);
+					for (int64 Item = 0; Item < Count; ++Item)
+					{
+						Locals.Add(Node.LoopVariable, bArray ? Source.GetItem(Item) : FVekaValue::Int(Item));
+						if (!Node.IndexVariable.IsNone())
+						{
+							Locals.Add(Node.IndexVariable, FVekaValue::Int(Item));
+						}
+						DrawNodes(Node.Children, Drawing, ColorCache, Depth + 1);
+					}
+					break;
+				}
+				case EVekaAstNodeKind::Element:
+					DrawMark(Node, Drawing, ColorCache);
+					break;
+				default:
+					break;
+				}
+			}
+		}
+
+		void DrawMark(const FVekaAstNode& Node, FVekaCanvasDrawing& Drawing, TMap<FString, FLinearColor>& ColorCache)
+		{
+			auto Find = [&Node](FName Name) -> int32
+			{
+				for (const FVekaAstArgument& Argument : Node.Arguments)
+				{
+					if (Argument.Name == Name)
+					{
+						return Argument.Expr;
+					}
+				}
+				return INDEX_NONE;
+			};
+			auto Number = [&](FName Name, double Default)
+			{
+				const int32 Index = Find(Name);
+				if (Index == INDEX_NONE)
+				{
+					return Default;
+				}
+				FNumber Value;
+				return EvalNumber(Index, Value) ? Value.Value : Eval(Index).AsFloat();
+			};
+			auto Color = [&](FName Name)
+			{
+				const int32 Index = Find(Name);
+				if (Index == INDEX_NONE)
+				{
+					return FLinearColor::White;
+				}
+				const FVekaValue Value = Eval(Index);
+				if (Value.Type == EVekaValueType::Color)
+				{
+					return Value.ColorValue;
+				}
+				// Theme colors and paints resolve once per drawing.
+				const FString Key = Value.AsString();
+				if (const FLinearColor* Cached = ColorCache.Find(Key))
+				{
+					return *Cached;
+				}
+				const FLinearColor Resolved = Veka::Colora::Resolve(PaintFrom(Value), Drawing.GetEnvironment()).GetAverageColor();
+				ColorCache.Add(Key, Resolved);
+				return Resolved;
+			};
+			auto WithOpacity = [](FLinearColor Color, double Opacity)
+			{
+				Color.A *= static_cast<float>(FMath::Clamp(Opacity, 0.0, 1.0));
+				return Color;
+			};
+			const FName Type = Node.Type;
+			if (Type == VEKA_FNAME("Dot"))
+			{
+				Drawing.Dot(FVector2D(Number(VEKA_FNAME("x"), 0.0), Number(VEKA_FNAME("y"), 0.0)), Number(VEKA_FNAME("radius"), 1.0),
+					WithOpacity(Color(VEKA_FNAME("color")), Number(VEKA_FNAME("opacity"), 1.0)));
+			}
+			else if (Type == VEKA_FNAME("Line"))
+			{
+				const FLinearColor Base = Color(VEKA_FNAME("color"));
+				const double Opacity = Number(VEKA_FNAME("opacity"), 1.0);
+				Drawing.Line(FVector2D(Number(VEKA_FNAME("x1"), 0.0), Number(VEKA_FNAME("y1"), 0.0)), FVector2D(Number(VEKA_FNAME("x2"), 0.0), Number(VEKA_FNAME("y2"), 0.0)),
+					Number(VEKA_FNAME("width"), 1.0), WithOpacity(Base, Number(VEKA_FNAME("fromOpacity"), Opacity)), WithOpacity(Base, Opacity));
+			}
+			else if (Type == VEKA_FNAME("Glow"))
+			{
+				Drawing.Glow(FVector2D(Number(VEKA_FNAME("x"), 0.0), Number(VEKA_FNAME("y"), 0.0)), Number(VEKA_FNAME("radius"), 10.0),
+					WithOpacity(Color(VEKA_FNAME("color")), Number(VEKA_FNAME("opacity"), 1.0)));
+			}
+		}
 
 	private:
 		FVekaValue Arg(const TArray<FVekaAstArgument>& Arguments, FName Name) const
@@ -944,6 +1154,15 @@ namespace
 			if (Type == VEKA_FNAME("Circle"))
 			{
 				return Shape(Circle(), Node);
+			}
+			if (Type == VEKA_FNAME("Canvas"))
+			{
+				return MakeCanvas(Node);
+			}
+			if (Type == VEKA_FNAME("Dot") || Type == VEKA_FNAME("Line") || Type == VEKA_FNAME("Glow"))
+			{
+				UE_LOG(LogVekaUI, Warning, TEXT("VekaUI view: %s draws only inside a Canvas"), *Type.ToString());
+				return FVekaElement();
 			}
 			if (Type == VEKA_FNAME("Ellipse"))
 			{
@@ -1255,6 +1474,58 @@ namespace
 			return Interpreter.Build(Document->Root);
 		}
 	};
+
+	/** A Canvas block of a view: its draw commands, run by a copy of the interpreter's scope each time it paints. */
+	class FInterpretedCanvasPainter : public FVekaCanvasPainter
+	{
+	public:
+		TSharedPtr<const FVekaDocument> Document;
+		TSharedPtr<FVekaViewStore> Store;
+		TMap<FName, FVekaValue> Params;
+		TMap<FName, FVekaValue> Locals;
+		TMap<FName, FVekaTimelineHandle> Timelines;
+		TArray<int32> Children;
+		bool bAnimated = false;
+
+		virtual bool IsAnimated() const override { return bAnimated; }
+
+		virtual void Draw(FVekaCanvasDrawing& Drawing) const override
+		{
+			if (!Document.IsValid() || !Store.IsValid())
+			{
+				return;
+			}
+			FInterpreter Interpreter(Document.ToSharedRef(), Store.ToSharedRef());
+			Interpreter.Params = Params;
+			Interpreter.Locals = Locals;
+			Interpreter.Timelines = Timelines;
+			Interpreter.TimeOverride = FPlatformTime::Seconds() - Store->StartSeconds;
+			const FVector2D Size = Drawing.GetSize();
+			Interpreter.Locals.Add(TEXT("width"), FVekaValue::Float(Size.X));
+			Interpreter.Locals.Add(TEXT("height"), FVekaValue::Float(Size.Y));
+			TMap<FString, FLinearColor> ColorCache;
+			Interpreter.DrawNodes(Children, Drawing, ColorCache);
+		}
+	};
+
+	FVekaElement FInterpreter::MakeCanvas(const FVekaAstNode& Node)
+	{
+		static int32 Revision = 0;
+		const int32 NodeIndex = static_cast<int32>(&Node - Document.Nodes.GetData());
+		TSharedRef<FInterpretedCanvasPainter> Painter = MakeShared<FInterpretedCanvasPainter>();
+		Painter->Document = DocumentRef;
+		Painter->Store = Store;
+		Painter->Params = Params;
+		Painter->Locals = Locals;
+		Painter->Timelines = Timelines;
+		Painter->Children = Node.Children;
+		Painter->bAnimated = UsesTime(NodeIndex, true);
+		FVekaCanvas Canvas;
+		Canvas.bAdditive = HasArg(Node.Arguments, VEKA_FNAME("blend")) && Arg(Node.Arguments, VEKA_FNAME("blend")).AsString() == TEXT("Add");
+		Canvas.PainterRevision = ++Revision;
+		Canvas.Painter = Painter;
+		return FVekaElement::Make(Canvas);
+	}
 
 	TFunction<void(const FVekaValue&)> FInterpreter::MakeHandler(const TArray<FVekaAstAction>& Actions) const
 	{

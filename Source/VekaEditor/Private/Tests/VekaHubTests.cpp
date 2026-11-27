@@ -22,6 +22,12 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "TextureResource.h"
 #include "Misc/ScopeExit.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "ImageUtils.h"
+#include "HAL/PlatformProcess.h"
+#include "Core/VekaNode.h"
+#include "Primitives/VekaCanvas.h"
 
 namespace
 {
@@ -197,6 +203,112 @@ bool FVekaFireworksInVekaTest::RunTest(const FString& Parameters)
 	// Measured 2.3 ms (6.6 before the interpreter and reconciler optimizations): a guard against regressions, not a budget.
 	TestTrue(FString::Printf(TEXT("re-evaluated every frame under 4 ms (%.3f ms)"), Ms), Ms < 4.0);
 	TestTrue(TEXT("the view keeps evaluating (time)"), Runtime->HasPendingWork());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVekaCanvasFireworksTest, "VekaUI.Editor.CanvasFireworks", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FVekaCanvasFireworksTest::RunTest(const FString& Parameters)
+{
+	// VV_Fireworks: the SwiftUI Canvas + TimelineView fireworks written in .vk only (Canvas, Dot, Line, Glow, time).
+	// The canvas repaints every frame without re-evaluating the view: no runtime work, the cost is in the paint.
+	const TArray<Veka::Editor::Hub::FExample> Examples = Veka::Editor::Hub::GetExamples();
+	const Veka::Editor::Hub::FExample* Example = Examples.FindByPredicate([](const Veka::Editor::Hub::FExample& Item) { return Item.Name == TEXT("VV_Fireworks"); });
+	if (!TestNotNull(TEXT("VV_Fireworks example"), Example))
+	{
+		return false;
+	}
+	const FVekaParseResult Parsed = Veka::Lang::Parse(Example->Source);
+	if (!TestFalse(TEXT("parses"), Parsed.HasErrors()))
+	{
+		for (const FVekaDiagnostic& Diagnostic : Parsed.Diagnostics)
+		{
+			AddError(Diagnostic.ToString());
+		}
+		return false;
+	}
+	const TArray<FVekaDiagnostic> Problems = Veka::Lang::Analyze(Parsed.Document);
+	for (const FVekaDiagnostic& Diagnostic : Problems)
+	{
+		AddError(Diagnostic.ToString());
+	}
+	const TSharedRef<SVekaHost> Host = SNew(SVekaHost);
+	Host->SetRoot(Veka::Interpreter::MakeView(Parsed.Document, MakeShared<FVekaViewStore>()));
+	const FIntPoint Size(372, 132);
+	UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(FVector2D(Size), TF_Nearest, false);
+	Target->AddToRoot();
+	ON_SCOPE_EXIT { Target->RemoveFromRoot(); };
+	FWidgetRenderer Renderer(false, true);
+	Renderer.DrawWidget(Target, Host, FVector2D(Size), 0.f);
+	const TSharedRef<FVekaRuntime> Runtime = Host->GetRuntime();
+	Runtime->Tick(1.0 / 60.0);
+	TestFalse(TEXT("no view re-evaluation for the canvas (it only repaints)"), Runtime->HasPendingWork());
+	// On screen, the canvas asks for a frame every frame (its widget then repaints itself, like an animated symbol).
+	TFunction<bool(const FVekaNode&)> Animates = [&Animates](const FVekaNode& Node)
+	{
+		if (Node.GetPrimitiveAs<FVekaCanvas>() && Node.GetPrimitiveState() && Node.GetPrimitiveState()->NeedsAnimationFrame(FPlatformTime::Seconds()))
+		{
+			return true;
+		}
+		for (const TSharedRef<FVekaNode>& Child : Node.GetChildren())
+		{
+			if (Animates(*Child))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	TestTrue(TEXT("the canvas asks for animation frames"), Runtime->GetRootNode().IsValid() && Animates(*Runtime->GetRootNode()));
+
+	// Lit sparks over 2.5 s of real time (the canvas counts time from its store).
+	int32 BestSparks = 0;
+	for (int32 Step = 0; Step < 10; ++Step)
+	{
+		FPlatformProcess::Sleep(0.25f);
+		Renderer.DrawWidget(Target, Host, FVector2D(Size), 0.25f);
+		TArray<FColor> Pixels;
+		Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels);
+		int32 Sparks = 0;
+		for (const FColor& Pixel : Pixels)
+		{
+			Sparks += FMath::Max3(Pixel.R, Pixel.G, Pixel.B) > 80 ? 1 : 0;
+		}
+		if (Sparks > BestSparks && Pixels.Num() == Size.X * Size.Y)
+		{
+			// The brightest frame, kept to look at: Saved/VekaUI/CanvasFireworks.png.
+			for (FColor& Pixel : Pixels)
+			{
+				Pixel.A = 255;
+			}
+			TArray64<uint8> Png;
+			FImageUtils::PNGCompressImageArray(Size.X, Size.Y, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+			FFileHelper::SaveArrayToFile(Png, *(FPaths::ProjectSavedDir() / TEXT("VekaUI/CanvasFireworks.png")));
+		}
+		BestSparks = FMath::Max(BestSparks, Sparks);
+	}
+	TestTrue(FString::Printf(TEXT("sparks drawn (%d lit pixels)"), BestSparks), BestSparks > 40);
+
+	// The paint cost of a frame (Slate prepass + paint of the host with ~1000 marks).
+	TSharedRef<SWindow> Window = SNew(SWindow).ClientSize(FVector2f(Size)).CreateTitleBar(false);
+	FHittestGrid Grid;
+	Grid.SetHittestArea(FVector2f::ZeroVector, FVector2f(Size));
+	double Total = 0.0;
+	int32 Marks = 0;
+	constexpr int32 Frames = 30;
+	for (int32 Frame = 0; Frame < Frames; ++Frame)
+	{
+		FSlateWindowElementList Elements(Window);
+		const FPaintArgs Args(nullptr, Grid, FVector2f::ZeroVector, FPlatformTime::Seconds(), 1.f / 60.f);
+		const double Start = FPlatformTime::Seconds();
+		Host->SlatePrepass(1.f);
+		Host->Paint(Args, FGeometry::MakeRoot(FVector2f(Size), FSlateLayoutTransform()), FSlateRect(0.f, 0.f, Size.X, Size.Y), Elements, 0, FWidgetStyle(), true);
+		Total += FPlatformTime::Seconds() - Start;
+		Marks = FMath::Max(Marks, Elements.GetUncachedDrawElements().Get<(uint8)EElementType::ET_RoundedBox>().Num());
+	}
+	// Additive dots are sent with a tiny alpha: Slate drops boxes with a fully transparent tint (they did not draw at all).
+	TestTrue(FString::Printf(TEXT("dots reach the paint (%d rounded boxes at best)"), Marks), Marks > 100);
+	UE_LOG(LogTemp, Display, TEXT("VekaUI perf: canvas fireworks in .vk (6 bursts x 180 sparks): %.3f ms paint per frame, %d dots, 0 view evaluations, %d lit pixels at best"),
+		Total * 1000.0 / Frames, Marks, BestSparks);
 	return true;
 }
 

@@ -666,6 +666,11 @@ TArray<FVekaPaletteEntry> SVekaPalette::GatherEntries(const UVekaView* Exclude)
 	{
 		Add(Type, Shapes);
 	}
+	const FText Drawing = LOCTEXT("CategoryDrawing", "Drawing");
+	for (const TCHAR* Type : { TEXT("Canvas"), TEXT("Dot"), TEXT("Line"), TEXT("Glow") })
+	{
+		Add(Type, Drawing);
+	}
 	for (const TCHAR* Type : { TEXT("if"), TEXT("ForEach"), TEXT("Slot") })
 	{
 		Add(Type, Logic);

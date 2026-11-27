@@ -84,8 +84,8 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 |---|---|
 | Phase | **4** ✅ terminée (4.0 Spike backdrop, 4a Backdrop + flou, 4b Glass, 4c Blend modes + distorsion, 4d Hub + DesignLab, 4e Hub Learn, 4f Perf + démo in-game fusionnés ; budgets §13 tenus) ; **3** ✅ terminée — 3.0 Document v2, 3a VekaLang (langage `.vk`), 3b Asset Editor, 3c onglet Code, 3d Mode Simple, 3e Mode Test + Timeline, 3f Symboles et peintures et **3g Composants et migration** fusionnés dans `C++` (Phase 2 ✅ terminée) |
 | Branche active | `C++` |
-| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` + langage : `let`, `time`, fonctions maths / `random` / `hsv` ; 105 tests automation ✅ |
-| Prochaine étape | Retour de TheMiniBoss sur l'éditeur de vue simplifié (2026-11-27) ; puis TODO : verre sombre de la galerie du Hub, perf `time` (nœuds qui le lisent seulement) |
+| Code C++ | `VekaUI.uplugin` + 6 modules ; runtime complet de la Phase 2 + Document v2 + langage Veka (parser, printer, analyse, import `.vk`) + éditeur d'asset Veka View (Mode Simple, Code, Test, Timeline, viewport, undo, vignettes) + Symbol Editor / Library, import SVG, Veka Paint (mesh gradient) + bibliothèques de composants, styles partagés, tokens de contrôle, thème Alpha 13 migré + rendu (backdrop, glass, blend modes, distorsion) + Veka Hub + démo HUD in-game + stats `stat VekaUI` + langage : `let`, `time`, fonctions maths / `random` / `hsv` + `Canvas` (`Dot`, `Line`, `Glow`, `blend: .Add`) ; 106 tests automation ✅ |
+| Prochaine étape | Retour de TheMiniBoss sur `VV_Fireworks` (Canvas `.vk`, 2026-11-27) ; puis TODO : perf du Canvas (réinterprété à chaque image), verre sombre de la galerie du Hub |
 | Bloquant | licence LT Flode Neue à vérifier avant toute diffusion (police commerciale) ; clics répétés sur « +1 » à vérifier à la souris |
 
 ---
@@ -120,6 +120,36 @@ Tests de rendu (si demandé) : même commande **sans** `-nullrhi`.
 ## Journal
 
 <!-- Ajouter les nouvelles entrées EN HAUT, juste sous ce commentaire. -->
+
+### 2026-11-27 — CLOUD + LOCAL → `Canvas` en `.vk` : les feux d'artifice SwiftUI refaits sans C++
+
+- **Demande de TheMiniBoss** (avec `ContentView.swift` et `Fireworks.swift`, Kavsoft : `TimelineView` + `Canvas`,
+  `.plusLighter`, 6 gerbes × 180 étincelles, fusées à traînée, flash radial) : « refait entièrement le fireworks mais
+  cette fois-ci uniquement en .vk, interdiction de C++ ; s'il manque des choses dans .vk tu as le droit de les ajouter ».
+- **Branche** : `cpp/vk-canvas`. Le C++ ajouté est **générique** (langage + primitive de dessin) ; l'effet lui-même est
+  100 % `.vk` (`Samples/Veka/Examples/VV_Fireworks.vk`, porté ligne à ligne depuis le Swift).
+- **Langage** :
+  - `Canvas(blend: .Add) { ... }` : zone de dessin ; dans son bloc, `width` / `height` = sa taille (locaux du parser).
+    `Dot(x, y, radius, color, opacity)`, `Line(x1, y1, x2, y2, width, color, fromOpacity, opacity)` (couleur qui
+    s'efface le long du trait), `Glow(x, y, radius, color, opacity)` (lumière radiale douce). `let`, `if`, `ForEach`
+    marchent dedans. `Dot` / `Line` / `Glow` hors d'un `Canvas` : avertissement, rien dessiné.
+  - `array.count`.
+- **Runtime** : primitive `FVekaCanvas` (`Primitives/VekaCanvas.*`) + `FVekaCanvasPainter` ; l'interpréteur fournit
+  `FInterpretedCanvasPainter`, qui réinterprète le sous-arbre **au paint** avec `time` = secondes depuis la création du
+  store (`FVekaViewStore::StartSeconds`). Un `time` lu seulement dans un canvas ne démarre pas l'horloge de la vue :
+  **aucune réévaluation**, seul le widget du canvas se repeint (état `NeedsAnimationFrame`, comme les symboles animés).
+  Points = boîtes arrondies (256 brosses au quart de pixel), traits = `MakeLines` à couleurs par point, glow = 24
+  anneaux pondérés (chute (1 − d/R)², sans marches visibles). Additif = `PreMultipliedAlpha`, couleur prémultipliée.
+- **Correctif trouvé en test** : en additif, alpha 0 ⇒ Slate **jette** la boîte (seuls les traits passaient, 0 pixel
+  allumé). Alpha = 1/255 (assombrit le dessous de moins de 0,4 %).
+- **Éditeur** : palette, famille « Drawing » (rose) : Canvas (paintbrush), Dot, Line, Glow ; docs du catalogue.
+- **Validé** : build éditeur, **106 tests** (105 + 1 avertissement attendu). Nouveau `VekaUI.Editor.CanvasFireworks` :
+  l'exemple analyse propre, aucune réévaluation, le canvas demande des images, > 100 points peints, des pixels allumés ;
+  perf « 3,2 ms paint / image, 925 points ». Image rendue : `Docs/Sync/Screens/vk-canvas-fireworks.png` (aussi écrite
+  par le test dans `Saved/VekaUI/CanvasFireworks.png`).
+- **Pas vu à l'écran en direct** : la fenêtre de l'éditeur n'a pas pu passer au premier plan (bureau au premier plan,
+  accès refusé) ; le rendu est vérifié par le test (même chemin de paint Slate) et l'animation par l'état du canvas.
+  À regarder : Hub > Examples > VV_Fireworks.
 
 ### 2026-11-27 — CLOUD + LOCAL → inspecteur, palette et liste des vues plus clairs (UX, suite)
 

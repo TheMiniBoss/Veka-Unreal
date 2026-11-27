@@ -1,0 +1,52 @@
+view VV_Fireworks {
+    @Param var colors: Array = [.Green, .Purple, .Indigo, .Red, .Pink, .Yellow, .Cyan, #FFFFFF]
+    @Param var burstCount: Int = 6
+    @Param var sparksPerBurst: Int = 180
+    @Param var sparkSize: Float = 1
+    @Param var burstSize: Float = 0.8
+    @Param var rocketDuration: Float = 1
+    @Param var burstDuration: Float = 2
+
+    // Fireworks in Veka only, a port of the SwiftUI version (Canvas + TimelineView): rockets, a flash, 180 sparks a burst, light that adds up.
+    Canvas(blend: .Add) {
+        ForEach(burstCount) { index in
+            let cycleLength = rocketDuration + burstDuration
+            let cycle = time / cycleLength + index * 0.37
+            let elapsed = fract(cycle) * cycleLength
+            let randomBase = index * 1.0
+            let primaryColor = colors[floor(random(randomBase + 1) * colors.count)]
+            let secondaryColor = colors[floor(random(randomBase + 2) * colors.count)]
+            let x = random(randomBase + 3) * width
+            let y = (0.1 + 0.8 * random(randomBase + 4)) * height
+            if elapsed < rocketDuration {
+                // The rocket: from the bottom to where it bursts, easing out, a trail fading behind a white head.
+                let startX = x + (random(randomBase + 5) - 0.5) * width * 0.3
+                let progress = elapsed / rocketDuration
+                let head = 1 - pow(1 - progress, 2)
+                let tail = 1 - pow(1 - max(0, progress - 0.3), 2)
+                Line(x1: startX + (x - startX) * tail, y1: height + (y - height) * tail, x2: startX + (x - startX) * head, y2: height + (y - height) * head, width: sparkSize * 0.9, color: primaryColor, fromOpacity: 0)
+                Dot(x: startX + (x - startX) * head, y: height + (y - height) * head, radius: sparkSize * 0.6, color: #FFFFFF)
+            } else if elapsed < rocketDuration + burstDuration {
+                // The burst: a flash, then sparks that fly out fast, twinkle, fall a little and fade.
+                let progress = (elapsed - rocketDuration) / burstDuration
+                let radius = height * burstSize * (0.4 + 0.3 * random(randomBase + 6)) * (1 - pow(1 - progress, 4))
+                let fade = 1 - progress
+                let drop = progress * progress * height * 0.07
+                if progress < 0.15 {
+                    Glow(x: x, y: y, radius: height * 0.35 * burstSize, color: #FFFFFF, opacity: 1 - progress / 0.15)
+                }
+                ForEach(sparksPerBurst) { i in
+                    let value = random(randomBase + i * 7.1)
+                    let angle = random(randomBase + i * 3.3) * 2 * pi
+                    let distance = radius * pow(value, 0.3)
+                    let twinkle = 0.4 + 0.6 * abs(sin(time * (6 + 12 * value) + value * 40))
+                    Dot(x: x + cos(angle) * distance, y: y + sin(angle) * distance + drop, radius: sparkSize, color: i % 3 == 0 ? secondaryColor : primaryColor, opacity: fade * twinkle)
+                }
+            }
+        }
+    }
+    .frame(width: 340, height: 100)
+    .background(#000000, radius: 30)
+    .clip
+    .padding(16)
+}

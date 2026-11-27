@@ -35,6 +35,7 @@ namespace Veka::Editor::Look
 		if (Name == TEXT("Controls")) { return FLinearColor(0.40f, 0.85f, 0.55f); }
 		if (Name == TEXT("Shapes")) { return FLinearColor(0.98f, 0.62f, 0.30f); }
 		if (Name == TEXT("Logic")) { return FLinearColor(0.80f, 0.47f, 0.95f); }
+		if (Name == TEXT("Drawing")) { return FLinearColor(1.f, 0.45f, 0.70f); }
 		if (Name == TEXT("Views")) { return FLinearColor(0.35f, 0.82f, 0.78f); }
 		return FLinearColor(0.75f, 0.76f, 0.80f);
 	}
